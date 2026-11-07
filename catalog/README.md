@@ -107,7 +107,7 @@ A game record may carry an optional `icons` block saying how its Icon Pack is bu
 directory and Takaro game identifier, which can differ from the catalog id), `mapper` (a registered
 mapping module), `data` (a `server-depot` input of the target, the depots and file-list selectors to
 fetch) and `pixels` (the client app and depot, the decoder, the exact client files in precedence order
-and, per revision, the known client build ids), plus `secrets`, the names of environment variables the
+and, per revision, the known client build ids; or, with `source: "server-depot"`, just the selectors of pixel files that come down in the same filtered download as the data, so the build needs no game client), plus `secrets`, the names of environment variables the
 build reads. Games whose files are Unreal containers add `unreal` (`engine`, the CUE4Parse `EGame` value, and
 `aesKeyEnv`, the name of the variable holding the AES key or `null`), `data.decoder: "unreal"` and, for the client
 pixels, `pixels.decoder: "unreal"` with `pixels.access: "iostore-ranges"` (the listed `.utoc` files are read whole

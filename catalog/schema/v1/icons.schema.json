@@ -38,6 +38,35 @@
       }
     },
     "pixels": {
+      "oneOf": [
+        {"$ref": "#/$defs/clientPixels"},
+        {"$ref": "#/$defs/serverDepotPixels"}
+      ],
+      "description": "Where the pixels come from: an installed game client, or the same server depot the data comes from."
+    },
+    "unreal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "aesKeyEnv"],
+      "properties": {
+        "engine": {"type": "string", "pattern": "^GAME_[A-Za-z0-9_]+$", "description": "The CUE4Parse EGame value that reads this game's containers."},
+        "aesKeyEnv": {
+          "oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}],
+          "description": "Name of the environment variable holding the containers' AES key; null for unencrypted games. Never the key itself."
+        }
+      },
+      "description": "Settings of the unreal decoder; required exactly when a role uses it."
+    },
+    "secrets": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+      "description": "Names of environment variables the build reads; never their values."
+    }
+  },
+  "$defs": {
+    "clientPixels": {
       "type": "object",
       "additionalProperties": false,
       "required": ["source", "app", "depot", "decoder", "files"],
@@ -65,25 +94,20 @@
         }
       }
     },
-    "unreal": {
+    "serverDepotPixels": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["engine", "aesKeyEnv"],
+      "required": ["source", "files"],
       "properties": {
-        "engine": {"type": "string", "pattern": "^GAME_[A-Za-z0-9_]+$", "description": "The CUE4Parse EGame value that reads this game's containers."},
-        "aesKeyEnv": {
-          "oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}],
-          "description": "Name of the environment variable holding the containers' AES key; null for unencrypted games. Never the key itself."
+        "source": {"const": "server-depot"},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1},
+          "description": "DepotDownloader file-list selectors for the pixel files, fetched with the data from data.input; same semantics as data.files."
         }
-      },
-      "description": "Settings of the unreal decoder; required exactly when a role uses it."
-    },
-    "secrets": {
-      "type": "array",
-      "default": [],
-      "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
-      "description": "Names of environment variables the build reads; never their values."
+      }
     }
   }
 }

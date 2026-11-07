@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,48 @@ CODES_FROM = (
 )
 
 
+@dataclass(frozen=True)
+class ClientSide:
+    """The installed client a client-sourced route reads its pixels from, and how it compares with the target."""
+
+    directory: Path
+    buildid: int | None
+    manifest: str | None
+    status: str
+    expected: list[int]
+    warnings: list[str]
+
+    def record(self, route: IconsRoute) -> dict[str, Any]:
+        return {
+            "app": route.block["pixels"]["app"],
+            "depot": route.block["pixels"]["depot"],
+            "buildid": self.buildid,
+            "manifest": self.manifest,
+            "status": self.status,
+            "expected": self.expected,
+        }
+
+
+def _client_side(route: IconsRoute, client: Path | None) -> ClientSide | None:
+    """Check the client before anything is downloaded; ``None`` for a route whose pixels ride the server depot."""
+    if route.pixel_source == "server-depot":
+        if client is not None:
+            raise UsageError(f"game {route.catalog_game} takes its pixels from the server depot; --client is not used")
+        return None
+    if route.uses_unreal:
+        directory = client_ranges.check(client, route.pixel_files)
+    else:
+        directory = acquire.check_client(client, route.pixel_files)
+    buildid, manifest = acquire.read_client_build(
+        directory, route.block["pixels"]["app"], route.block["pixels"]["depot"]
+    )
+    status, expected, warning = provenance.client_status(buildid, route.target.revision, route.client_builds)
+    warnings = [warning] if warning else []
+    for message in warnings:
+        output.warn(message)
+    return ClientSide(directory, buildid, manifest, status, expected, warnings)
+
+
 def build_from_catalog(
     game: str, target_id: str | None, platform: str | None, client: Path | None, out: Path
 ) -> dict[str, Any]:
@@ -39,17 +82,8 @@ def build_from_catalog(
         settings = unreal_decoder.UnrealSettings.of(route.block)
         unreal_decoder.require_key_variable(settings)
         container.require_docker()
-        client_dir = client_ranges.check(client, route.pixel_files)
-    else:
-        client_dir = acquire.check_client(client, route.pixel_files)
-
-    client_buildid, client_manifest = acquire.read_client_build(
-        client_dir, route.block["pixels"]["app"], route.block["pixels"]["depot"]
-    )
-    status, expected, warning = provenance.client_status(client_buildid, route.target.revision, route.client_builds)
-    warnings = [warning] if warning else []
-    for message in warnings:
-        output.warn(message)
+    client_side = _client_side(route, client)
+    warnings = client_side.warnings if client_side else []
 
     cache = paths.cache_dir()
     work_root = cache / "icons" / "work"
@@ -72,24 +106,25 @@ def build_from_catalog(
         )
         pixels = None
         if settings is not None and image is not None:
+            assert client_side is not None
             mirror_base = (
                 cache
                 / "icons"
                 / "clients"
                 / route.pack_game
                 / str(route.block["pixels"]["app"])
-                / (str(client_buildid) if client_buildid else "unknown")
+                / (str(client_side.buildid) if client_side.buildid else "unknown")
             )
             session = UnrealSession(
                 unreal_decoder.UnrealDecoder(settings, image, oodle_path, cache),
                 data_root=data.root,
                 data_tree_sha256=data.tree_sha256,
-                client=client_dir,
+                client=client_side.directory,
                 utoc_files=route.pixel_files,
                 mirror_base=mirror_base,
             )
-        else:
-            pixels = mappers.open_pixels(client_dir, route.pixel_files)
+        elif client_side is not None:
+            pixels = mappers.open_pixels(client_side.directory, route.pixel_files)
         context = mappers.MapContext(
             data_root=data.root,
             pixels=pixels,
@@ -103,17 +138,7 @@ def build_from_catalog(
         document = {**mapped.document, "game": route.pack_game}
         build.validate_recipes(document)
         recipes_bytes = (json.dumps(document, indent=2) + "\n").encode("utf-8")
-        client_record = {
-            "app": route.block["pixels"]["app"],
-            "depot": route.block["pixels"]["depot"],
-            "buildid": client_buildid,
-            "manifest": client_manifest,
-            "status": status,
-            "expected": expected,
-        }
-        record = _provenance(
-            route, data, mapped, mapper, client_record, client_dir, session, image, oodle_sha256, settings
-        )
+        record = _provenance(route, data, mapped, mapper, client_side, session, image, oodle_sha256, settings)
         record["warnings"] = warnings
         result = build.build_pack(
             document,
@@ -141,7 +166,6 @@ def build_from_catalog(
         "coverage": result.coverage,
         "reports": {name: str(path.resolve()) for name, path in reports.items()},
         "encoder": result.encoder,
-        "clientBuild": {"id": client_buildid, "status": status, "expected": expected},
         "inputs": {
             "data": {
                 "buildid": route.steam.buildid,
@@ -149,10 +173,16 @@ def build_from_catalog(
                 "files": data.files,
                 "treeSha256": data.tree_sha256,
             },
-            "pixels": {"files": len(route.pixel_files)},
+            "pixels": _pixels_report(route, mapped),
         },
         "warnings": warnings,
     }
+    if client_side is not None:
+        report["clientBuild"] = {
+            "id": client_side.buildid,
+            "status": client_side.status,
+            "expected": client_side.expected,
+        }
     if session is not None and session.mirror is not None and image is not None:
         report["decoder"] = {
             "name": unreal_decoder.DECODER_NAME,
@@ -163,19 +193,23 @@ def build_from_catalog(
     return report
 
 
+def _pixels_report(route: IconsRoute, mapped: mappers.MapResult) -> dict[str, Any]:
+    if route.pixel_source == "server-depot":
+        return {"source": "server-depot", "files": mapped.details["icons"]["files"]}
+    return {"files": len(route.pixel_files)}
+
+
 def _provenance(
     route: IconsRoute,
     data: acquire.DataTree,
     mapped: mappers.MapResult,
     mapper: mappers.Mapper,
-    client: dict[str, Any],
-    client_dir: Path,
+    client_side: ClientSide | None,
     session: UnrealSession | None,
     image: container.DecoderImage | None,
     oodle_sha256: str,
     settings: unreal_decoder.UnrealSettings | None,
 ) -> dict[str, Any]:
-    pixels = route.block["pixels"]
     record: dict[str, Any] = {
         "source": "catalog",
         "catalogGame": route.catalog_game,
@@ -193,47 +227,74 @@ def _provenance(
             "files": data.files,
             "treeSha256": data.tree_sha256,
         },
-        "client": client,
         "mapper": {"name": mapper.name, "version": mapper.version, "notes": mapped.notes, **mapped.details},
     }
+    if client_side is None:
+        record["pixels"] = _server_pixels_record(route, mapped)
+        record["tools"] = provenance.tools_record("none (PNG and XML read in-process)")
+        return record
+    record["client"] = client_side.record(route)
     if session is not None and session.mirror is not None and image is not None and settings is not None:
-        mirror = session.mirror
-        record["decoder"] = {
-            "name": unreal_decoder.DECODER_NAME,
-            "imageId": image.id,
-            "contextSha256": image.context_sha256,
-            "tool": session.tool,
-            "oodleSha256": oodle_sha256,
-            "engine": settings.engine,
-        }
-        record["pixels"] = {
-            "source": "client",
-            "decoder": pixels["decoder"],
-            "access": route.pixel_access,
-            "ranges": {
-                "planSha256": mirror.plan_sha256,
-                "containers": len({entry["file"] for entry in mirror.ranges}),
-                "ranges": len(mirror.ranges),
-                "bytes": mirror.bytes,
-            },
-            "files": {
-                name: {
-                    "sha256": info.sha256,
-                    "size": info.size,
-                    "version": info.version,
-                    "entries": info.entries,
-                    "partitions": info.partitions,
-                }
-                for name, info in mirror.containers.items()
-            },
-        }
-        record["tools"] = provenance.tools_record(f"{unreal_decoder.DECODER_NAME} container ({image.tag})")
+        _add_unreal_pixels(record, route, session, image, oodle_sha256, settings)
     else:
-        pixel_files = acquire.hash_pixel_files(client_dir, route.pixel_files)
+        pixel_files = acquire.hash_pixel_files(client_side.directory, route.pixel_files)
         record["pixels"] = {
             "source": "client",
-            "decoder": pixels["decoder"],
+            "decoder": route.block["pixels"]["decoder"],
             "files": {name: {**pixel_files[name], **mapped.pack_usage[name]} for name in route.pixel_files},
         }
         record["tools"] = provenance.tools_record()
     return record
+
+
+def _server_pixels_record(route: IconsRoute, mapped: mappers.MapResult) -> dict[str, Any]:
+    """The pixel files came down in the data download, so their hashes are already in ``data.treeSha256``."""
+    icons = mapped.details["icons"]
+    return {
+        "source": "server-depot",
+        "selectors": route.pixel_selectors,
+        "files": icons["files"],
+        "used": icons["used"],
+    }
+
+
+def _add_unreal_pixels(
+    record: dict[str, Any],
+    route: IconsRoute,
+    session: UnrealSession,
+    image: container.DecoderImage,
+    oodle_sha256: str,
+    settings: unreal_decoder.UnrealSettings,
+) -> None:
+    assert session.mirror is not None
+    mirror = session.mirror
+    record["decoder"] = {
+        "name": unreal_decoder.DECODER_NAME,
+        "imageId": image.id,
+        "contextSha256": image.context_sha256,
+        "tool": session.tool,
+        "oodleSha256": oodle_sha256,
+        "engine": settings.engine,
+    }
+    record["pixels"] = {
+        "source": "client",
+        "decoder": route.block["pixels"]["decoder"],
+        "access": route.pixel_access,
+        "ranges": {
+            "planSha256": mirror.plan_sha256,
+            "containers": len({entry["file"] for entry in mirror.ranges}),
+            "ranges": len(mirror.ranges),
+            "bytes": mirror.bytes,
+        },
+        "files": {
+            name: {
+                "sha256": info.sha256,
+                "size": info.size,
+                "version": info.version,
+                "entries": info.entries,
+                "partitions": info.partitions,
+            }
+            for name, info in mirror.containers.items()
+        },
+    }
+    record["tools"] = provenance.tools_record(f"{unreal_decoder.DECODER_NAME} container ({image.tag})")

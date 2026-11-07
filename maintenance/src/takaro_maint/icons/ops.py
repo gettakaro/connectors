@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from ..exit_codes import BuildFailed
 
@@ -18,11 +18,23 @@ def trim(image: Image.Image, *, code: str) -> Image.Image:
     return image.crop(box)
 
 
-OPS: dict[str, Callable[..., Image.Image]] = {"trim": trim}
+def tint_multiply(image: Image.Image, *, code: str, color: str) -> Image.Image:
+    """Multiply the colour channels by ``color`` (``#rrggbb``), the way a sprite is coloured by a tint.
+
+    Straight (non-premultiplied) RGB: ``out = c * t // 255`` per channel (Pillow's ``ImageChops.multiply``
+    floors), alpha unchanged. This is NGUI's texture-times-colour with a colour alpha of 1.
+    Game syntaxes are the mappers' business; the op only reads the canonical form.
+    """
+    red, green, blue = (int(color[position : position + 2], 16) for position in (1, 3, 5))
+    return ImageChops.multiply(image, Image.new("RGBA", image.size, (red, green, blue, 255)))
+
+
+OPS: dict[str, Callable[..., Image.Image]] = {"trim": trim, "tint-multiply": tint_multiply}
 
 
 def apply(operation: dict[str, Any], image: Image.Image, *, code: str) -> Image.Image:
-    return OPS[operation["op"]](image, code=code)
+    parameters = {key: value for key, value in operation.items() if key != "op"}
+    return OPS[operation["op"]](image, code=code, **parameters)
 
 
 def composite_over(images: list[Image.Image]) -> Image.Image:

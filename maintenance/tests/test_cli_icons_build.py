@@ -421,3 +421,57 @@ def test_a_candidate_shares_its_primarys_object_and_is_left_out_of_every_count(r
         "codes": [{"code": "fixture-banner-alt", "candidateOf": "fixture-banner"}],
     }
     assert "candidates" not in baseline
+
+
+def _tint_document(tmp_path: Path, operation: dict[str, Any]) -> Path:
+    """The first recipe's layer is a 16x16 grey (128) square, opaque on the left half and half-alpha on the right."""
+    copy = _fixture_copy(tmp_path)
+    image = Image.new("RGBA", (16, 16), (128, 128, 128, 255))
+    image.paste((128, 128, 128, 128), (8, 0, 16, 16))
+    image.save(copy / "images" / "grey.png", format="PNG")
+    document = json.loads((copy / "recipes.json").read_text())
+    document["recipes"][0]["layers"][0] = {"image": "images/grey.png", "ops": [operation]}
+    (copy / "recipes.json").write_text(json.dumps(document))
+    return copy / "recipes.json"
+
+
+def test_tint_multiply_multiplies_straight_rgb_and_keeps_alpha(run: Any, tmp_path: Path) -> None:
+    recipes = _tint_document(tmp_path, {"op": "tint-multiply", "color": "#80ff40"})
+    code, _, _, out = _build(run, tmp_path, recipes=recipes)
+    assert code == 0
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    with Image.open(out / "pack/fixture-846" / index["icons"]["fixture-circle"]) as image:
+        rgba = image.convert("RGBA")
+    # c * t // 255 per channel: 64, 128, 32
+    assert rgba.getpixel((4, 8)) == (64, 128, 32, 255)
+    assert rgba.getpixel((12, 8)) == (64, 128, 32, 128)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"op": "tint-multiply"},
+        {"op": "tint-multiply", "color": "#80FF40"},
+        {"op": "tint-multiply", "color": "#fff"},
+        {"op": "tint-multiply", "color": "red"},
+        {"op": "tint-multiply", "color": "80ff40"},
+        {"op": "tint-multiply", "color": "#80ff40", "alpha": 1},
+        {"op": "trim", "color": "#80ff40"},
+        {"op": "tint"},
+    ],
+    ids=["no-color", "uppercase", "short", "name", "no-hash", "extra-key", "trim-with-color", "unknown-op"],
+)
+def test_a_malformed_op_is_refused(run: Any, tmp_path: Path, operation: dict[str, Any]) -> None:
+    code, payload, _, out = _build(run, tmp_path, recipes=_tint_document(tmp_path, operation))
+    assert code == 2 and "invalid" in payload["error"]
+    assert not out.exists() or not list(out.rglob("index.json"))
+
+
+def test_tint_multiply_floors_each_channel(run: Any, tmp_path: Path) -> None:
+    recipes = _tint_document(tmp_path, {"op": "tint-multiply", "color": "#c8fe80"})
+    Image.new("RGBA", (16, 16), (200, 129, 1, 255)).save(recipes.parent / "images" / "grey.png", format="PNG")
+    code, _, _, out = _build(run, tmp_path, recipes=recipes)
+    assert code == 0
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    with Image.open(out / "pack/fixture-846" / index["icons"]["fixture-circle"]) as image:
+        assert image.convert("RGBA").getpixel((4, 4)) == (156, 128, 0, 255)  # rounding would give 157, 128, 1

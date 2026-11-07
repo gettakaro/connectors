@@ -41,9 +41,14 @@ against codes derived from game data and the report says so).
 - `kind` is optional: `item` or `block`. `reason` matches `^[a-z][a-z0-9-]*$` and is an open set.
 - `image` is a PNG path relative to the recipe file, checked by `paths.safe_relative`. A missing
   file is exit 4.
-- A recipe takes exactly one layer. `ops` may hold `{"op": "trim"}` (crop to the alpha bounding box;
-  a fully transparent image is exit 6); other image operations and layer compositing arrive with the
-  games that need them. `measuredAgainst` can only be `game-data`.
+- `ops` is a list applied to each layer in order, before the layers are composited. `{"op": "trim"}`
+  crops to the alpha bounding box (a fully transparent image is exit 6). `{"op": "tint-multiply",
+  "color": "#rrggbb"}` (lowercase, always six digits) multiplies the colour channels by the colour: straight,
+  non-premultiplied RGB, `out = c * t // 255` per channel (floored, as Pillow's `ImageChops.multiply` does), alpha unchanged. That is a sprite
+  coloured by a tint, texture times colour with a colour alpha of 1 (grey 128 under `#80ff40` is
+  64, 128, 32). Mappers normalize game tint syntaxes into this form; the op never parses game text. A
+  missing or malformed `color`, an extra key on either op, or any other op name is exit 2.
+  `measuredAgainst` can only be `game-data`.
 - Optional: `rule` on a recipe or unmatched entry (`^[a-z][a-z0-9-]*$`, how it was mapped), `detail` on
   an unmatched entry (at most 256 characters, no control characters) and `codesFrom` on the document
   (where the codes come from, at most 1000 characters).
@@ -92,7 +97,13 @@ target fingerprint.
 - `data` is the server-side input. `input` is the target's `steam-depots` input, `depots` an optional
   subset of its depots, `files` DepotDownloader file-list selectors (an exact path, or `regex:` with a
   case-insensitive pattern: the semantics of `steam/selectors.py`).
-- `pixels` is the client-side input. `app` and `depot` are the Steam client app and depot, used for the
+- `pixels` comes in two shapes. With `source: "server-depot"` the pixels are files of the same server
+  depot as the data: `files` are DepotDownloader selectors with the semantics of `data.files`, fetched in
+  the one filtered download together with the data files (the cache key hashes both lists), and the
+  shape takes nothing else (`app`, `depot`, `decoder`, `access` and `clientBuilds` are schema errors). A
+  route of this shape builds without a client: `icons build` refuses `--client` (exit 2, before any
+  download), runs no client check, and records no `client` block, no client build and no client warning.
+  With `source: "client"`, `app` and `depot` are the Steam client app and depot, used for the
   appmanifest lookup. `files` are exact client-relative paths in **precedence order**: a texture name
   held by several packs comes from the first one listed. Globs are not allowed, so a backup or
   temporary pack next to the real ones can never be picked up. `clientBuilds` maps a target revision to
@@ -194,10 +205,14 @@ Nothing is guessed from names. Only a texture an item's own properties name is u
 
 `build-record.json` of a catalog build adds, to the recipe hash and encoder: `source`, `catalogGame`,
 `target`, `revision`, `fingerprint`; `data` (app, branch, buildid, os, depot manifests, selectors, file
-count and `treeSha256`, a sha256 over the sorted `<path>\t<sha256>` lines); `pixels` (the decoder and,
-per pack, `sha256`, `size`, `layout`, `pages`, `entries`, `codesSupplied`, `shadowedNames`); `client`
-(app, depot, `buildid`, `manifest`, `status`, `expected`); `mapper` (name, version, notes); `tools`;
-and `warnings`. It holds no timestamp, so two identical builds write identical records.
+count and `treeSha256`, a sha256 over the sorted `<path>\t<sha256>` lines; for a server-depot pixel route
+the selectors include the pixel selectors and the hashes of the pixel files are in `treeSha256` too);
+`pixels` (the decoder and,
+per pack, `sha256`, `size`, `layout`, `pages`, `entries`, `codesSupplied`, `shadowedNames`; for server
+pixels `source: "server-depot"`, `selectors`, `files` (how many the depot served) and `used` (how many the
+mapping referenced)); `client`
+(app, depot, `buildid`, `manifest`, `status`, `expected`; absent for server pixels); `mapper` (name,
+version, notes and the mapper's own counts); `tools`; and `warnings`. It holds no timestamp, so two identical builds write identical records.
 
 Server and client build ids differ for the same release (25485538 and 25485521 for 42.21.0), so
 `pixels.clientBuilds` lists the client builds of each revision. `client.status` is `match` (the build is
@@ -213,6 +228,67 @@ output and the build record, and the exit code stays 0. A new game release needs
 - Tinted overlays (`IconColorMask`, `IconFluidMask`) are ignored: the base icon is published.
 - An item that names another item's art through anything but `Icon`, `IconsForTexture` or
   `WorldObjectSprite` has no icon here.
+
+### 7 Days to Die
+
+The pack id is `7d2d`. Everything comes from the anonymous dedicated-server depot (app 294420, depot 294422), with
+no game client and no decoder container: `Data/ItemIcons/*.png` are the pixels, `Data/Config/items.xml`,
+`item_modifiers.xml` and `blocks.xml` the mapping, and `Data/Config/Localization.csv` the code filter. One filtered
+download (about 123 MB for 5,265 files) serves all of them; the data and pixel selectors share the cache key.
+`--client` is refused for this game (exit 2).
+
+**Codes.** A code is the entry's `name` attribute. Entries are read in the order `items.xml` (`<item>`),
+`item_modifiers.xml` (`<item_modifier>`, kind `item`), `blocks.xml` (`<block>`, kind `block`); the first
+occurrence of a name wins, and a repeat (also across files) is counted in the mapper notes. An entry is left out
+of the code list when `Localization.csv` has no row for its name, an empty or blank `english` value, or an
+`english` value equal to the key. The file is read with `csv` and `utf-8-sig`, columns found by header name
+(`Key` and `english`, case-insensitive). The XML files start with a UTF-8 BOM and are parsed from bytes.
+A `<!DOCTYPE` or `<!ENTITY` is exit 6, as is malformed XML or a header without those two columns; a file
+the depot did not serve is exit 4 and named.
+
+**Icon resolution.** Only an entry's direct `<property name= value=>` children without a `class` attribute count
+(nested `Action` blocks are ignored; the last occurrence wins). For `CustomIcon` and `CustomIconTint`
+independently: the entry's own value, else the value its `Extends` parent resolves to unless that hop's `param1`
+(comma-split, trimmed) lists the property, else nothing. The icon falls back to the entry's own name, never the
+parent's. `Extends` resolves inside the entry's own file; an unknown parent or a cycle ends inheritance and is
+counted in the notes. The PNG is found by exact file stem, else by a casefold-only match flagged `case-mismatch`;
+no PNG is `missing-texture` (detail `<icon>.png`).
+
+**Tint.** `CustomIconTint` is `rrggbb` hex with an optional `#`, or `r,g,b` integers 0 to 255; two more hex digits
+or a fourth integer are alpha and ignored. Anything else is unmatched with reason `invalid-tint` and the raw
+value as detail. The value becomes `{"op": "tint-multiply", "color": "#rrggbb"}`; white (`#ffffff`) is the
+identity and emits no op. **Rules** are `own-icon`, `inherited-icon` or `name`, with `-tinted` appended when a tint op
+is present.
+
+**What the game does** (decompiled from `Assembly-CSharp.dll` of build 26310339 with ILSpy; the pinned reference
+assemblies come from `steam references`):
+
+- `ItemClassesFromXml.parseItem` and `ItemModificationsFromXml` resolve `Extends` against the registered item
+  class, copy the parent's properties minus the `param1` list (plus `CreativeMode`), then overlay the entry's own
+  properties: transitive, per property, and the parent's merged properties are what is inherited.
+  `BlocksFromXml.CreateProperties` does the same for blocks against another block.
+- `ItemClass.GetIconName` is `CustomIcon` when non-empty, else `Name`; `Block.GetIconName` is `CustomIcon ?? name`.
+  `ItemClassBlock.Init` copies the block's `CustomIcon` and `CustomIconTint`, so a block's item uses the block's icon.
+- The tint is `StringParsers.ParseHexColor`: a comma anywhere means `ParseColor32` (3 or 4 integers, the fourth is
+  alpha), otherwise `#`-optional hex read two digits at a time (shorter than 6 characters is transparent black).
+  No tint is white.
+- The localized name is `Localization.Get(name)` for items, modifiers and blocks: an exact, case-sensitive key
+  lookup that returns the key when there is none. Auto-shaped blocks compose their name at runtime from the material
+  and shape names, so those variants are not in the XML.
+- `ItemClass.itemNames` is filled in the `ItemClass` constructor, so item modifiers are in it (they are in scope)
+  and so are the block items.
+- The depot's localization file is `Data/Config/Localization.csv`; there is no `Localization.txt`.
+
+**Live run** (staging only; build 26310339, manifest 5022117301453546978, target `linux-3.4.0.b10`): 1,434 items,
+107 item modifiers and 6,643 blocks in the config; 477 items, 1 modifier and 208 blocks have no English name (the
+items are internals such as zombie hands and projectiles). 7,498 codes, 7,403 matched (98.73%): items 1,063 of
+1,063, blocks 6,340 of 6,435. All 95 unmatched are `missing-texture` blocks. 2,937 of 5,261 PNGs used; 6,055
+objects; one `case-mismatch`.
+
+Known limits: coverage is against codes derived from game data (#811 skipped), not the live code list, and the connector
+reports far fewer blocks than the XML lists (shape variants are generated at runtime), so the pack carries extra block
+codes that are harmless. Item `Extends` can name a block in the game (one registry); this mapper resolves inside the
+file, which is exact for this build: no entry has an unresolved parent or a cycle.
 
 ## Unreal games: the decoder container, IoStore ranges and Conan Exiles
 
@@ -506,11 +582,11 @@ only against the S3 fake, never against production.
 | Code | When |
 |---|---|
 | 0 | ok, including a dry run and a republish where nothing changed |
-| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, a game without an `icons` block, `--recipes` and `--game` both or neither, `--client` without `--game`, a missing `--client` for a client-sourced build, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
+| 2 | usage or configuration: a bad flag or recipe document, `--env` other than `staging` (`publish`) or other than `staging`/`production` (the others), a `_store/` or otherwise invalid game or key, a missing `STG_R2_*` / `PROD_R2_*` variable, a non-https endpoint, staging and production resolving to the same bucket, a non-empty `--out`, an unsupported op or multi-layer recipe, a game without an `icons` block, `--recipes` and `--game` both or neither, `--client` without `--game`, a missing `--client` for a client-sourced build, `--client` on a route whose pixels come from the server depot, an unknown code or object, a malformed `--object`, `--code` and `--object` both or neither, `--enabled` other than `true`/`false` |
 | 3 | a catalog build or `inputs` for a target that does not exist |
-| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve |
+| 4 | a recipe image file is missing, or there is no index for the game in the environment being read; a catalog build whose `--client` is not a directory or lacks a listed pack, or whose pinned server manifest Steam will not serve; a data file a mapper requires that the depot did not serve (7d2d: the XML and localization files, named in the error) |
 | 5 | a filtered depot cache that still does not match its marker after one fresh download; the index read back after upload differs from what was sent; a copied object does not hash to its name; an object is still present after a delete |
-| 6 | a malformed texture pack, a `trim` of a fully transparent image |
+| 6 | a malformed texture pack, a `trim` of a fully transparent image; 7d2d: an XML file with a DOCTYPE or ENTITY, malformed XML, or a localization file without a `Key` or `english` column |
 | 7 | contract violation in the built pack, the local pack, the live index or the merged index; a staging object that is missing or is not a valid WebP of at most 128px |
 | 10 | a bucket read, upload or delete failed (S3 error, unreachable endpoint, access denied) |
 

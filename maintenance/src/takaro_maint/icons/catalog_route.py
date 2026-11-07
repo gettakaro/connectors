@@ -39,8 +39,21 @@ class IconsRoute:
         return str(self.block["mapper"])
 
     @property
-    def selectors(self) -> list[str]:
+    def data_selectors(self) -> list[str]:
         return [str(selector) for selector in self.block["data"]["files"]]
+
+    @property
+    def pixel_source(self) -> str:
+        """``client`` (an installed game client) or ``server-depot`` (the pixel files ride the data download)."""
+        return str(self.block["pixels"]["source"])
+
+    @property
+    def selectors(self) -> list[str]:
+        """Everything the filtered depot download fetches: the data files and, for server pixels, the pixel files."""
+        listed = self.data_selectors
+        if self.pixel_source == "server-depot":
+            listed = listed + self.pixel_selectors
+        return list(dict.fromkeys(listed))
 
     @property
     def depots(self) -> dict[str, str]:
@@ -53,11 +66,21 @@ class IconsRoute:
         return "unreal" in self.block
 
     @property
+    def pixel_selectors(self) -> list[str]:
+        """The server-depot pixel selectors; empty for a client route."""
+        if self.pixel_source != "server-depot":
+            return []
+        return [str(selector) for selector in self.block["pixels"]["files"]]
+
+    @property
     def pixel_access(self) -> str:
         return str(self.block["pixels"].get("access", "files"))
 
     @property
     def pixel_files(self) -> list[str]:
+        """Exact client-relative paths of a client route; empty for server pixels."""
+        if self.pixel_source != "client":
+            return []
         return [str(name) for name in self.block["pixels"]["files"]]
 
     @property
@@ -114,11 +137,35 @@ def filtered_cache_complete(directory: Path) -> bool:
     return (directory / COMPLETE_MARKER).is_file()
 
 
+def _pixels_input(route: IconsRoute, cache: Path, cache_paths: dict[str, Path], cached: bool) -> dict[str, Any]:
+    pixels = route.block["pixels"]
+    if route.pixel_source == "server-depot":
+        return {
+            "role": "pixels",
+            "source": "server-depot",
+            "depots": route.depots,
+            "files": route.pixel_selectors,
+            "cache": {depot: str(path) for depot, path in cache_paths.items()},
+            "cached": cached,
+        }
+    return {
+        "role": "pixels",
+        "source": "client",
+        "app": pixels["app"],
+        "depot": pixels["depot"],
+        "decoder": pixels["decoder"],
+        "files": route.pixel_files,
+        "clientManifest": APPMANIFEST.format(app=pixels["app"]),
+        "expectedClientBuilds": route.client_builds.get(route.target.revision, []),
+        "suggestedMirror": str(cache / "icons" / "clients" / route.pack_game / str(pixels["app"])),
+    }
+
+
 def inputs_document(route: IconsRoute) -> dict[str, Any]:
     """The ``icons inputs`` answer: no network, no DepotDownloader."""
     cache = paths.cache_dir()
     caches = {depot: route.data_cache(cache, depot) for depot in route.depots}
-    pixels = route.block["pixels"]
+    cached = all(filtered_cache_complete(path) for path in caches.values())
     document: dict[str, Any] = {
         "game": route.catalog_game,
         "packGame": route.pack_game,
@@ -135,21 +182,11 @@ def inputs_document(route: IconsRoute) -> dict[str, Any]:
                 "buildid": route.steam.buildid,
                 "os": route.steam.os_,
                 "depots": route.depots,
-                "files": route.selectors,
+                "files": route.data_selectors,
                 "cache": {depot: str(path) for depot, path in caches.items()},
-                "cached": all(filtered_cache_complete(path) for path in caches.values()),
+                "cached": cached,
             },
-            {
-                "role": "pixels",
-                "source": "client",
-                "app": pixels["app"],
-                "depot": pixels["depot"],
-                "decoder": pixels["decoder"],
-                "files": route.pixel_files,
-                "clientManifest": APPMANIFEST.format(app=pixels["app"]),
-                "expectedClientBuilds": route.client_builds.get(route.target.revision, []),
-                "suggestedMirror": str(cache / "icons" / "clients" / route.pack_game / str(pixels["app"])),
-            },
+            _pixels_input(route, cache, caches, cached),
         ],
         "env": [{"name": name, "set": bool(os.environ.get(name))} for name in route.secrets],
     }
