@@ -58,6 +58,26 @@ def test_python_packages_are_installed_from_a_hash_locked_file() -> None:
             ), entry
 
 
+def test_npm_packages_are_installed_from_the_integrity_locked_file() -> None:
+    locked = [dockerfile for dockerfile in DOCKERFILES if (dockerfile.parent / "package.json").is_file()]
+    assert locked
+    for dockerfile in locked:
+        text = dockerfile.read_text()
+        for flag in ("npm ci", "--omit=dev", "--ignore-scripts", "package-lock.json"):
+            assert flag in text, f"{dockerfile}: {flag}"
+        package = json.loads((dockerfile.parent / "package.json").read_text())
+        assert package["private"] is True and len(package["dependencies"]) == 1
+        for name, version in package["dependencies"].items():
+            assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?", version), f"{name}@{version} is not exact"
+        lock = json.loads((dockerfile.parent / "package-lock.json").read_text())
+        assert lock["lockfileVersion"] == 3
+        entries = {name: entry for name, entry in lock["packages"].items() if name}
+        assert entries
+        for name, entry in entries.items():
+            assert entry["resolved"].startswith("https://registry.npmjs.org/"), name
+            assert re.fullmatch(r"sha512-[A-Za-z0-9+/]{86}==", entry["integrity"]), name
+
+
 def test_nothing_is_downloaded_without_a_hash_check() -> None:
     for dockerfile in DOCKERFILES:
         for line in _logical_lines(dockerfile.read_text()):
@@ -75,6 +95,7 @@ def test_the_oodle_library_is_pinned_by_hash() -> None:
 def test_build_artefacts_stay_out_of_the_image_context() -> None:
     ignored = (REPO_ROOT / "maintenance" / ".dockerignore").read_text().splitlines()
     assert "decoders/**/bin" in ignored and "decoders/**/obj" in ignored
+    assert "decoders/**/node_modules" in ignored
 
 
 def test_the_image_holds_no_oodle() -> None:

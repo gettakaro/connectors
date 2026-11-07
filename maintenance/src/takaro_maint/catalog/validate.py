@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -551,6 +552,85 @@ def _check_icons_server_pixels_decoder(result: ValidationResult, block: dict[str
     )
 
 
+def _check_icons_client_files(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """``regex:`` file entries, the ``code`` role and the ``xnb`` settings of an ``icons`` block."""
+    pixels = block.get("pixels") or {}
+    patterns = [
+        str(name)[len("regex:") :]
+        for role in (pixels, block.get("code") or {})
+        for name in role.get("files") or []
+        if str(name).startswith("regex:")
+    ]
+    broken = []
+    for pattern in patterns:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            broken.append(f"{pattern!r} ({exc})")
+    pixel_patterns = any(str(name).startswith("regex:") for name in pixels.get("files") or [])
+    stray = bool(patterns) and pixels.get("access") == "iostore-ranges"
+    unresolvable = pixel_patterns and pixels.get("source") == "client" and pixels.get("decoder") != "xnb"
+    result.add(
+        "icons-client-regex",
+        not broken and not stray and not unresolvable,
+        f"icons.pixels.files: regex entries must compile {broken}, are not allowed with access 'iostore-ranges' "
+        "and are only resolved for the xnb decoder",
+        file,
+    )
+    connector = (block.get("data") or {}).get("source") == "connector"
+    result.add(
+        "icons-connector-route",
+        connector == (pixels.get("decoder") == "xnb" and (block.get("code") or {}).get("decoder") == "clr"),
+        "icons.data.source 'connector' goes with pixels.decoder 'xnb' and code.decoder 'clr', and only with them",
+        file,
+    )
+    result.add(
+        "icons-code-role",
+        "code" not in block or pixels.get("source") == "client",
+        "icons.code requires icons.pixels.source 'client': the code files are read from the same installed client",
+        file,
+    )
+    result.add(
+        "icons-xnb-settings",
+        (pixels.get("decoder") == "xnb") == ("xnb" in block),
+        "icons.xnb must be present exactly when icons.pixels.decoder is 'xnb'",
+        file,
+    )
+
+
+def _check_icons_connector_data(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """Connector data files are read from this repository, so they have to be in it."""
+    data = block.get("data") or {}
+    if data.get("source") != "connector":
+        return
+    missing = []
+    for name in data.get("files") or []:
+        try:
+            present = (paths.repo_root() / paths.safe_relative(str(name), field="icons.data.files")).is_file()
+        except UsageError:
+            present = False
+        if not present:
+            missing.append(str(name))
+    result.add(
+        "icons-data-input",
+        not missing,
+        f"icons.data.files are not in the repository: {missing}" if missing else "every connector data file exists",
+        file,
+    )
+
+
+def _check_client_builds_revisions(
+    result: ValidationResult, block: dict[str, Any], revisions: set[str], file: str
+) -> None:
+    stray = sorted(set((block.get("pixels") or {}).get("clientBuilds") or {}) - revisions)
+    result.add(
+        "icons-client-builds-revisions",
+        not stray,
+        f"icons.pixels.clientBuilds names revisions no target has: {stray}" if stray else "every revision exists",
+        file,
+    )
+
+
 def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
     """The optional ``icons`` block: what it names must exist, without asking the network."""
     for game in sorted(catalog.games.values(), key=lambda game: game.id):
@@ -574,10 +654,15 @@ def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
         )
         _check_icons_unreal(result, block, file)
         _check_icons_server_pixels_decoder(result, block, file)
+        _check_icons_client_files(result, block, file)
+        _check_icons_connector_data(result, block, file)
         if not game.targets:
             # Trimmed test catalogs keep a game record and drop its targets; there is nothing to check against.
             continue
         data = block.get("data") or {}
+        if data.get("source") == "connector":
+            _check_client_builds_revisions(result, block, {target.revision for target in game.targets}, file)
+            continue
         problems = []
         default_platform = game.record.get("defaultPlatform")
         for target in game.targets:
@@ -600,14 +685,7 @@ def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
             "; ".join(problems) or f"the default target has the steam-depots input {data.get('input')!r}",
             file,
         )
-        revisions = {target.revision for target in game.targets}
-        stray = sorted(set((block.get("pixels") or {}).get("clientBuilds") or {}) - revisions)
-        result.add(
-            "icons-client-builds-revisions",
-            not stray,
-            f"icons.pixels.clientBuilds names revisions no target has: {stray}" if stray else "every revision exists",
-            file,
-        )
+        _check_client_builds_revisions(result, block, {target.revision for target in game.targets}, file)
 
 
 def _guarded(result: ValidationResult, check_id: str, file: str, run: Any) -> None:

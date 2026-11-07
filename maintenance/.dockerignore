@@ -7,3 +7,4 @@ Dockerfile
 .dockerignore
 decoders/**/bin
 decoders/**/obj
+decoders/**/node_modules

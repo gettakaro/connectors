@@ -10,8 +10,10 @@ from typing import TYPE_CHECKING, Any
 from .decoders.pz_texturepack import PixelSource
 
 if TYPE_CHECKING:
+    from .clr_session import ClrSession
     from .unity_session import UnitySession
     from .unreal_session import UnrealSession
+    from .xnb_session import XnbSession
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,9 @@ class MapContext:
     unreal: UnrealSession | None
     warn: Callable[[str], None]
     unity: UnitySession | None = None
+    xnb: XnbSession | None = None
+    clr: ClrSession | None = None
+    client_files: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,7 @@ def _zomboid_run(ctx: MapContext) -> MapResult:
 def registry() -> dict[str, Mapper]:
     from ..games.conan_exiles import icons as conan
     from ..games.seven_days import icons as seven_days
+    from ..games.terraria import icons as terraria
     from ..games.valheim import icons as valheim
     from ..games.zomboid import icons as zomboid
 
@@ -69,6 +75,7 @@ def registry() -> dict[str, Mapper]:
             "7d2d", seven_days.MAPPER_VERSION, seven_days.map_items, seven_days.CODES_DESCRIPTION, seven_days.EXCLUSIONS
         ),
         "conan-exiles": Mapper("conan-exiles", conan.MAPPER_VERSION, conan.map_items),
+        "terraria": Mapper("terraria", terraria.MAPPER_VERSION, terraria.map_items),
         "valheim": Mapper(
             "valheim", valheim.MAPPER_VERSION, valheim.map_items, valheim.CODES_DESCRIPTION, valheim.EXCLUSIONS
         ),

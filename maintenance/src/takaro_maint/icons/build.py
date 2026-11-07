@@ -78,6 +78,17 @@ _OPS = {
             },
             {
                 "type": "object",
+                "required": ["op", "frames"],
+                "additionalProperties": False,
+                "properties": {
+                    "op": {"const": "frame-crop"},
+                    "frames": {"type": "integer", "minimum": 1, "maximum": 64},
+                    "frame": {"type": "integer", "minimum": 0},
+                    "gap": {"type": "integer", "minimum": 0, "maximum": 16},
+                },
+            },
+            {
+                "type": "object",
                 "required": ["op", "rect", "rotation"],
                 "additionalProperties": False,
                 "dependentRequired": {"canvas": ["offset"], "offset": ["canvas"]},

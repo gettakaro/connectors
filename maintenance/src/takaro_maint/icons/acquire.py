@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import net, output
+from .. import net, output, paths
 from ..exit_codes import IntegrityError, UpstreamUnavailable, UsageError
 from ..steam import depotdownloader as dd
 from ..steam import vdf
@@ -172,19 +172,71 @@ def _keep_selected(directory: Path, selectors: list[str]) -> dict[str, dict[str,
 
 def check_client(client: Path | None, files: list[str]) -> Path:
     """The client directory, once every needed file is known to be in it."""
+    return check_client_selectors(client, files)[0]
+
+
+def _regular_files(client: Path) -> list[str]:
+    """Client-relative paths of the regular files below ``client``; no symlink is followed."""
+    found: list[str] = []
+    pending = [client]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    found.append(Path(entry.path).relative_to(client).as_posix())
+    return sorted(found)
+
+
+def check_client_selectors(client: Path | None, selectors: list[str]) -> tuple[Path, list[str]]:
+    """The client directory and the sorted client-relative files the selectors name.
+
+    An exact entry must be a file; a ``regex:`` entry (case-insensitive, like data selectors) must match at least one.
+    """
     if client is None:
         raise UsageError(
-            "--client DIR is required: the pixels come from an installed game client; it must hold " + ", ".join(files),
-            needs=files,
+            "--client DIR is required: the pixels come from an installed game client; it must hold "
+            + ", ".join(selectors),
+            needs=selectors,
         )
     if not client.is_dir():
         raise UpstreamUnavailable(f"--client {client} is not a directory", client=str(client))
-    missing = [name for name in files if not (client / name).is_file()]
+    exact = [name for name in selectors if not name.startswith("regex:")]
+    missing = [name for name in exact if not (client / name).is_file()]
     if missing:
         raise UpstreamUnavailable(
             f"--client {client} lacks {len(missing)} of the needed files: {', '.join(missing)}", missing=missing
         )
-    return client
+    patterns = [name for name in selectors if name.startswith("regex:")]
+    if not patterns:
+        return client, sorted(exact)
+    available = _regular_files(client)
+    matched = {name for name in exact}
+    for pattern in patterns:
+        hits = [name for name in available if selects(name, [pattern])]
+        if not hits:
+            raise UpstreamUnavailable(
+                f"--client {client} has no file matching {pattern}", missing=[pattern], client=str(client)
+            )
+        matched.update(hits)
+    return client, sorted(matched)
+
+
+def read_connector_data(route: IconsRoute, work: Path) -> DataTree:
+    """Copy the connector files of the route into ``work/data`` under their repo-relative names.
+
+    The tree hash is the same ``path<TAB>sha256`` listing hash ``fetch_data`` computes for a depot download.
+    """
+    root = work / "data"
+    rows: list[str] = []
+    for name in sorted(route.connector_files):
+        source = paths.repo_root() / paths.safe_relative(name, field="icons.data.files")
+        destination = root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        rows.append(f"{name}\t{net.hash_file(destination)['sha256']}\n")
+    return DataTree(root=root, files=len(rows), tree_sha256=hashlib.sha256("".join(rows).encode("utf-8")).hexdigest())
 
 
 def read_client_build(client: Path, app: int, depot: int) -> tuple[int | None, str | None]:

@@ -114,7 +114,11 @@ pixels, `pixels.decoder: "unreal"` with `pixels.access: "iostore-ranges"` (the l
 and only the `.ucas` byte ranges that hold the needed packages are copied). Unity games set
 `data.decoder: "unity"` (a container that reads asset bundles, no settings block) and server-depot `pixels` may
 carry the same `decoder: "unity"`; the `icons-server-pixels-decoder` check requires it to equal `data.decoder`,
-because both roles are decoded from the one mounted tree. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
+because both roles are decoded from the one mounted tree. `data` may instead be `{"source": "connector", "files":
+[...]}`: repo-relative files of the connector (its own item list) that supply the codes, with no depot involved. An
+optional `code` role (`{"source": "client", "decoder": "clr", "files": [...]}`) names game code read from the same client as
+the pixels; client `pixels.files` entries may be `regex:` patterns as well as exact paths; and `xnb`
+(`{"alpha": "straight"}`) accompanies `pixels.decoder: "xnb"`. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
 `catalog validate`, and it is not part of a target's fingerprint. Details and the commands that read it
 are in [maintenance/docs/icons.md](../maintenance/docs/icons.md). The block also makes `takaro-maint scan` add an Icon Pack
 rebuild line to that game's new-build issues.

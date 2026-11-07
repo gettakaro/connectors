@@ -13,7 +13,10 @@ Environment it reads:
                       files must hold. Unity requests use ``bundle-index``, ``monobehaviours:<class>`` and
                       ``<kind>:<cab>:<pathId>`` for ``sprite``, ``texture`` and ``sprite-image``; ``bundle-index`` and
                       ``monobehaviours`` refuse a ``files`` entry that is not a file under the /game mount, and
-                      the other kinds refuse a request without ``settings.cabIndex``
+                      the other kinds refuse a request without ``settings.cabIndex``. XNB requests use
+                      ``texture:<file>`` and CLR requests ``assembly-info:<file>``, ``callers:<member>`` and
+                      ``decompile-type:<type>``; both refuse a ``file`` that is not a regular file under the /game
+                      mount, which proves the client-file mirror is what is mounted
   FAKE_DECODER_STATE  directory with the image store (``images.json``), so ``build`` then ``image inspect``
                       round-trips and carries the label given to ``build``
   FAKE_DECODER_LOG    append one JSON line per invocation (its argv)
@@ -22,6 +25,7 @@ Environment it reads:
   FAKE_DECODER_DROP   an export id left out of the manifest
   FAKE_DECODER_ESCAPE an export id whose file is named ``../escape.png``
   FAKE_DECODER_PLANT  ``symlink`` or ``hardlink``: plant that kind of entry in /out, as a hostile decoder could
+                      (a hardlink to any file of the /game mount)
 """
 
 from __future__ import annotations
@@ -124,12 +128,20 @@ def _key(decoder: str, export: dict[str, Any]) -> str:
         if kind == "monobehaviours":
             return f"{kind}:{export['script']['class']}"
         return f"{kind}:{export['ref']['cab']}:{export['ref']['pathId']}"
+    if decoder == "xnb":
+        return f"{kind}:{export['file']}"
+    if decoder == "clr":
+        return f"{kind}:{export.get('member') or export.get('type') or export['file']}"
     return kind if kind == "asset-registry" else f"{kind}:{export['package']}"
 
 
 def _tool(request: dict[str, Any]) -> dict[str, Any]:
     if request["decoder"] == "unity":
         return {"name": "fake-unity-export", "version": "1", "unitypy": "0.0-fake"}
+    if request["decoder"] == "xnb":
+        return {"name": "fake-xnb-export", "version": "1", "xnb": "0.0-fake"}
+    if request["decoder"] == "clr":
+        return {"name": "fake-clr-export", "version": "1", "decompiler": "0.0-fake"}
     return {
         "name": "fake-ue-export",
         "version": "1",
@@ -145,6 +157,14 @@ def _unity_refusal(request: dict[str, Any], export: dict[str, Any], game: Path) 
                 return f"{export['id']}: {name} is not a file under the /game mount"
     elif not (request.get("settings") or {}).get("cabIndex"):
         return f"{export['id']}: a {export['kind']} export needs settings.cabIndex"
+    return None
+
+
+def _file_refusal(export: dict[str, Any], game: Path) -> str | None:
+    name = export["file"]
+    path = game / name
+    if path.is_symlink() or not path.is_file():
+        return f"{export['id']}: {name} is not a regular file under the /game mount"
     return None
 
 
@@ -170,7 +190,11 @@ def _run(argv: list[str]) -> int:
             results.append({"id": export_id, "ok": False, "errorKind": "failed", "error": "forced failure"})
             continue
         key = _key(request["decoder"], export)
-        refusal = _unity_refusal(request, export, game) if request["decoder"] == "unity" else None
+        refusal = None
+        if request["decoder"] == "unity":
+            refusal = _unity_refusal(request, export, game)
+        elif request["decoder"] in ("xnb", "clr"):
+            refusal = _file_refusal(export, game)
         if refusal:
             return _refuse(refusal)
         entry = index.get(key)
@@ -197,10 +221,15 @@ def _run(argv: list[str]) -> int:
     manifest = {"schemaVersion": 1, "tool": _tool(request), "results": results}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
     plant = os.environ.get("FAKE_DECODER_PLANT")
+    if plant:
+        (out / "json").mkdir(exist_ok=True)
     if plant == "symlink":
         (out / "json" / "planted.json").symlink_to("/etc/hostname")
     elif plant == "hardlink":
-        os.link(next(path for path in game.rglob("*.utoc")), out / "json" / "planted.json")
+        os.link(
+            next(path for path in sorted(game.rglob("*")) if path.is_file() and not path.is_symlink()),
+            out / "json" / "planted.json",
+        )
     return 0
 
 
