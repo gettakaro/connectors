@@ -7,6 +7,8 @@ the marker" and "a human deleted the block" are cheaper to state than to stage.
 
 from __future__ import annotations
 
+import dataclasses
+
 import test_scan_support as support
 from takaro_maint.providers.base import Observation
 from takaro_maint.tracker import identity, issues
@@ -166,3 +168,12 @@ def test_deleting_only_the_end_marker_replaces_the_rest_of_the_body() -> None:
     assert rewritten.count(issues.OWNED_BEGIN) == 1
     assert rewritten.count(issues.OWNED_END) == 1
     assert rewritten.startswith(identity.render_marker(MARKER))
+
+
+def test_an_icon_pack_adds_one_line_and_moves_nothing_else() -> None:
+    plain = issues.render_owned_block(support.golden_observation(), support.golden_targets())
+    pack = issues.IconPack("g", "p", True)
+    targets = dataclasses.replace(support.golden_targets(), icons=pack)
+    routed = issues.render_owned_block(support.golden_observation(), targets)
+
+    assert routed == plain.replace(issues.OWNED_END, issues.icon_rebuild_line(pack) + "\n" + issues.OWNED_END)
