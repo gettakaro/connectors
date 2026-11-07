@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.1](https://github.com/gettakaro/connectors/compare/rust-v0.5.0...rust-v0.5.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **rust:** target the Rust hotfix build 26498655 with Carbon 2.0.264 ([#832](https://github.com/gettakaro/connectors/issues/832)) ([143a728](https://github.com/gettakaro/connectors/commit/143a728848534ced74b20b9c07fe54c69144b32a))
+* **rust:** target the Rust update build 26431843 with Carbon 2.0.264 ([#804](https://github.com/gettakaro/connectors/issues/804)) ([dd1b6f5](https://github.com/gettakaro/connectors/commit/dd1b6f5a9d8c0dddc32ba2c22b9e716455b01fcd))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/rust-v0.4.0...rust-v0.5.0) (2026-10-30)
 
 
