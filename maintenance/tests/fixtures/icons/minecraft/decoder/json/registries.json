@@ -1,0 +1,131 @@
+{
+ "minecraft:block": {
+  "default": "minecraft:air",
+  "entries": {
+   "minecraft:air": {
+    "protocol_id": 0
+   },
+   "minecraft:fixture_block": {
+    "protocol_id": 2
+   },
+   "minecraft:fixture_flow_block": {
+    "protocol_id": 7
+   },
+   "minecraft:fixture_glass": {
+    "protocol_id": 6
+   },
+   "minecraft:fixture_grass": {
+    "protocol_id": 4
+   },
+   "minecraft:fixture_leaves": {
+    "protocol_id": 5
+   },
+   "minecraft:fixture_overflow": {
+    "protocol_id": 1
+   },
+   "minecraft:fixture_wall": {
+    "protocol_id": 3
+   }
+  },
+  "protocol_id": 1
+ },
+ "minecraft:item": {
+  "default": "minecraft:air",
+  "entries": {
+   "minecraft:air": {
+    "protocol_id": 0
+   },
+   "minecraft:fixture_bad_key": {
+    "protocol_id": 26
+   },
+   "minecraft:fixture_block": {
+    "protocol_id": 4
+   },
+   "minecraft:fixture_composite": {
+    "protocol_id": 19
+   },
+   "minecraft:fixture_condition": {
+    "protocol_id": 15
+   },
+   "minecraft:fixture_cycle": {
+    "protocol_id": 24
+   },
+   "minecraft:fixture_empty": {
+    "protocol_id": 21
+   },
+   "minecraft:fixture_facerot": {
+    "protocol_id": 9
+   },
+   "minecraft:fixture_flow_block": {
+    "protocol_id": 14
+   },
+   "minecraft:fixture_front": {
+    "protocol_id": 11
+   },
+   "minecraft:fixture_glass": {
+    "protocol_id": 12
+   },
+   "minecraft:fixture_grass": {
+    "protocol_id": 6
+   },
+   "minecraft:fixture_leather": {
+    "protocol_id": 2
+   },
+   "minecraft:fixture_leaves": {
+    "protocol_id": 7
+   },
+   "minecraft:fixture_missing_model": {
+    "protocol_id": 23
+   },
+   "minecraft:fixture_missing_texture": {
+    "protocol_id": 22
+   },
+   "minecraft:fixture_no_item_file": {
+    "protocol_id": 28
+   },
+   "minecraft:fixture_overflow": {
+    "protocol_id": 1
+   },
+   "minecraft:fixture_potion": {
+    "protocol_id": 3
+   },
+   "minecraft:fixture_range": {
+    "protocol_id": 18
+   },
+   "minecraft:fixture_rescale": {
+    "protocol_id": 8
+   },
+   "minecraft:fixture_select_gui": {
+    "protocol_id": 16
+   },
+   "minecraft:fixture_select_trim": {
+    "protocol_id": 17
+   },
+   "minecraft:fixture_shadedir": {
+    "protocol_id": 10
+   },
+   "minecraft:fixture_special": {
+    "protocol_id": 20
+   },
+   "minecraft:fixture_strip_item": {
+    "protocol_id": 13
+   },
+   "minecraft:fixture_tint_unknown": {
+    "protocol_id": 25
+   },
+   "minecraft:fixture_twin_a": {
+    "protocol_id": 29
+   },
+   "minecraft:fixture_twin_b": {
+    "protocol_id": 30
+   },
+   "minecraft:fixture_wall": {
+    "protocol_id": 5
+   },
+   "minecraft:fixture_wide_anim": {
+    "protocol_id": 27
+   }
+  },
+  "protocol_id": 7
+ }
+}

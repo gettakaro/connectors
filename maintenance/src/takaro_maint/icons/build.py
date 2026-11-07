@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .. import output
 from ..exit_codes import ConflictError, UpstreamUnavailable, UsageError
 from ..paths import safe_relative
-from . import contract, ops
+from . import block_model, contract, ops
 
 WEBP_SETTINGS: dict[str, Any] = {"lossless": True, "quality": 100, "method": 6, "exact": False}
 MEASURED_AGAINST = "game-data"
@@ -152,10 +152,20 @@ RECIPE_SCHEMA: dict[str, Any] = {
                         "minItems": 1,
                         "maxItems": MAX_LAYERS,
                         "items": {
-                            "type": "object",
-                            "required": ["image"],
-                            "additionalProperties": False,
-                            "properties": {"image": {"type": "string", "minLength": 1}, "ops": _OPS},
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "required": ["image"],
+                                    "additionalProperties": False,
+                                    "properties": {"image": {"type": "string", "minLength": 1}, "ops": _OPS},
+                                },
+                                {
+                                    "type": "object",
+                                    "required": ["model"],
+                                    "additionalProperties": False,
+                                    "properties": {"model": {"type": "string", "minLength": 1}, "ops": _OPS},
+                                },
+                            ]
                         },
                     },
                 },
@@ -180,6 +190,7 @@ RECIPE_SCHEMA: dict[str, Any] = {
 }
 
 _VALIDATOR = Draft202012Validator(RECIPE_SCHEMA)
+_MODEL_VALIDATOR = block_model.validator(_OPS)
 
 
 @dataclass(frozen=True)
@@ -254,6 +265,39 @@ def load_layer(png: Path, layer_ops: list[dict[str, Any]], *, code: str) -> Imag
     return image
 
 
+def load_model_layer(base_dir: Path, layer: dict[str, Any], *, code: str) -> Image.Image:
+    """A ``model`` layer: the block-model document rendered to 128x128 RGBA, then the layer's ops."""
+    document = _read_model(base_dir, layer["model"], code)
+    images = {
+        key: load_layer(_resolve_image(base_dir, texture["image"], code), texture.get("ops", []), code=code)
+        for key, texture in document["textures"].items()
+    }
+    rendered = block_model.render_model(document, images)
+    for operation in layer.get("ops", []):
+        rendered = ops.apply(operation, rendered, code=code)
+    return rendered
+
+
+def check_model(document: Any, *, code: str) -> None:
+    """Refuse a block-model document that breaks the model schema (exit 2)."""
+    block_model.check_document(document, _MODEL_VALIDATOR, code=code)
+
+
+def _read_model(base_dir: Path, model: str, code: str) -> dict[str, Any]:
+    """The validated model document of a layer, its texture files checked to exist (a missing file is exit 4)."""
+    path = base_dir / safe_relative(model, field=f"recipe {code!r} model")
+    if not path.is_file():
+        raise UpstreamUnavailable(f"recipe {code!r}: model file not found: {model}", recipe=code, model=model)
+    try:
+        document = json.loads(path.read_bytes())
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"recipe {code!r}: model {model} is not valid JSON: {exc}", recipe=code) from exc
+    check_model(document, code=code)
+    for image in block_model.referenced_images(document):
+        _resolve_image(base_dir, image, code)
+    return document
+
+
 def downscale(image: Image.Image) -> Image.Image:
     """The longest edge at most ``MAX_EDGE``; an image already that small is returned as it is."""
     width, height = image.size
@@ -272,11 +316,18 @@ def render_layer(png: Path, layer_ops: list[dict[str, Any]], *, code: str) -> Im
 def render_recipe(base_dir: Path, recipe: dict[str, Any]) -> Image.Image:
     """The recipe's layers, composited in order onto the first layer's canvas, then downscaled once."""
     code = recipe["code"]
-    layers = [
-        load_layer(_resolve_image(base_dir, layer["image"], code), layer.get("ops", []), code=code)
-        for layer in recipe["layers"]
-    ]
+    layers = [_load_recipe_layer(base_dir, layer, code) for layer in recipe["layers"]]
     return downscale(ops.composite_over(layers))
+
+
+def _load_recipe_layer(base_dir: Path, layer: dict[str, Any], code: str) -> Image.Image:
+    if "model" in layer:
+        return load_model_layer(base_dir, layer, code=code)
+    return load_layer(_resolve_image(base_dir, layer["image"], code), layer.get("ops", []), code=code)
+
+
+def _layer_source(layer: dict[str, Any]) -> str:
+    return str(layer["model"] if "model" in layer else layer["image"])
 
 
 def encode_webp(image: Image.Image) -> bytes:
@@ -315,7 +366,10 @@ def build_pack(
     primaries = {code: recipe for code, recipe in recipes.items() if code not in candidates}
     for code, recipe in primaries.items():
         for layer in recipe["layers"]:
-            _resolve_image(base_dir, layer["image"], code)
+            if "model" in layer:
+                _read_model(base_dir, layer["model"], code)
+            else:
+                _resolve_image(base_dir, layer["image"], code)
 
     out.mkdir(parents=True, exist_ok=True)
     pack_dir = out / "pack" / game
@@ -327,7 +381,7 @@ def build_pack(
 
     def render(item: tuple[str, dict[str, Any]]) -> tuple[str, Image.Image, bytes]:
         code, recipe = item
-        output.info(f"render {code} <- {Path(recipe['layers'][0]['image']).name}")
+        output.info(f"render {code} <- {Path(_layer_source(recipe['layers'][0])).name}")
         image = render_recipe(base_dir, recipe)
         return code, image, encode_webp(image)
 

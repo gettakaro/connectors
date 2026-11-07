@@ -93,5 +93,29 @@
     "takaro-neoforge-{version}.jar": "neoforge-1.21.11/server-mod",
     "takaro-paper-{version}.jar": "paper-1.21.11/server-mod"
   },
-  "devServers": {"composeFile": "minecraft.yml"}
+  "devServers": {"composeFile": "minecraft.yml"},
+  "icons": {
+    "game": "minecraft",
+    "mapper": "minecraft",
+    "data": {
+      "source": "public-download",
+      "input": "game",
+      "artifact": "server",
+      "decoder": "minecraft-datagen",
+      "reports": ["registries.json"]
+    },
+    "pixels": {
+      "source": "public-download",
+      "artifact": "client",
+      "downloads": {
+        "26.3": {
+          "source": "mojang-data",
+          "path": "/v1/objects/e877b6a07acd633fb3bb475002175cec036e7b87/client.jar",
+          "sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+          "size": 41483720
+        }
+      }
+    },
+    "secrets": []
+  }
 }

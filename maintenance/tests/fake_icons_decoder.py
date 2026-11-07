@@ -16,7 +16,8 @@ Environment it reads:
                       the other kinds refuse a request without ``settings.cabIndex``. XNB requests use
                       ``texture:<file>`` and CLR requests ``assembly-info:<file>``, ``callers:<member>`` and
                       ``decompile-type:<type>``; both refuse a ``file`` that is not a regular file under the /game
-                      mount, which proves the client-file mirror is what is mounted
+                      mount, which proves the client-file mirror is what is mounted. Minecraft data-generator requests
+                      use ``datagen-report:<report>`` and refuse a ``file`` that is not a regular file under /game
   FAKE_DECODER_STATE  directory with the image store (``images.json``), so ``build`` then ``image inspect``
                       round-trips and carries the label given to ``build``
   FAKE_DECODER_LOG    append one JSON line per invocation (its argv)
@@ -132,6 +133,8 @@ def _key(decoder: str, export: dict[str, Any]) -> str:
         return f"{kind}:{export['file']}"
     if decoder == "clr":
         return f"{kind}:{export.get('member') or export.get('type') or export['file']}"
+    if decoder == "minecraft-datagen":
+        return f"{kind}:{export['report']}"
     return kind if kind == "asset-registry" else f"{kind}:{export['package']}"
 
 
@@ -142,6 +145,8 @@ def _tool(request: dict[str, Any]) -> dict[str, Any]:
         return {"name": "fake-xnb-export", "version": "1", "xnb": "0.0-fake"}
     if request["decoder"] == "clr":
         return {"name": "fake-clr-export", "version": "1", "decompiler": "0.0-fake"}
+    if request["decoder"] == "minecraft-datagen":
+        return {"name": "fake-minecraft-datagen", "version": "1", "java": "0-fake"}
     return {
         "name": "fake-ue-export",
         "version": "1",
@@ -193,7 +198,7 @@ def _run(argv: list[str]) -> int:
         refusal = None
         if request["decoder"] == "unity":
             refusal = _unity_refusal(request, export, game)
-        elif request["decoder"] in ("xnb", "clr"):
+        elif request["decoder"] in ("xnb", "clr", "minecraft-datagen"):
             refusal = _file_refusal(export, game)
         if refusal:
             return _refuse(refusal)

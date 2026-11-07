@@ -631,6 +631,48 @@ def _check_client_builds_revisions(
     )
 
 
+def _check_icons_public(result: ValidationResult, game: Any, block: dict[str, Any], file: str) -> None:
+    """A public-download route: the pinned revisions are targets with a mojang-version input and valid client pins."""
+    data, pixels = block.get("data") or {}, block.get("pixels") or {}
+    downloads: dict[str, Any] = pixels.get("downloads") or {}
+    targets = {target.revision: target for target in game.targets}
+    pinned = [target for revision, target in targets.items() if revision in downloads]
+    wrong = [
+        target.id
+        for target in pinned
+        if (target.record["inputs"].get(data.get("input")) or {}).get("kind") != "mojang-version"
+    ]
+    result.add(
+        "icons-data-input",
+        bool(pinned) and not wrong,
+        f"targets {wrong} have no mojang-version input named {data.get('input')!r}"
+        if wrong
+        else "no target has a revision with a client pin"
+        if not pinned
+        else f"every pinned target has the mojang-version input {data.get('input')!r}",
+        file,
+    )
+    stray = sorted(set(downloads) - set(targets))
+    result.add(
+        "icons-public-download-revisions",
+        not stray,
+        f"icons.pixels.downloads names revisions no target has: {stray}" if stray else "every revision exists",
+        file,
+    )
+    problems = []
+    for revision, pin in sorted(downloads.items()):
+        if pin.get("source") not in game.record.get("sources", {}):
+            problems.append(f"{revision}: source {pin.get('source')!r} is not a source of the game record")
+        if pin.get("path") != f"/v1/objects/{pin.get('sha1')}/client.jar":
+            problems.append(f"{revision}: path {pin.get('path')!r} must be /v1/objects/<sha1>/client.jar for its sha1")
+    result.add(
+        "icons-public-download-pins",
+        not problems,
+        "; ".join(problems) or "every client pin names a known source and a path derived from its sha1",
+        file,
+    )
+
+
 def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
     """The optional ``icons`` block: what it names must exist, without asking the network."""
     for game in sorted(catalog.games.values(), key=lambda game: game.id):
@@ -656,10 +698,20 @@ def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
         _check_icons_server_pixels_decoder(result, block, file)
         _check_icons_client_files(result, block, file)
         _check_icons_connector_data(result, block, file)
+        data = block.get("data") or {}
+        result.add(
+            "icons-public-download-roles",
+            (data.get("source") == "public-download")
+            == ((block.get("pixels") or {}).get("source") == "public-download"),
+            "icons.data.source and icons.pixels.source are 'public-download' together, and only together",
+            file,
+        )
         if not game.targets:
             # Trimmed test catalogs keep a game record and drop its targets; there is nothing to check against.
             continue
-        data = block.get("data") or {}
+        if data.get("source") == "public-download":
+            _check_icons_public(result, game, block, file)
+            continue
         if data.get("source") == "connector":
             _check_client_builds_revisions(result, block, {target.revision for target in game.targets}, file)
             continue

@@ -27,6 +27,16 @@ class MapResult:
 
 
 @dataclass(frozen=True)
+class MinecraftInputs:
+    """What the Minecraft mapper reads: the client jar, the release, the server jar's sha1 and the data reports."""
+
+    client_jar: Path
+    version: str
+    server_sha1: str
+    reports: dict[str, Path]
+
+
+@dataclass(frozen=True)
 class MapContext:
     """Everything a mapper may use: the server data, the pixel source of its decoder family and a scratch directory.
 
@@ -44,6 +54,7 @@ class MapContext:
     unity: UnitySession | None = None
     xnb: XnbSession | None = None
     clr: ClrSession | None = None
+    minecraft: MinecraftInputs | None = None
     client_files: list[str] = field(default_factory=list)
 
 
@@ -65,6 +76,7 @@ def _zomboid_run(ctx: MapContext) -> MapResult:
 
 def registry() -> dict[str, Mapper]:
     from ..games.conan_exiles import icons as conan
+    from ..games.minecraft import icons as minecraft
     from ..games.seven_days import icons as seven_days
     from ..games.terraria import icons as terraria
     from ..games.valheim import icons as valheim
@@ -75,6 +87,7 @@ def registry() -> dict[str, Mapper]:
             "7d2d", seven_days.MAPPER_VERSION, seven_days.map_items, seven_days.CODES_DESCRIPTION, seven_days.EXCLUSIONS
         ),
         "conan-exiles": Mapper("conan-exiles", conan.MAPPER_VERSION, conan.map_items),
+        "minecraft": Mapper("minecraft", minecraft.MAPPER_VERSION, minecraft.map_items),
         "terraria": Mapper("terraria", terraria.MAPPER_VERSION, terraria.map_items),
         "valheim": Mapper(
             "valheim", valheim.MAPPER_VERSION, valheim.map_items, valheim.CODES_DESCRIPTION, valheim.EXCLUSIONS

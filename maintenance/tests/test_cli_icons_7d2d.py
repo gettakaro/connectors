@@ -195,8 +195,8 @@ def test_inputs_lists_server_depot_pixels_without_any_network(run: Any, repo: Pa
 
 
 def test_inputs_refuses_a_game_without_an_icons_block(run: Any) -> None:
-    code, _, stderr = run("icons", "inputs", "--game", "minecraft")
-    assert code == 2 and "game 'minecraft' has no icons block" in stderr
+    code, _, stderr = run("icons", "inputs", "--game", "rust")
+    assert code == 2 and "game 'rust' has no icons block" in stderr
 
 
 @pytest.mark.parametrize(

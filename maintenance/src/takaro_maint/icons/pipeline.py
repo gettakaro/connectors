@@ -88,6 +88,10 @@ def build_from_catalog(
         from .connector_pipeline import build_from_connector
 
         return build_from_connector(route, mapper, client, out)
+    if route.data_source == "public-download":
+        from .public_pipeline import build_from_public
+
+        return build_from_public(route, mapper, client, out)
     settings: unreal_decoder.UnrealSettings | None = None
     if route.uses_unreal:
         settings = unreal_decoder.UnrealSettings.of(route.block)

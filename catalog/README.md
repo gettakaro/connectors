@@ -118,7 +118,11 @@ because both roles are decoded from the one mounted tree. `data` may instead be 
 [...]}`: repo-relative files of the connector (its own item list) that supply the codes, with no depot involved. An
 optional `code` role (`{"source": "client", "decoder": "clr", "files": [...]}`) names game code read from the same client as
 the pixels; client `pixels.files` entries may be `regex:` patterns as well as exact paths; and `xnb`
-(`{"alpha": "straight"}`) accompanies `pixels.decoder: "xnb"`. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
+(`{"alpha": "straight"}`) accompanies `pixels.decoder: "xnb"`. `data` and `pixels` may also be
+`{"source": "public-download", ...}`: the item registry comes from the data reports of the target's pinned Mojang server jar
+(`data.input` names its `mojang-version` input; the decoder `minecraft-datagen` runs the jar's data generator in a
+container) and the pixels from a client jar pinned per target revision in `pixels.downloads` (`source`, `path`, `sha1`,
+`size`), which the version manifest must vouch for. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
 `catalog validate`, and it is not part of a target's fingerprint. Details and the commands that read it
 are in [maintenance/docs/icons.md](../maintenance/docs/icons.md). The block also makes `takaro-maint scan` add an Icon Pack
 rebuild line to that game's new-build issues.
