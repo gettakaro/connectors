@@ -7,9 +7,13 @@ files: it answers from recorded outputs, and it refuses (exit 99) any run that i
 the contract demands, so a regression in the argument list fails a test instead of passing silently.
 
 Environment it reads:
-  FAKE_DECODER_ROOT   recorded outputs: ``index.json`` maps ``<kind>:<package>`` (``asset-registry`` for the
-                      registry) to ``{file, meta, error, errorKind, requires}``; ``requires`` lists
-                      ``{file, offset, length, sha256}`` ranges the mounted game files must hold
+  FAKE_DECODER_ROOT   recorded outputs: ``index.json`` maps a key to ``{file, meta, error, errorKind, requires}``.
+                      Unreal requests (``request["decoder"] == "unreal"``) use ``<kind>:<package>`` (``asset-registry``
+                      for the registry); ``requires`` lists ``{file, offset, length, sha256}`` ranges the mounted game
+                      files must hold. Unity requests use ``bundle-index``, ``monobehaviours:<class>`` and
+                      ``<kind>:<cab>:<pathId>`` for ``sprite``, ``texture`` and ``sprite-image``; ``bundle-index`` and
+                      ``monobehaviours`` refuse a ``files`` entry that is not a file under the /game mount, and
+                      the other kinds refuse a request without ``settings.cabIndex``
   FAKE_DECODER_STATE  directory with the image store (``images.json``), so ``build`` then ``image inspect``
                       round-trips and carries the label given to ``build``
   FAKE_DECODER_LOG    append one JSON line per invocation (its argv)
@@ -112,6 +116,38 @@ def _host_of(argv: list[str], container: str) -> Path:
     raise SystemExit(_refuse(f"no mount for {container}"))
 
 
+def _key(decoder: str, export: dict[str, Any]) -> str:
+    kind = export["kind"]
+    if decoder == "unity":
+        if kind == "bundle-index":
+            return kind
+        if kind == "monobehaviours":
+            return f"{kind}:{export['script']['class']}"
+        return f"{kind}:{export['ref']['cab']}:{export['ref']['pathId']}"
+    return kind if kind == "asset-registry" else f"{kind}:{export['package']}"
+
+
+def _tool(request: dict[str, Any]) -> dict[str, Any]:
+    if request["decoder"] == "unity":
+        return {"name": "fake-unity-export", "version": "1", "unitypy": "0.0-fake"}
+    return {
+        "name": "fake-ue-export",
+        "version": "1",
+        "cue4parse": "0.0-fake",
+        "engine": request["settings"]["engine"],
+    }
+
+
+def _unity_refusal(request: dict[str, Any], export: dict[str, Any], game: Path) -> str | None:
+    if export["kind"] in ("bundle-index", "monobehaviours"):
+        for name in export["files"]:
+            if not (game / name).is_file():
+                return f"{export['id']}: {name} is not a file under the /game mount"
+    elif not (request.get("settings") or {}).get("cabIndex"):
+        return f"{export['id']}: a {export['kind']} export needs settings.cabIndex"
+    return None
+
+
 def _run(argv: list[str]) -> int:
     problem = _hardened(argv)
     if problem:
@@ -133,7 +169,10 @@ def _run(argv: list[str]) -> int:
         if export_id in failing:
             results.append({"id": export_id, "ok": False, "errorKind": "failed", "error": "forced failure"})
             continue
-        key = export["kind"] if export["kind"] == "asset-registry" else f"{export['kind']}:{export['package']}"
+        key = _key(request["decoder"], export)
+        refusal = _unity_refusal(request, export, game) if request["decoder"] == "unity" else None
+        if refusal:
+            return _refuse(refusal)
         entry = index.get(key)
         if entry is None:
             results.append({"id": export_id, "ok": False, "errorKind": "not-found", "error": key})
@@ -155,16 +194,7 @@ def _run(argv: list[str]) -> int:
         if export_id == os.environ.get("FAKE_DECODER_ESCAPE"):
             relative = "../escape.png"
         results.append({"id": export_id, "ok": True, "file": relative, "meta": entry.get("meta", {})})
-    manifest = {
-        "schemaVersion": 1,
-        "tool": {
-            "name": "fake-ue-export",
-            "version": "1",
-            "cue4parse": "0.0-fake",
-            "engine": request["settings"]["engine"],
-        },
-        "results": results,
-    }
+    manifest = {"schemaVersion": 1, "tool": _tool(request), "results": results}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
     plant = os.environ.get("FAKE_DECODER_PLANT")
     if plant == "symlink":

@@ -1,0 +1,213 @@
+{
+  "bundle-index": {
+    "file": "json/bundle-index.json"
+  },
+  "monobehaviours:ZNetScene": {
+    "file": "json/znetscene.json"
+  },
+  "monobehaviours:ItemDrop": {
+    "file": "json/itemdrop.json"
+  },
+  "sprite:cab-c:101": {
+    "file": "json/sprite-101.json"
+  },
+  "sprite:cab-c:102": {
+    "file": "json/sprite-102.json"
+  },
+  "sprite:cab-c:103": {
+    "file": "json/sprite-103.json"
+  },
+  "sprite:cab-c:104": {
+    "file": "json/sprite-104.json"
+  },
+  "sprite:cab-c:105": {
+    "file": "json/sprite-105.json"
+  },
+  "sprite:cab-c:106": {
+    "file": "json/sprite-106.json"
+  },
+  "sprite:cab-c:107": {
+    "file": "json/sprite-107.json"
+  },
+  "sprite:cab-c:108": {
+    "file": "json/sprite-108.json"
+  },
+  "sprite:cab-c:109": {
+    "file": "json/sprite-109.json"
+  },
+  "sprite:cab-c:110": {
+    "file": "json/sprite-110.json"
+  },
+  "sprite:cab-c:111": {
+    "file": "json/sprite-111.json"
+  },
+  "sprite:cab-c:112": {
+    "file": "json/sprite-112.json"
+  },
+  "sprite:cab-c:113": {
+    "file": "json/sprite-113.json"
+  },
+  "sprite:cab-c:114": {
+    "file": "json/sprite-114.json"
+  },
+  "sprite:cab-c:115": {
+    "file": "json/sprite-115.json"
+  },
+  "sprite:cab-c:116": {
+    "file": "json/sprite-116.json"
+  },
+  "sprite:cab-c:117": {
+    "file": "json/sprite-117.json"
+  },
+  "sprite:cab-c:118": {
+    "file": "json/sprite-118.json"
+  },
+  "sprite:cab-c:119": {
+    "file": "json/sprite-119.json"
+  },
+  "sprite:cab-c:120": {
+    "file": "json/sprite-120.json"
+  },
+  "sprite:cab-c:121": {
+    "file": "json/sprite-121.json"
+  },
+  "texture:cab-d:400": {
+    "file": "png/atlas.png",
+    "meta": {
+      "width": 64,
+      "height": 48,
+      "format": "RGBA32",
+      "name": "SynthAtlas"
+    }
+  },
+  "texture:cab-d:402": {
+    "error": "texture format SYNTH_UNSUPPORTED is not decodable",
+    "errorKind": "unsupported-format"
+  },
+  "sprite-image:cab-c:101": {
+    "file": "png/reference-101.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:102": {
+    "file": "png/reference-102.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:103": {
+    "file": "png/reference-103.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:104": {
+    "file": "png/reference-104.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:105": {
+    "file": "png/reference-105.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:106": {
+    "file": "png/reference-106.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:107": {
+    "file": "png/reference-107.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:108": {
+    "file": "png/reference-108.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:109": {
+    "file": "png/reference-109.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:110": {
+    "file": "png/reference-110.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:111": {
+    "file": "png/reference-111.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:112": {
+    "file": "png/reference-112.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:113": {
+    "file": "png/reference-113.png",
+    "meta": {
+      "width": 16,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:114": {
+    "file": "png/reference-114.png",
+    "meta": {
+      "width": 16,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:115": {
+    "file": "png/reference-115.png",
+    "meta": {
+      "width": 8,
+      "height": 16
+    }
+  },
+  "sprite-image:cab-c:116": {
+    "file": "png/reference-116.png",
+    "meta": {
+      "width": 8,
+      "height": 16
+    }
+  },
+  "sprite-image:cab-c:117": {
+    "file": "png/reference-117.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  },
+  "sprite-image:cab-c:118": {
+    "file": "png/reference-118.png",
+    "meta": {
+      "width": 8,
+      "height": 8
+    }
+  }
+}

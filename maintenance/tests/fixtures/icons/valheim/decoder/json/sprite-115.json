@@ -1,0 +1,28 @@
+{
+  "name": "turn-180",
+  "rect": [
+    0,
+    0,
+    8,
+    16
+  ],
+  "textureRect": [
+    32,
+    0,
+    8,
+    16
+  ],
+  "textureRectOffset": [
+    0,
+    0
+  ],
+  "packed": true,
+  "packingMode": "rectangle",
+  "packingRotation": "rotate-180",
+  "texture": {
+    "cab": "cab-d",
+    "pathId": 400
+  },
+  "alphaTexture": null,
+  "atlas": null
+}

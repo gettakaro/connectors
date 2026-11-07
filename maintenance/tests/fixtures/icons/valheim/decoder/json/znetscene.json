@@ -1,0 +1,115 @@
+[
+  {
+    "bundle": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0001",
+    "object": {
+      "cab": "cab-a",
+      "pathId": 1
+    },
+    "gameObject": {
+      "cab": "cab-a",
+      "pathId": 2,
+      "name": "SynthScene"
+    },
+    "fields": {
+      "m_prefabs": [
+        {
+          "cab": "cab-b",
+          "pathId": 10
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 11
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 12
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 13
+        },
+        null,
+        {
+          "cab": "cab-b",
+          "pathId": 14
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 15
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 16
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 17
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 18
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 19
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 20
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 21
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 22
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 23
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 24
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 25
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 26
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 27
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 28
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 29
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 30
+        },
+        {
+          "cab": "cab-b",
+          "pathId": 31
+        },
+        {
+          "cab": "cab-c",
+          "pathId": 900
+        },
+        {
+          "cab": "cab-y",
+          "pathId": 5
+        }
+      ]
+    }
+  }
+]

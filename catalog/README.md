@@ -111,7 +111,10 @@ and, per revision, the known client build ids; or, with `source: "server-depot"`
 build reads. Games whose files are Unreal containers add `unreal` (`engine`, the CUE4Parse `EGame` value, and
 `aesKeyEnv`, the name of the variable holding the AES key or `null`), `data.decoder: "unreal"` and, for the client
 pixels, `pixels.decoder: "unreal"` with `pixels.access: "iostore-ranges"` (the listed `.utoc` files are read whole
-and only the `.ucas` byte ranges that hold the needed packages are copied). It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
+and only the `.ucas` byte ranges that hold the needed packages are copied). Unity games set
+`data.decoder: "unity"` (a container that reads asset bundles, no settings block) and server-depot `pixels` may
+carry the same `decoder: "unity"`; the `icons-server-pixels-decoder` check requires it to equal `data.decoder`,
+because both roles are decoded from the one mounted tree. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
 `catalog validate`, and it is not part of a target's fingerprint. Details and the commands that read it
 are in [maintenance/docs/icons.md](../maintenance/docs/icons.md). The block also makes `takaro-maint scan` add an Icon Pack
 rebuild line to that game's new-build issues.

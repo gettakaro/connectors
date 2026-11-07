@@ -39,7 +39,7 @@ from ...paths import safe_relative
 DECODERS_DIR = Path("maintenance") / "decoders"
 CONTEXT_LABEL = "org.takaro.icons.decoder.context"
 TAG_PREFIX = "takaro-icons-decoder-"
-EXCLUDED_DIRECTORIES = {"bin", "obj"}
+EXCLUDED_DIRECTORIES = {"bin", "obj", "__pycache__"}
 MAX_EDGE = 4096
 MAX_JSON_BYTES = 256 * 1024 * 1024
 STDERR_TAIL_LINES = 40

@@ -76,6 +76,39 @@ _OPS = {
                     "color": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                 },
             },
+            {
+                "type": "object",
+                "required": ["op", "rect", "rotation"],
+                "additionalProperties": False,
+                "dependentRequired": {"canvas": ["offset"], "offset": ["canvas"]},
+                "properties": {
+                    "op": {"const": "atlas-cut"},
+                    "rect": {
+                        "type": "array",
+                        "minItems": 4,
+                        "maxItems": 4,
+                        "prefixItems": [
+                            {"type": "number", "minimum": 0},
+                            {"type": "number", "minimum": 0},
+                            {"type": "number", "exclusiveMinimum": 0},
+                            {"type": "number", "exclusiveMinimum": 0},
+                        ],
+                    },
+                    "rotation": {"enum": list(ops.PACKING_ROTATIONS)},
+                    "canvas": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": {"type": "number", "exclusiveMinimum": 0},
+                    },
+                    "offset": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": {"type": "number", "minimum": 0},
+                    },
+                },
+            },
         ]
     },
 }

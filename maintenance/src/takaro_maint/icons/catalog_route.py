@@ -66,6 +66,16 @@ class IconsRoute:
         return "unreal" in self.block
 
     @property
+    def decoder(self) -> str | None:
+        """The decoder container that reads the data files (``unreal``, ``unity``), else ``None``."""
+        decoder = self.block["data"].get("decoder")
+        return str(decoder) if decoder is not None else None
+
+    @property
+    def uses_unity(self) -> bool:
+        return self.decoder == "unity"
+
+    @property
     def pixel_selectors(self) -> list[str]:
         """The server-depot pixel selectors; empty for a client route."""
         if self.pixel_source != "server-depot":
@@ -140,7 +150,7 @@ def filtered_cache_complete(directory: Path) -> bool:
 def _pixels_input(route: IconsRoute, cache: Path, cache_paths: dict[str, Path], cached: bool) -> dict[str, Any]:
     pixels = route.block["pixels"]
     if route.pixel_source == "server-depot":
-        return {
+        server_pixels: dict[str, Any] = {
             "role": "pixels",
             "source": "server-depot",
             "depots": route.depots,
@@ -148,6 +158,9 @@ def _pixels_input(route: IconsRoute, cache: Path, cache_paths: dict[str, Path], 
             "cache": {depot: str(path) for depot, path in cache_paths.items()},
             "cached": cached,
         }
+        if "decoder" in pixels:
+            server_pixels["decoder"] = pixels["decoder"]
+        return server_pixels
     return {
         "role": "pixels",
         "source": "client",
@@ -190,6 +203,11 @@ def inputs_document(route: IconsRoute) -> dict[str, Any]:
         ],
         "env": [{"name": name, "set": bool(os.environ.get(name))} for name in route.secrets],
     }
+    if route.uses_unity:
+        from .decoders import container
+        from .decoders import unity as unity_decoder
+
+        document["unity"] = {"decoder": container.inspect_state(unity_decoder.DECODER_NAME)}
     if route.uses_unreal:
         document["unreal"] = _unreal_inputs(route, cache)
         pixels_input = document["inputs"][1]

@@ -39,6 +39,25 @@ def test_packages_are_restored_from_the_committed_lock() -> None:
             assert "packages.lock.json" in text
 
 
+def test_python_packages_are_installed_from_a_hash_locked_file() -> None:
+    locked = [dockerfile for dockerfile in DOCKERFILES if (dockerfile.parent / "requirements.lock").is_file()]
+    assert locked
+    for dockerfile in locked:
+        text = dockerfile.read_text()
+        for flag in ("--require-hashes", "--no-deps", "--only-binary=:all:", "requirements.lock"):
+            assert flag in text, f"{dockerfile}: {flag}"
+        requirements = [
+            entry
+            for entry in (dockerfile.parent / "requirements.lock").read_text().replace("\\\n", " ").splitlines()
+            if entry.strip() and not entry.lstrip().startswith("#")
+        ]
+        assert requirements
+        for entry in requirements:
+            assert re.match(
+                r"^[A-Za-z0-9_.-]+==[0-9][A-Za-z0-9_.!+-]*\s+(--hash=sha256:[0-9a-f]{64}\s*)+$", entry.strip()
+            ), entry
+
+
 def test_nothing_is_downloaded_without_a_hash_check() -> None:
     for dockerfile in DOCKERFILES:
         for line in _logical_lines(dockerfile.read_text()):
