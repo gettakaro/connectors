@@ -7,15 +7,13 @@ data-generator container; the client jar is read in-process.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from .. import net, output, paths
 from ..exit_codes import UsageError
-from . import build, mappers, provenance, public_download
+from . import mappers, provenance, public_download, route_common
 from .catalog_route import IconsRoute
 from .datagen_session import DatagenSession
 from .decoders import container
@@ -55,10 +53,7 @@ def build_from_public(route: IconsRoute, mapper: mappers.Mapper, client: Path | 
                 reports=reports,
             ),
         )
-        mapped = mapper.run(context)
-        document = {**mapped.document, "game": route.pack_game}
-        build.validate_recipes(document)
-        recipes_bytes = (json.dumps(document, indent=2) + "\n").encode("utf-8")
+        mapped, document, recipes_bytes = route_common.map_recipes(route, mapper, context)
         decoders = [
             {"name": image.name, "imageId": image.id, "contextSha256": image.context_sha256, "tool": session.tool}
         ]
@@ -89,27 +84,9 @@ def build_from_public(route: IconsRoute, mapper: mappers.Mapper, client: Path | 
             ),
             "warnings": [],
         }
-        result = build.build_pack(
-            document,
-            work / "textures-root",
-            out,
-            recipes_sha256=hashlib.sha256(recipes_bytes).hexdigest(),
-            provenance=record,
-        )
-    (out / "recipes.json").write_bytes(recipes_bytes)
-    written = {**result.reports, "recipes": out / "recipes.json"}
+        result, reports = route_common.write_pack(document, recipes_bytes, work, out, record)
     return {
-        "game": result.game,
-        "catalogGame": route.catalog_game,
-        "target": route.target.id,
-        "fingerprint": route.target.fingerprint,
-        "pack": str(result.pack_dir.resolve()),
-        "index": str(result.index_path.resolve()),
-        "codes": result.codes,
-        "objects": result.objects,
-        "coverage": result.coverage,
-        "reports": {name: str(path.resolve()) for name, path in written.items()},
-        "encoder": result.encoder,
+        **route_common.report_head(route, result, reports),
         "inputs": {
             "data": {
                 "source": "public-download",

@@ -6,21 +6,21 @@ directory, the target, the icons block, the mapper and the client files are all 
 
 from __future__ import annotations
 
-import hashlib
 import json
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .. import output, paths
 from ..catalog import load as load_catalog
 from ..exit_codes import UsageError
-from . import acquire, build, client_ranges, mappers, provenance
+from . import acquire, client_ranges, mappers, provenance, route_common
 from .catalog_route import IconsRoute, route_for
+from .connector_pipeline import build_from_connector
 from .decoders import container
 from .decoders import unity as unity_decoder
 from .decoders import unreal as unreal_decoder
+from .public_pipeline import build_from_public
 from .unity_session import UnitySession
 from .unreal_session import UnrealSession
 
@@ -30,29 +30,7 @@ CODES_FROM = (
 )
 
 
-@dataclass(frozen=True)
-class ClientSide:
-    """The installed client a client-sourced route reads its pixels from, and how it compares with the target."""
-
-    directory: Path
-    buildid: int | None
-    manifest: str | None
-    status: str
-    expected: list[int]
-    warnings: list[str]
-
-    def record(self, route: IconsRoute) -> dict[str, Any]:
-        return {
-            "app": route.block["pixels"]["app"],
-            "depot": route.block["pixels"]["depot"],
-            "buildid": self.buildid,
-            "manifest": self.manifest,
-            "status": self.status,
-            "expected": self.expected,
-        }
-
-
-def _client_side(route: IconsRoute, client: Path | None) -> ClientSide | None:
+def _client_side(route: IconsRoute, client: Path | None) -> route_common.ClientSide | None:
     """Check the client before anything is downloaded; ``None`` for a route whose pixels ride the server depot."""
     if route.pixel_source == "server-depot":
         if client is not None:
@@ -62,19 +40,7 @@ def _client_side(route: IconsRoute, client: Path | None) -> ClientSide | None:
         directory = client_ranges.check(client, route.pixel_files)
     else:
         directory = acquire.check_client(client, route.pixel_files)
-    return client_build_side(route, directory)
-
-
-def client_build_side(route: IconsRoute, directory: Path) -> ClientSide:
-    """How the installed client's build compares with the target's release; warns when they differ."""
-    buildid, manifest = acquire.read_client_build(
-        directory, route.block["pixels"]["app"], route.block["pixels"]["depot"]
-    )
-    status, expected, warning = provenance.client_status(buildid, route.target.revision, route.client_builds)
-    warnings = [warning] if warning else []
-    for message in warnings:
-        output.warn(message)
-    return ClientSide(directory, buildid, manifest, status, expected, warnings)
+    return route_common.client_build_side(route, directory)
 
 
 def build_from_catalog(
@@ -85,12 +51,8 @@ def build_from_catalog(
     route = route_for(load_catalog(), game, target_id, platform)
     mapper = mappers.registry()[route.mapper]
     if route.data_source == "connector":
-        from .connector_pipeline import build_from_connector
-
         return build_from_connector(route, mapper, client, out)
     if route.data_source == "public-download":
-        from .public_pipeline import build_from_public
-
         return build_from_public(route, mapper, client, out)
     settings: unreal_decoder.UnrealSettings | None = None
     if route.uses_unreal:
@@ -159,40 +121,18 @@ def build_from_catalog(
             warn=output.warn,
             unity=unity_session,
         )
-        mapped = mapper.run(context)
-        document = {**mapped.document, "game": route.pack_game}
-        build.validate_recipes(document)
-        recipes_bytes = (json.dumps(document, indent=2) + "\n").encode("utf-8")
+        mapped, document, recipes_bytes = route_common.map_recipes(route, mapper, context)
         record = _provenance(route, data, mapped, mapper, client_side, session, image, oodle_sha256, settings)
         if unity_session is not None and image is not None:
             _add_unity_pixels(record, route, unity_session, image, mapped)
         record["warnings"] = warnings
-        result = build.build_pack(
-            document,
-            work / "textures-root",
-            out,
-            recipes_sha256=hashlib.sha256(recipes_bytes).hexdigest(),
-            provenance=record,
-        )
-    (out / "recipes.json").write_bytes(recipes_bytes)
-
-    reports = {**result.reports, "recipes": out / "recipes.json"}
+        result, reports = route_common.write_pack(document, recipes_bytes, work, out, record)
     if session is not None and session.mirror is not None:
         ranges_path = out / "client-ranges.json"
         ranges_path.write_text(json.dumps(session.mirror.ranges, indent=2) + "\n", encoding="utf-8")
         reports["clientRanges"] = ranges_path
     report: dict[str, Any] = {
-        "game": result.game,
-        "catalogGame": route.catalog_game,
-        "target": route.target.id,
-        "fingerprint": route.target.fingerprint,
-        "pack": str(result.pack_dir.resolve()),
-        "index": str(result.index_path.resolve()),
-        "codes": result.codes,
-        "objects": result.objects,
-        "coverage": result.coverage,
-        "reports": {name: str(path.resolve()) for name, path in reports.items()},
-        "encoder": result.encoder,
+        **route_common.report_head(route, result, reports),
         "inputs": {
             "data": {
                 "buildid": route.steam.buildid,
@@ -243,7 +183,7 @@ def _provenance(
     data: acquire.DataTree,
     mapped: mappers.MapResult,
     mapper: mappers.Mapper,
-    client_side: ClientSide | None,
+    client_side: route_common.ClientSide | None,
     session: UnrealSession | None,
     image: container.DecoderImage | None,
     oodle_sha256: str,
