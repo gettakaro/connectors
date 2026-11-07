@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<blocks>
+	<block name="blockOwnIcon">
+		<property name="CustomIcon" value="blockArt"/>
+	</block>
+	<block name="blockNameFallback">
+		<property name="Material" value="Mmetal"/>
+	</block>
+	<block name="blockTinted">
+		<property name="CustomIcon" value="blockArt"/>
+		<property name="CustomIconTint" value="#00ff00"/>
+	</block>
+	<block name="blockExcludes">
+		<property name="Extends" value="blockTinted" param1="CustomIcon"/>
+	</block>
+	<block name="blockExtendsItem">
+		<property name="Extends" value="parentTinted"/>
+	</block>
+	<block name="itemNameFallback">
+		<property name="CustomIcon" value="blockArt"/>
+	</block>
+	<block name="blockUnlocalized">
+		<property name="Material" value="Mmetal"/>
+	</block>
+</blocks>

@@ -58,9 +58,13 @@ def _zomboid_run(ctx: MapContext) -> MapResult:
 
 def registry() -> dict[str, Mapper]:
     from ..games.conan_exiles import icons as conan
+    from ..games.seven_days import icons as seven_days
     from ..games.zomboid import icons as zomboid
 
     return {
+        "7d2d": Mapper(
+            "7d2d", seven_days.MAPPER_VERSION, seven_days.map_items, seven_days.CODES_DESCRIPTION, seven_days.EXCLUSIONS
+        ),
         "conan-exiles": Mapper("conan-exiles", conan.MAPPER_VERSION, conan.map_items),
         "zomboid": Mapper(
             "zomboid", zomboid.MAPPER_VERSION, _zomboid_run, zomboid.CODES_DESCRIPTION, zomboid.EXCLUSIONS

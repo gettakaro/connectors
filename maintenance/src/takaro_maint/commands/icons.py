@@ -22,7 +22,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     build_parser = inner.add_parser("build", help="build a pack and its reports from a recipe document or the catalog")
     build_parser.add_argument("--recipes", help="recipe document (JSON); excludes --game")
     _add_route_selection(build_parser, required=False)
-    build_parser.add_argument("--client", help="installed game client (or a mirror of its files); needs --game")
+    build_parser.add_argument(
+        "--client", help="installed game client (or a mirror of its files), for client-sourced routes; needs --game"
+    )
     build_parser.add_argument("--out", required=True, help="output directory; must be absent or empty")
     build_parser.set_defaults(handler=_build, op="icons build")
 

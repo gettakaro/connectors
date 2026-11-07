@@ -30,5 +30,22 @@
     }
   },
   "legacyAssetAliases": {},
-  "devServers": {"composeFile": "7d2d.yml"}
+  "devServers": {"composeFile": "7d2d.yml"},
+  "icons": {
+    "game": "7d2d",
+    "mapper": "7d2d",
+    "data": {
+      "source": "server-depot",
+      "input": "server",
+      "depots": ["294422"],
+      "files": [
+        "Data/Config/items.xml",
+        "Data/Config/item_modifiers.xml",
+        "Data/Config/blocks.xml",
+        "Data/Config/Localization.csv"
+      ]
+    },
+    "pixels": {"source": "server-depot", "files": ["regex:^Data/ItemIcons/[^/]+\\.png$"]},
+    "secrets": []
+  }
 }

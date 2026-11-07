@@ -60,10 +60,23 @@ _FLAGS = {
 _OPS = {
     "type": "array",
     "items": {
-        "type": "object",
-        "required": ["op"],
-        "additionalProperties": False,
-        "properties": {"op": {"enum": sorted(ops.OPS)}},
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["op"],
+                "additionalProperties": False,
+                "properties": {"op": {"const": "trim"}},
+            },
+            {
+                "type": "object",
+                "required": ["op", "color"],
+                "additionalProperties": False,
+                "properties": {
+                    "op": {"const": "tint-multiply"},
+                    "color": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
+                },
+            },
+        ]
     },
 }
 
