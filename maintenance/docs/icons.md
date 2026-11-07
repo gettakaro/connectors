@@ -383,7 +383,7 @@ index is exit 6. `icons/client_ranges.py` checks every `.utoc` and implied `.uca
 under `--client` before any network (exit 4 with `missing`), then builds a sparse mirror at
 `<cache>/icons/clients/<pack game>/<app>/<client build | unknown>/<plan16>/`: `.utoc` files and `global.ucas` whole,
 every other `.ucas` truncated to its source size, and each planned range copied (8 MiB chunks, hashed) with the marker
-`.takaro/complete.json` replaced atomically. A hit re-hashes the ranges; a mismatch warns and re-reads once, a second
+`.takaro/complete.json` written in a staging directory that is renamed into place. A hit re-hashes the ranges; a mismatch warns and re-reads once, a second
 mismatch or a short source read is exit 5. `--client` may be a local install or a read-only mount of one:
 
     rclone mount ":sftp:/D:/Program Files (x86)/Steam/steamapps" "$MNT" --sftp-ssh "ssh gamer" \
