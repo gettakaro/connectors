@@ -112,7 +112,8 @@ namespace Takaro.WebSocket
         public static void SendPlayerDeath(
             TakaroPlayer deadPlayer,
             TakaroPlayer attacker,
-            Vector3 deathPosition
+            Vector3 deathPosition,
+            bool characterEnded = false
         )
         {
             if (deadPlayer == null)
@@ -131,6 +132,8 @@ namespace Takaro.WebSocket
                     }
                 },
             };
+            if (characterEnded)
+                eventData["characterEnded"] = true;
 
             if (attacker != null)
             {
