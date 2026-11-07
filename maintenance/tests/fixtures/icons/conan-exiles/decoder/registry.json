@@ -1,0 +1,63 @@
+{
+  "registries": [
+    "ConanSandbox/AssetRegistry.bin"
+  ],
+  "assets": [
+    {
+      "packageName": "/Game/DLC/DLC_Pict/DLC_Pict_ItemNameToTemplateID",
+      "assetName": "DLC_Pict_ItemNameToTemplateID",
+      "assetClass": "DataTable",
+      "tags": {
+        "RowStructure": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateIDStruct.ItemNameToTemplateIDStruct"
+      }
+    },
+    {
+      "packageName": "/Game/DLC/DLC_Pict/DLC_Pict_ItemTable",
+      "assetName": "DLC_Pict_ItemTable",
+      "assetClass": "DataTable",
+      "tags": {
+        "RowStructure": "/Script/ConanSandbox.ItemTableRow"
+      }
+    },
+    {
+      "packageName": "/Game/DLC/Special/Special_ItemTable_Composite",
+      "assetName": "Special_ItemTable_Composite",
+      "assetClass": "CompositeDataTable",
+      "tags": {
+        "RowStructure": "/Script/ConanSandbox.ItemTableRow"
+      }
+    },
+    {
+      "packageName": "/Game/DLC/Special/Store/Data/StoreItems",
+      "assetName": "StoreItems",
+      "assetClass": "DataTable",
+      "tags": {
+        "RowStructure": "/Script/ConanSandbox.StoreItemTableRow"
+      }
+    },
+    {
+      "packageName": "/Game/Items/ItemTable",
+      "assetName": "ItemTable",
+      "assetClass": "DataTable",
+      "tags": {
+        "RowStructure": "/Script/ConanSandbox.ItemTableRow"
+      }
+    },
+    {
+      "packageName": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToHarvestXPValue",
+      "assetName": "ItemNameToHarvestXPValue",
+      "assetClass": "DataTable",
+      "tags": {
+        "RowStructure": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateIDStruct.ItemNameToTemplateIDStruct"
+      }
+    },
+    {
+      "packageName": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateID",
+      "assetName": "ItemNameToTemplateID",
+      "assetClass": "DataTable",
+      "tags": {
+        "RowStructure": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateIDStruct.ItemNameToTemplateIDStruct"
+      }
+    }
+  ]
+}

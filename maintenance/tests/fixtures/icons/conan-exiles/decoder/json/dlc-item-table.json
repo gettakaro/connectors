@@ -1,0 +1,55 @@
+[
+  {
+    "Type": "DataTable",
+    "Name": "DLC_Pict_ItemTable",
+    "Class": "UScriptClass'DataTable'",
+    "Package": "/Game/DLC/DLC_Pict/DLC_Pict_ItemTable",
+    "Properties": {
+      "RowStruct": {
+        "ObjectName": "Class'ItemTableRow'",
+        "ObjectPath": "/Script/ConanSandbox"
+      }
+    },
+    "Rows": {
+      "6100": {
+        "Name": {
+          "Namespace": "",
+          "Key": "DLC_Pict_ItemTable_6100_Name",
+          "SourceString": "Warpaint - Snake",
+          "LocalizedString": "Warpaint - Snake"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_pict_warpaint_01.icon_pict_warpaint_01",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "6272": {
+        "Name": {
+          "Namespace": "",
+          "Key": "DLC_Pict_ItemTable_6272_Name",
+          "SourceString": "Pictish War-Axe",
+          "LocalizedString": "Pictish War-Axe"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_pictish_waraxe.icon_pictish_waraxe",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "6364": {
+        "Name": {
+          "Namespace": "",
+          "Key": "1FE59E42486AD11E71E4B99339628A0E",
+          "SourceString": "Frontier Corner Pillar",
+          "LocalizedString": "Frontier Corner Pillar"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_tier3_savage_pillar.icon_tier3_savage_pillar",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      }
+    }
+  }
+]

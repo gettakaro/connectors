@@ -24,8 +24,9 @@ default of the game's `defaultPlatform` (`fabric` for Minecraft).
 ## Requirements
 
 [uv](https://docs.astral.sh/uv/) 0.12.x, and nothing else — the launcher runs the command in a
-frozen, managed Python 3.12 environment. Docker is needed for `verify` and for
-`build --toolchain container`.
+frozen, managed Python 3.12 environment. Docker is needed for `verify`, for
+`build --toolchain container` and for `icons build` of games whose files are Unreal containers (it builds
+and runs the pinned `maintenance/decoders/unreal` image; see [docs/icons.md](docs/icons.md)).
 
 ## Commands
 

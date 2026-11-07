@@ -1,0 +1,14 @@
+"AppState"
+{
+	"appid"		"440900"
+	"name"		"Conan Exiles Enhanced"
+	"buildid"		"25791535"
+	"InstalledDepots"
+	{
+		"440901"
+		{
+			"manifest"		"2054081959462269381"
+			"size"		"61800000000"
+		}
+	}
+}

@@ -108,7 +108,10 @@ directory and Takaro game identifier, which can differ from the catalog id), `ma
 mapping module), `data` (a `server-depot` input of the target, the depots and file-list selectors to
 fetch) and `pixels` (the client app and depot, the decoder, the exact client files in precedence order
 and, per revision, the known client build ids), plus `secrets`, the names of environment variables the
-build reads. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
+build reads. Games whose files are Unreal containers add `unreal` (`engine`, the CUE4Parse `EGame` value, and
+`aesKeyEnv`, the name of the variable holding the AES key or `null`), `data.decoder: "unreal"` and, for the client
+pixels, `pixels.decoder: "unreal"` with `pixels.access: "iostore-ranges"` (the listed `.utoc` files are read whole
+and only the `.ucas` byte ranges that hold the needed packages are copied). It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
 `catalog validate`, and it is not part of a target's fingerprint. Details and the commands that read it
 are in [maintenance/docs/icons.md](../maintenance/docs/icons.md).
 

@@ -1,0 +1,66 @@
+{
+  "roles": {
+    "icon": [
+      "991",
+      "19230",
+      "80223"
+    ],
+    "layers": [
+      "1612",
+      "51636"
+    ],
+    "none": [
+      "9000003"
+    ],
+    "internal-name": [
+      "1529"
+    ],
+    "battlepass": [
+      "992"
+    ],
+    "mask": [
+      "52228"
+    ],
+    "unsupported": [
+      "80646"
+    ],
+    "missing": [
+      "90114"
+    ],
+    "small": [
+      "29014"
+    ],
+    "internal-code": [
+      "9000001"
+    ],
+    "empty-name": [
+      "9000002"
+    ],
+    "non-integer": [
+      "NotATemplateId"
+    ],
+    "dlc": [
+      "6100",
+      "6272",
+      "6364"
+    ],
+    "composite": [
+      "100",
+      "6100"
+    ]
+  },
+  "synthetic": {
+    "rows": [
+      "9000001",
+      "9000002",
+      "NotATemplateId",
+      "9000003",
+      "/Game/DLC/Special/Special_ItemTable_Composite:6100"
+    ],
+    "nameRows": [
+      "Dev_Probe",
+      "Duplicate_Name_For_First_Icon",
+      "Base_Table_Name_For_Dlc_Item"
+    ]
+  }
+}

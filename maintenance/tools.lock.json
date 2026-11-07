@@ -11,6 +11,17 @@
       "hashOrigin": "self-recorded",
       "recordedAt": "2026-09-21",
       "env": {"DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1"}
+    },
+    "oodle": {
+      "version": "2.9.16",
+      "platform": "linux-x64",
+      "file": "liboo2corelinux64.so.9",
+      "url": "https://raw.githubusercontent.com/WorkingRobot/OodleUE/5e38cb6c99c588b51cde0cae4a6420d6bc865605/Engine/Source/Runtime/OodleDataCompression/Sdks/2.9.16/lib/Linux/liboo2corelinux64.so.9",
+      "size": 667240,
+      "sha256": "181a5612cfbff63090bccc794b328f63b86b4d62a71a3d54f6fdb491f87e24df",
+      "hashOrigin": "self-recorded",
+      "recordedAt": "2026-11-07",
+      "note": "unofficial mirror (WorkingRobot/OodleUE, pinned to a commit); a licensed source is a follow-up"
     }
   }
 }
