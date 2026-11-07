@@ -102,6 +102,20 @@ def _watched(catalog: Catalog, args: Any) -> list[WatchedSource]:
     return found
 
 
+def _icon_pack(game: Game) -> issues.IconPack | None:
+    """The game's Icon Pack route, tolerant of a malformed block (``catalog validate`` reports it)."""
+    block = game.record.get("icons")
+    if not isinstance(block, dict):
+        return None
+    pack_game = block.get("game")
+    pixels = block.get("pixels")
+    return issues.IconPack(
+        catalog_game=game.id,
+        pack_game=pack_game if isinstance(pack_game, str) and pack_game else game.id,
+        needs_client=isinstance(pixels, dict) and pixels.get("source") == "client",
+    )
+
+
 def _game_targets(game: Game) -> issues.GameTargets:
     return issues.GameTargets(
         name=str(game.record.get("name") or game.id),
@@ -111,6 +125,7 @@ def _game_targets(game: Game) -> issues.GameTargets:
             for t in game.targets
             if t.status != "retired"
         ],
+        icons=_icon_pack(game),
     )
 
 

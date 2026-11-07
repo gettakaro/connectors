@@ -53,12 +53,22 @@ class TargetRow:
 
 
 @dataclass(frozen=True)
+class IconPack:
+    """How a game's Icon Pack is built and published, as far as the rebuild line needs it."""
+
+    catalog_game: str
+    pack_game: str
+    needs_client: bool
+
+
+@dataclass(frozen=True)
 class GameTargets:
     """What the issue body needs to know about the game the observation belongs to."""
 
     name: str
     platforms: list[str] = field(default_factory=list)
     rows: list[TargetRow] = field(default_factory=list)
+    icons: IconPack | None = None
 
 
 @dataclass
@@ -235,9 +245,23 @@ def render_owned_block(
         f"- [ ] a catalog target for {rev} exists with `support.status: candidate` and upstream hashes",
         "- [ ] the connector builds and verifies against it (report attached or linked)",
         "- [ ] the target is promoted to `maintained` with the evidence cited in `support.evidence`",
+        *([icon_rebuild_line(targets.icons)] if targets.icons is not None else []),
         OWNED_END,
     ]
     return "\n".join(lines)
+
+
+def icon_rebuild_line(pack: IconPack) -> str:
+    """The acceptance line that reminds a maintainer to rebuild and republish the Icon Pack."""
+    client = " --client <client install>" if pack.needs_client else ""
+    return (
+        "- [ ] the Icon Pack is rebuilt for the new target and published: "
+        f"`maintenance/bin/takaro-maint icons build --game {pack.catalog_game} "
+        f"--target <new target>{client} --out <out>`, "
+        f"then `maintenance/bin/takaro-maint icons publish --env staging --pack <out>/pack/{pack.pack_game}`, "
+        f"then `maintenance/bin/takaro-maint icons promote --game {pack.pack_game}` "
+        "(see `maintenance/docs/icons.md`)"
+    )
 
 
 def existing_state(body: str) -> str | None:

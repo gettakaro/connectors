@@ -101,7 +101,8 @@ The block holds the observation (the provider, component and branch, the revisio
 release time, and whatever else that upstream publishes — for Mojang, the source links,
 the hashes and sizes, and the Java major version), the affected-targets table taken from
 the catalog, the readiness section, the reproducible `takaro-maint` next steps, the
-evidence a fix is expected to produce, and an acceptance checklist. The title and the rows
+evidence a fix is expected to produce, and an acceptance checklist (with, for a game whose catalog
+record has an `icons` block, a line to rebuild and republish its Icon Pack). The title and the rows
 an upstream adds come from the provider that observed it (see
 [The provider convention](#the-provider-convention)), never from the tracker.
 

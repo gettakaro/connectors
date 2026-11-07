@@ -334,6 +334,23 @@ Observed with the real decoder image against server build 25792439 (depot 443032
 - Layer tints are not supported (no tint field was observed in the data; an item with one would be unmatched).
 - Encrypted containers (VEIN) need the planner to read encrypted directory indexes (#747).
 
+## Keeping packs current
+
+`takaro-maint scan` adds an Icon Pack rebuild line to the acceptance checklist of every new-build maintenance
+issue of a game whose catalog record has an `icons` block. Games without the block are unchanged. The line names
+three commands, and each takes a different id:
+
+- `icons build --game <catalog game id> --target <new target> [--client <client install>] --out <out>`;
+- `icons publish --env staging --pack <out>/pack/<pack id>`;
+- `icons promote --game <pack id>`, which is local and needs production credentials.
+
+The pack id is `icons.game`, which can differ from the catalog id. A new release usually needs a
+`pixels.clientBuilds` entry for its revision first. The rebuild can be skipped when the new `build-record.json`
+input hashes (`data.treeSha256` and the per-pack `pixels` sha256) match the previous build.
+
+The line is a reminder, not a gate: the lifecycle does not track it, and like every line of the owned block it is
+regenerated on a rescan.
+
 ## The pack contract
 
 Shared with Takaro, whose reader rejects the whole index when it breaks a rule.
