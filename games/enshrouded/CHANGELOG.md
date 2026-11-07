@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.11.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.10.0...enshrouded-v0.11.0) (2026-11-07)
+
+
+### Features
+
+* **enshrouded:** support Enshrouded 1.0 build 26430253 (game build 1287369) ([#784](https://github.com/gettakaro/connectors/issues/784)) ([c930b0a](https://github.com/gettakaro/connectors/commit/c930b0a6f12d482abf3b4990b135447030bb41ac))
+
+
+### Miscellaneous Chores
+
+* license connectors under AGPL-3.0 ([#820](https://github.com/gettakaro/connectors/issues/820)) ([2da9b8e](https://github.com/gettakaro/connectors/commit/2da9b8e10709398871f1bdf7310fc7ab0d8d543c))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.10.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.9.0...enshrouded-v0.10.0) (2026-10-30)
 
 
