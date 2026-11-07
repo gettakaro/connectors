@@ -116,6 +116,13 @@ exists and is proven; it does not mean that the day upstream ships a new build t
 for it. What is promised is that the move is *visible*: filed within one scheduled run, with the
 readiness of every framework it depends on written into the issue.
 
+## Third-party binaries in icon builds
+
+The Unreal icon decoder needs Epic's Oodle decompression library, which no connector ships. It is fetched at
+build time from an unofficial mirror (`WorkingRobot/OodleUE`, pinned to a commit) and pinned by sha256 and size in
+`maintenance/tools.lock.json` (`tools.oodle`); a mismatch is an integrity failure. The library is mounted into the
+decoder container read-only at run time and is never part of the image. Moving to a licensed source is a follow-up.
+
 ## Connectors outside the catalog
 
 Every released connector has game-release discovery. Some still lack exact catalog targets

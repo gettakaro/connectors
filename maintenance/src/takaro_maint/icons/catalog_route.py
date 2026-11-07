@@ -49,6 +49,14 @@ class IconsRoute:
         return {str(depot): str(self.steam.depots[str(depot)]["manifest"]) for depot in wanted}
 
     @property
+    def uses_unreal(self) -> bool:
+        return "unreal" in self.block
+
+    @property
+    def pixel_access(self) -> str:
+        return str(self.block["pixels"].get("access", "files"))
+
+    @property
     def pixel_files(self) -> list[str]:
         return [str(name) for name in self.block["pixels"]["files"]]
 
@@ -87,6 +95,19 @@ def route_for(catalog: Catalog, game: str, target_id: str | None, platform: str 
     if steam.name != block["data"]["input"]:
         raise UsageError(f"target '{target.id}' has no steam-depots input named '{block['data']['input']}'")
     return IconsRoute(catalog_game=game, target=target, block=block, steam=steam)
+
+
+def _unreal_inputs(route: IconsRoute, cache: Path) -> dict[str, Any]:
+    from .decoders import container
+    from .decoders import unreal as unreal_decoder
+
+    spec = unreal_decoder.read_oodle_lock()
+    return {
+        "engine": route.block["unreal"]["engine"],
+        "aesKeyEnv": route.block["unreal"]["aesKeyEnv"],
+        "decoder": container.inspect_state(unreal_decoder.DECODER_NAME),
+        "oodle": {"version": spec.version, "sha256": spec.sha256, "cached": unreal_decoder.oodle_cached(cache)},
+    }
 
 
 def filtered_cache_complete(directory: Path) -> bool:
@@ -132,4 +153,11 @@ def inputs_document(route: IconsRoute) -> dict[str, Any]:
         ],
         "env": [{"name": name, "set": bool(os.environ.get(name))} for name in route.secrets],
     }
+    if route.uses_unreal:
+        document["unreal"] = _unreal_inputs(route, cache)
+        pixels_input = document["inputs"][1]
+        pixels_input["access"] = route.pixel_access
+        if route.pixel_access == "iostore-ranges":
+            pixels_input["containers"] = route.pixel_files
+            pixels_input["ranges"] = "computed during build from the mapping (expected about 130 MB)"
     return document

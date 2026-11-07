@@ -1,0 +1,58 @@
+[
+  {
+    "Type": "DataTable",
+    "Name": "ItemNameToTemplateID",
+    "Class": "UScriptClass'DataTable'",
+    "Package": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateID",
+    "Properties": {
+      "RowStruct": {
+        "ObjectName": "UserDefinedStruct'ItemNameToTemplateIDStruct'",
+        "ObjectPath": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateIDStruct.0"
+      }
+    },
+    "Rows": {
+      "BattlePass_Projectile_NewModel1": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 991
+      },
+      "baby_housecat_black": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 19230
+      },
+      "Treasure_Coffer": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 80223
+      },
+      "Endgame_WitchHuntArmor_helmet": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 1612
+      },
+      "Obsidian_Ones_1h_Axe": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 51636
+      },
+      "Saddle_Rhino_Embedded": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 1529
+      },
+      "BattlePass_Projectile_NewModel2": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 992
+      },
+      "SorceryArmor_chest": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 52228
+      },
+      "Pottery_10": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 80646
+      },
+      "T2_Triangle_Sloped_Roof_Up": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 90114
+      },
+      "DarkLibrary_teacher14": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 29014
+      },
+      "Dev_Probe": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 9000001
+      },
+      "Duplicate_Name_For_First_Icon": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 991
+      },
+      "Base_Table_Name_For_Dlc_Item": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 6272
+      }
+    }
+  }
+]

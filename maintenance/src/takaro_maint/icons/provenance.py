@@ -40,7 +40,7 @@ def client_status(
     )
 
 
-def tools_record() -> dict[str, str]:
+def tools_record(decoder: str = pz_texturepack.DECODER_DESCRIPTION) -> dict[str, str]:
     encoder = build.encoder_description()
     return {
         "takaroMaint": __version__,
@@ -48,5 +48,5 @@ def tools_record() -> dict[str, str]:
         "depotdownloader": dd.read_lock().version,
         "pillow": encoder["pillow"],
         "libwebp": encoder["libwebp"],
-        "decoder": pz_texturepack.DECODER_DESCRIPTION,
+        "decoder": decoder,
     }

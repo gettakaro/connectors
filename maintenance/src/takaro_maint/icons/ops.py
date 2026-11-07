@@ -23,3 +23,17 @@ OPS: dict[str, Callable[..., Image.Image]] = {"trim": trim}
 
 def apply(operation: dict[str, Any], image: Image.Image, *, code: str) -> Image.Image:
     return OPS[operation["op"]](image, code=code)
+
+
+def composite_over(images: list[Image.Image]) -> Image.Image:
+    """Layers combined in order, the first at the bottom, on the first layer's canvas.
+
+    A layer of another size is resized to the canvas with LANCZOS on premultiplied pixels, the way the
+    builder downscales. A single layer comes back untouched.
+    """
+    canvas = images[0]
+    for layer in images[1:]:
+        if layer.size != canvas.size:
+            layer = layer.convert("RGBa").resize(canvas.size, Image.Resampling.LANCZOS).convert("RGBA")
+        canvas = Image.alpha_composite(canvas, layer)
+    return canvas

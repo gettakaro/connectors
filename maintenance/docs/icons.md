@@ -214,6 +214,126 @@ output and the build record, and the exit code stays 0. A new game release needs
 - An item that names another item's art through anything but `Icon`, `IconsForTexture` or
   `WorldObjectSprite` has no icon here.
 
+## Unreal games: the decoder container, IoStore ranges and Conan Exiles
+
+### The decoder-container contract
+
+A decoder turns a game's own formats into PNG and JSON. It lives in `maintenance/decoders/<name>/` (Dockerfile, tool
+source, README) and is used through `icons/decoders/container.py`:
+
+- **Image pin.** The image is built locally, never pushed (a registry needs credentials, and an image holding Oodle
+  would redistribute it). Its tag is `takaro-icons-decoder-<name>:<context16>`, where the context hash is the sha256
+  over the sorted `<path>\t<sha256>` lines of every source file (`bin/` and `obj/` excluded). A missing or stale image
+  is built with `--label org.takaro.icons.decoder.context=<hash>`; the label must equal the hash afterwards. Every
+  `FROM` is pinned `@sha256:`, packages are restored `--locked-mode`, and the container runs by image **Id**, which
+  is what the build record stores.
+- **Run.** `docker run --rm --network none --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges
+  --user UID:GID`, every game mount `:ro`, only `/out` writable (under the cache work directory). A secret is passed as
+  `-e NAME` (value only in the docker client's environment, never in argv, logs or errors). A non-zero exit is exit 6
+  with the last 40 stderr lines, redacted. `TAKARO_MAINT_ICONS_DECODER` (else `TAKARO_MAINT_DOCKER`) replaces the
+  docker CLI; a missing one is exit 2 before any download.
+- **Request and manifest.** `{schemaVersion:1, decoder, settings, root:"/game", exports:[{id, kind, ...}]}` in,
+  `/out/manifest.json` with one result per id (`ok` + `file` + `meta`, or `ok:false` + `errorKind`
+  `unsupported-format|not-found|failed`) out. The host validates it with jsonschema, requires every id exactly once,
+  `safe_relative` file names built from ids (never from game paths), PNGs opened as PNG and capped at 4096x4096, JSON
+  capped at 256 MB. Any violation is exit 6.
+- **Decode cache.** `<cache>/icons/decoded/<sha256(image id + canonical request + input tree hash)>/`, with a marker of
+  per-file hashes; a hit is re-hashed and a mismatch decodes once more. Decoded pictures stay in the cache.
+
+### The Unreal decoder
+
+`maintenance/decoders/unreal` is a .NET 10 tool on CUE4Parse 1.2.2.202611 with a managed BCn decoder
+(BCnEncoder.Net) and a small fixed-setting PNG writer (no native texture libraries, no ImageSharp). Export kinds:
+`asset-registry {classes}`, `json {package}` (CUE4Parse's standard JSON), `texture {package, object}` (first mip with
+data; PF_DXT1, PF_DXT5, PF_BC4, PF_BC5, PF_BC7, PF_B8G8R8A8 and PF_G8, anything else is `unsupported-format`) and
+`list-files {prefix}` (bring-up aid). Settings: `engine` (an `EGame` value), `oodle` (the mounted library path) and
+`aesKeyEnv`. Licences: CUE4Parse MIT, BCnEncoder.Net MIT.
+
+Oodle is `liboo2corelinux64.so.9` (2.9.16) from the unofficial `WorkingRobot/OodleUE` mirror at a pinned commit,
+recorded in `tools.lock.json` (`tools.oodle`: url, size, sha256, hashOrigin `self-recorded`), fetched through the
+content-addressed cache (mismatch exit 5, unreachable exit 4) and mounted read-only. A licensed source is a follow-up.
+
+### IoStore byte ranges
+
+`icons/iostore.py` (stdlib) reads `.utoc` files (TOC versions 2 to 9, directory index required) and plans the `.ucas`
+byte ranges that hold named packages: the `.uasset`/`.umap`, `.ubulk` and `.uptnl` chunks of each package, plus each
+container's container header (Unreal reads it when it mounts), merged when less than 64 KiB apart. An encrypted
+directory index is exit 2 ("not supported by the range planner yet (#747)"); an unknown version or a missing directory
+index is exit 6. `icons/client_ranges.py` checks every `.utoc` and implied `.ucas` (including `_s<N>.ucas` partitions)
+under `--client` before any network (exit 4 with `missing`), then builds a sparse mirror at
+`<cache>/icons/clients/<pack game>/<app>/<client build | unknown>/<plan16>/`: `.utoc` files and `global.ucas` whole,
+every other `.ucas` truncated to its source size, and each planned range copied (8 MiB chunks, hashed) with the marker
+`.takaro/complete.json` replaced atomically. A hit re-hashes the ranges; a mismatch warns and re-reads once, a second
+mismatch or a short source read is exit 5. `--client` may be a local install or a read-only mount of one:
+
+    rclone mount ":sftp:/D:/Program Files (x86)/Steam/steamapps" "$MNT" --sftp-ssh "ssh gamer" \
+      --read-only --vfs-cache-mode off --daemon
+    takaro-maint icons build --game conan-exiles --client "$MNT/common/Conan Exiles" --out "$OUT"
+    fusermount3 -u "$MNT"
+
+`OUT/client-ranges.json` lists the plan (`file, offset, length, sha256`); it is provenance and is not published.
+
+### Composite, flags and candidates (recipes)
+
+A recipe takes 1 to 8 layers and optional `composite: "over"`. Each layer is loaded and its ops applied without
+downscaling; the canvas is layer 0, a layer of another size is resized onto it (LANCZOS on premultiplied pixels),
+layers are `alpha_composite`d in order and the result is downscaled once. One layer gives the same bytes as before.
+`flags` (up to 4 `{flag, detail?}`) reach `coverage.json` as `flagsByName` and `flaggedCodes`. A recipe with
+`candidateOf: "<primary code>"` (the primary must be another non-candidate recipe) goes into the index pointing at the
+primary's object and is left out of `total`, `matched`, `byRule`, `byKind` and the contact sheet; coverage lists it
+under `candidates`.
+
+### Conan Exiles
+
+`games/conan_exiles/icons.py` (mapper `conan-exiles`, pack `conan-exiles`). Item codes follow the connector's
+`Catalogue::BuildItems`: a template id's code is its first row name in
+`/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateID`, otherwise the id, and rows for which
+`IsInternalName` holds (on the trimmed `Name` or the code) are not listed. Item rows come from every DataTable whose
+`RowStructure` is `/Script/ConanSandbox.ItemTableRow` (base `/Game/Items/ItemTable`, then other plain tables, then
+composites; the first table wins and disagreements are counted in the build record). Icons: `Icon` if set (rule `icon`),
+else `IconLayers` bottom to top (rule `icon-layers`), else unmatched `no-icon-in-game`. DLC items (template ids not in
+the base `ItemTable`) also get a candidate code, the other of name or id; a candidate colliding with any code is dropped.
+Single-channel textures (PF_BC4, PF_G8) get a `mask-texture` flag.
+
+### Conan Exiles bring-up findings
+
+Observed with the real decoder image against server build 25792439 (depot 443032) and client build 25791535
+(depot 440901), 2026-11-07.
+
+- **G1 engine.** CUE4Parse has `GAME_ConanExilesEnhanced`; it reads both the Linux server containers and the Windows
+  client containers, so `GAME_UE5_8` was not needed. Recorded as `unreal.engine`.
+- **G2 unversioned properties.** The DataTables decode without a `.usmap` mappings file.
+- **G3 Oodle.** `liboo2corelinux64.so.9` 2.9.16 decompresses both sets of containers.
+- **G4 tables.** The AssetRegistry (`ConanSandbox/AssetRegistry.bin`, inside `pakchunk0-LinuxServer.pak`) lists 22
+  `ItemTableRow` tables: `/Game/Items/ItemTable` (a plain DataTable, 5,821 rows), the empty `Example_ItemTable`, 19 DLC
+  tables under `/Game/DLC/` and `Special_ItemTable_Composite`, a `CompositeDataTable` whose `ParentTables` are
+  `Special_ItemTable`, `_GiantKings`, `_Shemite` and `_Cimmerian` (its 2,094 rows are their union). 13 tables use
+  `ItemNameToTemplateIDStruct` as name tables; `ItemNameToHarvestXPValue` shares that struct but maps names to harvest
+  XP, so it is excluded explicitly. `StoreItems` ends in `ItemTableRow` too but is `StoreItemTableRow`, so the row
+  struct is matched exactly. DLC is decided per template id: not a row of the base `ItemTable`. In the live data every
+  DLC id is missing from both the base item table and the base name table, so DLC items get a numeric primary code
+  and, when a DLC name table names them, that name as the candidate (3,433 listed DLC items, 1,449 candidates).
+- **G5 field shapes.** `Icon` is `{AssetPathName, SubPathString}`; `IconLayers` is an array of the same soft-path
+  objects (one or two layers, no tint or other per-layer field); `Name` is an FText with an inline `SourceString` (no
+  string tables); the name-table int member is `ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7`, found as the struct's
+  only integer. Layer 0 is the bottom: epic items list the item art and then `epic_icon_border`.
+- **G6 server selectors.** The AssetRegistry, `global.*`, `pakchunk0`, `pakchunk1050`, `pakchunk1100` and
+  `pakchunk5000` to `pakchunk5150` hold every table: about 1.3 GB instead of 2.7 GB.
+- **G7 client containers.** All 5,350 distinct icon textures live in `pakchunk1100`, `pakchunk1110` and `pakchunk5000`
+  to `pakchunk5150` (TOC version 8, compressed, indexed, not encrypted, one partition each); `global.utoc` is read
+  whole. No client `.pak` is needed. The range plan is 944 ranges, 126.0 MB.
+- **G8 package naming.** Every texture is `/Game/...`, which maps to `ConanSandbox/Content/...`; there are no plugin
+  mount points. A package needs its `.uasset` chunk and `.ubulk`/`.uptnl` chunks when present, plus each container's
+  container header chunk (keyed by the container id), which CUE4Parse reads when it mounts. All textures were found, so
+  the DLC depot 577840 is not needed.
+
+### Known limitations
+
+- Whether the live connector reports DLC items by name or by id is unsettled (#811 skipped); both are published.
+- `PF_BC4` mask textures are published as grayscale art and flagged.
+- Layer tints are not supported (no tint field was observed in the data; an item with one would be unmatched).
+- Encrypted containers (VEIN) need the planner to read encrypted directory indexes (#747).
+
 ## The pack contract
 
 Shared with Takaro, whose reader rejects the whole index when it breaks a rule.

@@ -5,3 +5,5 @@
 .ruff_cache
 Dockerfile
 .dockerignore
+decoders/**/bin
+decoders/**/obj

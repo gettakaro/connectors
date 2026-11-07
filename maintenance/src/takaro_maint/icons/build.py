@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,21 @@ SHEET_MIN_PER_RULE = 8
 _CODE = {"type": "string", "minLength": 1, "maxLength": 256, "pattern": r"^[^\x00-\x1f\x7f]+$"}
 _KIND = {"enum": ["item", "block"]}
 _RULE = {"type": "string", "pattern": r"^[a-z][a-z0-9-]*$"}
+MAX_LAYERS = 8
+MAX_FLAGS = 4
+_FLAGS = {
+    "type": "array",
+    "maxItems": MAX_FLAGS,
+    "items": {
+        "type": "object",
+        "required": ["flag"],
+        "additionalProperties": False,
+        "properties": {
+            "flag": {"type": "string", "pattern": r"^[a-z][a-z0-9-]*$"},
+            "detail": {"type": "string", "maxLength": 256, "pattern": r"^[^\x00-\x1f\x7f]*$"},
+        },
+    },
+}
 _OPS = {
     "type": "array",
     "items": {
@@ -71,8 +88,12 @@ RECIPE_SCHEMA: dict[str, Any] = {
                     "kind": _KIND,
                     "rule": _RULE,
                     "composite": {"const": "over"},
+                    "flags": _FLAGS,
+                    "candidateOf": _CODE,
                     "layers": {
                         "type": "array",
+                        "minItems": 1,
+                        "maxItems": MAX_LAYERS,
                         "items": {
                             "type": "object",
                             "required": ["image"],
@@ -144,16 +165,28 @@ def validate_recipes(document: Any) -> None:
         if entry["code"] in codes:
             raise UsageError(f"code {entry['code']!r} appears more than once in the recipe document")
         codes.add(entry["code"])
-    for recipe in document["recipes"]:
-        if len(recipe["layers"]) != 1:
+    _check_candidates(document["recipes"])
+
+
+def _check_candidates(recipes: list[dict[str, Any]]) -> None:
+    """A candidate code points at another recipe of the document that is not itself a candidate."""
+    by_code = {recipe["code"]: recipe for recipe in recipes}
+    for recipe in recipes:
+        primary = recipe.get("candidateOf")
+        if primary is None:
+            continue
+        target = by_code.get(primary)
+        if target is None:
             raise UsageError(
-                f"recipe {recipe['code']!r}: layer compositing arrives with the games that need it; "
-                "a recipe takes exactly one layer"
+                f"recipe {recipe['code']!r}: candidateOf {primary!r} is not a recipe of this document "
+                "(an unmatched code cannot be a primary)"
             )
+        if "candidateOf" in target:
+            raise UsageError(f"recipe {recipe['code']!r}: candidateOf {primary!r}, which is itself a candidate")
 
 
-def render_layer(png: Path, layer_ops: list[dict[str, Any]], *, code: str) -> Image.Image:
-    """RGBA pixels with no metadata, ``layer_ops`` applied, longest edge at most ``MAX_EDGE``, never upscaled."""
+def load_layer(png: Path, layer_ops: list[dict[str, Any]], *, code: str) -> Image.Image:
+    """RGBA pixels with no metadata and ``layer_ops`` applied, at the layer's own size."""
     with Image.open(png, formats=["PNG"]) as source:
         source.load()
         rgba = source.convert("RGBA")
@@ -161,12 +194,32 @@ def render_layer(png: Path, layer_ops: list[dict[str, Any]], *, code: str) -> Im
         rgba = ops.apply(operation, rgba, code=code)
     image = Image.new("RGBA", rgba.size)
     image.paste(rgba)
+    return image
+
+
+def downscale(image: Image.Image) -> Image.Image:
+    """The longest edge at most ``MAX_EDGE``; an image already that small is returned as it is."""
     width, height = image.size
     if max(width, height) > contract.MAX_EDGE:
         scale = contract.MAX_EDGE / max(width, height)
         size = (max(1, round(width * scale)), max(1, round(height * scale)))
         image = image.convert("RGBa").resize(size, Image.Resampling.LANCZOS).convert("RGBA")
     return image
+
+
+def render_layer(png: Path, layer_ops: list[dict[str, Any]], *, code: str) -> Image.Image:
+    """One layer, rendered: ``load_layer`` and then ``downscale``."""
+    return downscale(load_layer(png, layer_ops, code=code))
+
+
+def render_recipe(base_dir: Path, recipe: dict[str, Any]) -> Image.Image:
+    """The recipe's layers, composited in order onto the first layer's canvas, then downscaled once."""
+    code = recipe["code"]
+    layers = [
+        load_layer(_resolve_image(base_dir, layer["image"], code), layer.get("ops", []), code=code)
+        for layer in recipe["layers"]
+    ]
+    return downscale(ops.composite_over(layers))
 
 
 def encode_webp(image: Image.Image) -> bytes:
@@ -201,7 +254,11 @@ def build_pack(
         raise UsageError(f"--out {out} exists and is not an empty directory")
     game = document["game"]
     recipes = {recipe["code"]: recipe for recipe in document["recipes"]}
-    sources = {code: _resolve_image(base_dir, recipe["layers"][0]["image"], code) for code, recipe in recipes.items()}
+    candidates = {code: recipe["candidateOf"] for code, recipe in recipes.items() if "candidateOf" in recipe}
+    primaries = {code: recipe for code, recipe in recipes.items() if code not in candidates}
+    for code, recipe in primaries.items():
+        for layer in recipe["layers"]:
+            _resolve_image(base_dir, layer["image"], code)
 
     out.mkdir(parents=True, exist_ok=True)
     pack_dir = out / "pack" / game
@@ -210,14 +267,24 @@ def build_pack(
     rendered: dict[str, Image.Image] = {}
     icons: dict[str, str] = {}
     objects: dict[str, bytes] = {}
-    for code, source in sorted(sources.items()):
-        output.info(f"render {code} <- {source.name}")
-        image = render_layer(source, recipes[code]["layers"][0].get("ops", []), code=code)
-        webp = encode_webp(image)
+
+    def render(item: tuple[str, dict[str, Any]]) -> tuple[str, Image.Image, bytes]:
+        code, recipe = item
+        output.info(f"render {code} <- {Path(recipe['layers'][0]['image']).name}")
+        image = render_recipe(base_dir, recipe)
+        return code, image, encode_webp(image)
+
+    # Lossless WebP at method 6 is slow and releases the GIL; the results are consumed in code order, so the
+    # pack is the same however the work is scheduled.
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
+        results = list(pool.map(render, sorted(primaries.items())))
+    for code, image, webp in results:
         name = contract.object_name(webp)
         icons[code] = name
         objects.setdefault(name, webp)
         rendered[code] = image
+    for code, primary in sorted(candidates.items()):
+        icons[code] = icons[primary]
 
     for name, webp in objects.items():
         (pack_dir / name).write_bytes(webp)
@@ -231,7 +298,7 @@ def build_pack(
         "buildRecord": out / "build-record.json",
     }
     reports["coverage"].write_text(json.dumps(coverage, indent=2) + "\n", encoding="utf-8")
-    rules = {code: recipe["rule"] for code, recipe in recipes.items() if "rule" in recipe}
+    rules = {code: recipe["rule"] for code, recipe in primaries.items() if "rule" in recipe}
     _contact_sheet(rendered, rules).save(reports["contactSheet"], format="PNG")
     encoder = encoder_description()
     build_record = {
@@ -273,7 +340,11 @@ def _resolve_image(base_dir: Path, image: str, code: str) -> Path:
 
 
 def _coverage(document: dict[str, Any], *, objects: int) -> dict[str, Any]:
-    matched = [(entry["code"], entry.get("kind")) for entry in document["recipes"]]
+    primaries = [entry for entry in document["recipes"] if "candidateOf" not in entry]
+    candidates = sorted(
+        (entry["code"], entry["candidateOf"]) for entry in document["recipes"] if "candidateOf" in entry
+    )
+    matched = [(entry["code"], entry.get("kind")) for entry in primaries]
     unmatched = document.get("unmatched", [])
     total = len(matched) + len(unmatched)
     report: dict[str, Any] = {
@@ -300,7 +371,7 @@ def _coverage(document: dict[str, Any], *, objects: int) -> dict[str, Any]:
                 "matched": kind_matched,
                 "unmatched": kind_unmatched,
             }
-    ruled = [("matched", entry["rule"]) for entry in document["recipes"] if "rule" in entry] + [
+    ruled = [("matched", entry["rule"]) for entry in primaries if "rule" in entry] + [
         ("unmatched", entry["rule"]) for entry in unmatched if "rule" in entry
     ]
     if ruled:
@@ -318,6 +389,25 @@ def _coverage(document: dict[str, Any], *, objects: int) -> dict[str, Any]:
         {key: entry[key] for key in ("code", "kind", "reason", "detail") if key in entry}
         for entry in sorted(unmatched, key=lambda entry: entry["code"])
     ]
+    flagged = sorted(
+        (
+            {"code": entry["code"], "flag": flag["flag"], **({"detail": flag["detail"]} if "detail" in flag else {})}
+            for entry in primaries
+            for flag in entry.get("flags", [])
+        ),
+        key=lambda row: (row["code"], row["flag"]),
+    )
+    if flagged:
+        by_flag: dict[str, int] = {}
+        for row in flagged:
+            by_flag[row["flag"]] = by_flag.get(row["flag"], 0) + 1
+        report["flagsByName"] = dict(sorted(by_flag.items()))
+        report["flaggedCodes"] = flagged
+    if candidates:
+        report["candidates"] = {
+            "count": len(candidates),
+            "codes": [{"code": code, "candidateOf": primary} for code, primary in candidates],
+        }
     return report
 
 

@@ -507,6 +507,36 @@ def _check_separate_names(result: ValidationResult, target: Target) -> None:
     )
 
 
+def _check_icons_unreal(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """The decoder settings, the key variable and the IoStore file list of an ``icons`` block."""
+    pixels = block.get("pixels") or {}
+    uses_unreal = (block.get("data") or {}).get("decoder") == "unreal" or pixels.get("decoder") == "unreal"
+    result.add(
+        "icons-unreal-settings",
+        uses_unreal == ("unreal" in block),
+        "icons.unreal must be present exactly when data.decoder or pixels.decoder is 'unreal'",
+        file,
+    )
+    key_env = (block.get("unreal") or {}).get("aesKeyEnv")
+    result.add(
+        "icons-aes-key-declared",
+        key_env is None or key_env in (block.get("secrets") or []),
+        f"icons.unreal.aesKeyEnv {key_env!r} must be listed in icons.secrets",
+        file,
+    )
+    files = pixels.get("files") or []
+    problems = []
+    if pixels.get("access") == "iostore-ranges":
+        problems = [name for name in files if not str(name).endswith(".utoc")]
+        problems += [f"{name} (listed twice)" for name in sorted({n for n in files if files.count(n) > 1})]
+    result.add(
+        "icons-iostore-files",
+        not problems,
+        f"icons.pixels.files with access 'iostore-ranges' must be distinct .utoc paths: {problems}",
+        file,
+    )
+
+
 def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
     """The optional ``icons`` block: what it names must exist, without asking the network."""
     for game in sorted(catalog.games.values(), key=lambda game: game.id):
@@ -528,13 +558,19 @@ def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
             f"icons.mapper {block.get('mapper')!r}; registered mappers: {known}",
             file,
         )
+        _check_icons_unreal(result, block, file)
         if not game.targets:
             # Trimmed test catalogs keep a game record and drop its targets; there is nothing to check against.
             continue
         data = block.get("data") or {}
         problems = []
+        default_platform = game.record.get("defaultPlatform")
         for target in game.targets:
-            if not target.is_default:
+            # Only the default target of the default platform: the data files of a server depot are
+            # platform-specific (Unreal's `-LinuxServer` containers), so another platform needs its own route.
+            if not target.is_default or (
+                data.get("decoder") == "unreal" and default_platform and target.platform != default_platform
+            ):
                 continue
             spec = target.record["inputs"].get(data.get("input"))
             if spec is None or spec.get("kind") != "steam-depots":
@@ -546,7 +582,7 @@ def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
         result.add(
             "icons-data-input",
             not problems,
-            "; ".join(problems) or f"every default target has the steam-depots input {data.get('input')!r}",
+            "; ".join(problems) or f"the default target has the steam-depots input {data.get('input')!r}",
             file,
         )
         revisions = {target.revision for target in game.targets}

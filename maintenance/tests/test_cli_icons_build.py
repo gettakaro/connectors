@@ -152,9 +152,30 @@ def _duplicate_code(document: dict[str, Any]) -> None:
     document["unmatched"][0]["code"] = document["recipes"][0]["code"]
 
 
-def _two_layers(document: dict[str, Any]) -> None:
+def _nine_layers(document: dict[str, Any]) -> None:
     layer = document["recipes"][0]["layers"][0]
-    document["recipes"][0]["layers"] = [layer, layer]
+    document["recipes"][0]["layers"] = [layer] * 9
+
+
+def _other_composite(document: dict[str, Any]) -> None:
+    document["recipes"][0]["composite"] = "multiply"
+
+
+def _unknown_primary(document: dict[str, Any]) -> None:
+    document["recipes"][1]["candidateOf"] = "nope"
+
+
+def _candidate_of_candidate(document: dict[str, Any]) -> None:
+    document["recipes"][1]["candidateOf"] = "fixture-circle"
+    document["recipes"][2]["candidateOf"] = "fixture-circle-alias"
+
+
+def _candidate_in_unmatched(document: dict[str, Any]) -> None:
+    document["unmatched"][0]["candidateOf"] = "fixture-circle"
+
+
+def _primary_in_unmatched(document: dict[str, Any]) -> None:
+    document["recipes"][1]["candidateOf"] = "fixture-ghost"
 
 
 def _with_ops(document: dict[str, Any]) -> None:
@@ -175,12 +196,30 @@ def _missing_image(document: dict[str, Any]) -> None:
         (_set_game("_store"), 2),
         (_set_game("Bad_Game"), 2),
         (_duplicate_code, 2),
-        (_two_layers, 2),
+        (_nine_layers, 2),
+        (_other_composite, 2),
+        (_unknown_primary, 2),
+        (_candidate_of_candidate, 2),
+        (_candidate_in_unmatched, 2),
+        (_primary_in_unmatched, 2),
         (_with_ops, 2),
         (_escaping_image, 2),
         (_missing_image, 4),
     ],
-    ids=["store", "bad-game", "duplicate-code", "two-layers", "ops", "escaping-path", "missing-image"],
+    ids=[
+        "store",
+        "bad-game",
+        "duplicate-code",
+        "nine-layers",
+        "other-composite",
+        "unknown-primary",
+        "candidate-of-candidate",
+        "candidate-in-unmatched",
+        "unmatched-primary",
+        "ops",
+        "escaping-path",
+        "missing-image",
+    ],
 )
 def test_refusals(run: Any, tmp_path: Path, change: Any, exit_code: int) -> None:
     recipes = _edit(tmp_path, change)
@@ -303,3 +342,82 @@ def test_a_small_ruled_build_keeps_every_icon_on_the_sheet() -> None:
     from takaro_maint.icons import build
 
     assert build._stratified_sample({"moveable": ["b", "a"], "icon": ["c"]}) == ["c", "a", "b"]
+
+
+def _layer_images(copy: Path) -> None:
+    base = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+    base.paste((10, 200, 10, 255), (4, 4, 36, 36))
+    base.save(copy / "images" / "base-40.png", format="PNG")
+    ring = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
+    for box in ((0, 0, 80, 6), (0, 74, 80, 80), (0, 0, 6, 80), (74, 0, 80, 80)):
+        ring.paste((250, 210, 0, 255), box)
+    ring.save(copy / "images" / "ring-80.png", format="PNG")
+
+
+def _layered_document(tmp_path: Path, change: Any = None) -> Path:
+    copy = _fixture_copy(tmp_path)
+    _layer_images(copy)
+    document = json.loads((copy / "recipes.json").read_text())
+    document["recipes"][0]["layers"] = [{"image": "images/base-40.png"}, {"image": "images/ring-80.png"}]
+    document["recipes"][0]["rule"] = "icon-layers"
+    if change:
+        change(document)
+    (copy / "recipes.json").write_text(json.dumps(document))
+    return copy / "recipes.json"
+
+
+def _icon(out: Path, code_name: str) -> Image.Image:
+    index = json.loads((out / "pack/fixture-846/index.json").read_text())
+    return Image.open(out / "pack/fixture-846" / index["icons"][code_name]).convert("RGBA")
+
+
+def test_layers_of_different_sizes_composite_onto_the_first_layers_canvas(run: Any, tmp_path: Path) -> None:
+    code, _, _, out = _build(run, tmp_path, recipes=_layered_document(tmp_path))
+    assert code == 0
+    image = _icon(out, "fixture-circle")
+    assert image.size == (40, 40)  # layer 0 sets the canvas; the 80x80 ring is resized onto it
+    assert image.getpixel((1, 1))[:3] == (250, 210, 0) and image.getpixel((1, 1))[3] == 255  # ring on top
+    assert image.getpixel((20, 20)) == (10, 200, 10, 255)  # base shows through the ring's hole
+
+
+def test_flags_reach_the_coverage_report(run: Any, tmp_path: Path) -> None:
+    def flagged(document: dict[str, Any]) -> None:
+        document["recipes"][0]["flags"] = [{"flag": "mask-texture", "detail": "pkg PF_BC4"}]
+        document["recipes"][2]["flags"] = [{"flag": "mask-texture"}, {"flag": "odd-size"}]
+
+    code, _, _, out = _build(run, tmp_path, recipes=_layered_document(tmp_path, flagged))
+    assert code == 0
+    coverage = json.loads((out / "coverage.json").read_text())
+    assert coverage["flagsByName"] == {"mask-texture": 2, "odd-size": 1}
+    assert coverage["flaggedCodes"] == [
+        {"code": "fixture-banner", "flag": "mask-texture"},
+        {"code": "fixture-banner", "flag": "odd-size"},
+        {"code": "fixture-circle", "flag": "mask-texture", "detail": "pkg PF_BC4"},
+    ]
+
+
+def test_a_candidate_shares_its_primarys_object_and_is_left_out_of_every_count(run: Any, tmp_path: Path) -> None:
+    def candidate(document: dict[str, Any]) -> None:
+        document["recipes"].append(
+            {
+                "code": "fixture-banner-alt",
+                "kind": "item",
+                "candidateOf": "fixture-banner",
+                "layers": document["recipes"][2]["layers"],
+            }
+        )
+
+    plain_code, _, _, plain = _build(run, tmp_path, "plain")
+    code, _, _, out = _build(run, tmp_path, recipes=_layered_document(tmp_path, candidate))
+    assert plain_code == 0 and code == 0
+    icons = json.loads((out / "pack/fixture-846/index.json").read_text())["icons"]
+    assert icons["fixture-banner-alt"] == icons["fixture-banner"]
+    coverage = json.loads((out / "coverage.json").read_text())
+    baseline = json.loads((plain / "coverage.json").read_text())
+    assert (coverage["total"], coverage["matched"]) == (baseline["total"], baseline["matched"])
+    assert coverage["byKind"] == baseline["byKind"]
+    assert coverage["candidates"] == {
+        "count": 1,
+        "codes": [{"code": "fixture-banner-alt", "candidateOf": "fixture-banner"}],
+    }
+    assert "candidates" not in baseline

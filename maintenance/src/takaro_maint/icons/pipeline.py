@@ -15,8 +15,11 @@ from typing import Any
 from .. import output, paths
 from ..catalog import load as load_catalog
 from ..exit_codes import UsageError
-from . import acquire, build, mappers, provenance
+from . import acquire, build, client_ranges, mappers, provenance
 from .catalog_route import IconsRoute, route_for
+from .decoders import container
+from .decoders import unreal as unreal_decoder
+from .unreal_session import UnrealSession
 
 CODES_FROM = (
     "Item codes derived from game data: {description} (server depot app {app}, build {buildid}), "
@@ -31,7 +34,14 @@ def build_from_catalog(
         raise UsageError(f"--out {out} exists and is not an empty directory")
     route = route_for(load_catalog(), game, target_id, platform)
     mapper = mappers.registry()[route.mapper]
-    client_dir = acquire.check_client(client, route.pixel_files)
+    settings: unreal_decoder.UnrealSettings | None = None
+    if route.uses_unreal:
+        settings = unreal_decoder.UnrealSettings.of(route.block)
+        unreal_decoder.require_key_variable(settings)
+        container.require_docker()
+        client_dir = client_ranges.check(client, route.pixel_files)
+    else:
+        client_dir = acquire.check_client(client, route.pixel_files)
 
     client_buildid, client_manifest = acquire.read_client_build(
         client_dir, route.block["pixels"]["app"], route.block["pixels"]["depot"]
@@ -44,18 +54,52 @@ def build_from_catalog(
     cache = paths.cache_dir()
     work_root = cache / "icons" / "work"
     work_root.mkdir(parents=True, exist_ok=True)
+    session: UnrealSession | None = None
+    image: container.DecoderImage | None = None
+    oodle_sha256 = ""
     with tempfile.TemporaryDirectory(dir=work_root, prefix="build-") as scratch:
         work = Path(scratch)
+        if settings is not None:
+            oodle_path = unreal_decoder.ensure_oodle(cache)
+            oodle_sha256 = unreal_decoder.read_oodle_lock().sha256
+            image = container.ensure_image(unreal_decoder.DECODER_NAME)
         data = acquire.fetch_data(route, cache=cache, work=work)
-        pixel_files = acquire.hash_pixel_files(client_dir, route.pixel_files)
-        pixels = mappers.open_pixels(client_dir, route.pixel_files)
         codes_from = CODES_FROM.format(
             description=mapper.codes_description,
             app=route.steam.app,
             buildid=route.steam.buildid,
             exclusions=mapper.exclusions,
         )
-        mapped = mapper.map_items(data.root, pixels, work / "textures-root", codes_from=codes_from)
+        pixels = None
+        if settings is not None and image is not None:
+            mirror_base = (
+                cache
+                / "icons"
+                / "clients"
+                / route.pack_game
+                / str(route.block["pixels"]["app"])
+                / (str(client_buildid) if client_buildid else "unknown")
+            )
+            session = UnrealSession(
+                unreal_decoder.UnrealDecoder(settings, image, oodle_path, cache),
+                data_root=data.root,
+                data_tree_sha256=data.tree_sha256,
+                client=client_dir,
+                utoc_files=route.pixel_files,
+                mirror_base=mirror_base,
+            )
+        else:
+            pixels = mappers.open_pixels(client_dir, route.pixel_files)
+        context = mappers.MapContext(
+            data_root=data.root,
+            pixels=pixels,
+            work=work,
+            codes_from=codes_from,
+            codes_from_inputs={"app": route.steam.app, "buildid": route.steam.buildid},
+            unreal=session,
+            warn=output.warn,
+        )
+        mapped = mapper.run(context)
         document = {**mapped.document, "game": route.pack_game}
         build.validate_recipes(document)
         recipes_bytes = (json.dumps(document, indent=2) + "\n").encode("utf-8")
@@ -67,7 +111,9 @@ def build_from_catalog(
             "status": status,
             "expected": expected,
         }
-        record = _provenance(route, data, pixel_files, mapped, mapper, client_record)
+        record = _provenance(
+            route, data, mapped, mapper, client_record, client_dir, session, image, oodle_sha256, settings
+        )
         record["warnings"] = warnings
         result = build.build_pack(
             document,
@@ -79,7 +125,11 @@ def build_from_catalog(
     (out / "recipes.json").write_bytes(recipes_bytes)
 
     reports = {**result.reports, "recipes": out / "recipes.json"}
-    return {
+    if session is not None and session.mirror is not None:
+        ranges_path = out / "client-ranges.json"
+        ranges_path.write_text(json.dumps(session.mirror.ranges, indent=2) + "\n", encoding="utf-8")
+        reports["clientRanges"] = ranges_path
+    report: dict[str, Any] = {
         "game": result.game,
         "catalogGame": route.catalog_game,
         "target": route.target.id,
@@ -103,18 +153,30 @@ def build_from_catalog(
         },
         "warnings": warnings,
     }
+    if session is not None and session.mirror is not None and image is not None:
+        report["decoder"] = {
+            "name": unreal_decoder.DECODER_NAME,
+            "imageId": image.id,
+            "contextSha256": image.context_sha256,
+        }
+        report["inputs"]["pixels"]["rangeBytes"] = session.mirror.bytes
+    return report
 
 
 def _provenance(
     route: IconsRoute,
     data: acquire.DataTree,
-    pixel_files: dict[str, dict[str, Any]],
     mapped: mappers.MapResult,
     mapper: mappers.Mapper,
     client: dict[str, Any],
+    client_dir: Path,
+    session: UnrealSession | None,
+    image: container.DecoderImage | None,
+    oodle_sha256: str,
+    settings: unreal_decoder.UnrealSettings | None,
 ) -> dict[str, Any]:
     pixels = route.block["pixels"]
-    return {
+    record: dict[str, Any] = {
         "source": "catalog",
         "catalogGame": route.catalog_game,
         "target": route.target.id,
@@ -131,12 +193,47 @@ def _provenance(
             "files": data.files,
             "treeSha256": data.tree_sha256,
         },
-        "pixels": {
+        "client": client,
+        "mapper": {"name": mapper.name, "version": mapper.version, "notes": mapped.notes, **mapped.details},
+    }
+    if session is not None and session.mirror is not None and image is not None and settings is not None:
+        mirror = session.mirror
+        record["decoder"] = {
+            "name": unreal_decoder.DECODER_NAME,
+            "imageId": image.id,
+            "contextSha256": image.context_sha256,
+            "tool": session.tool,
+            "oodleSha256": oodle_sha256,
+            "engine": settings.engine,
+        }
+        record["pixels"] = {
+            "source": "client",
+            "decoder": pixels["decoder"],
+            "access": route.pixel_access,
+            "ranges": {
+                "planSha256": mirror.plan_sha256,
+                "containers": len({entry["file"] for entry in mirror.ranges}),
+                "ranges": len(mirror.ranges),
+                "bytes": mirror.bytes,
+            },
+            "files": {
+                name: {
+                    "sha256": info.sha256,
+                    "size": info.size,
+                    "version": info.version,
+                    "entries": info.entries,
+                    "partitions": info.partitions,
+                }
+                for name, info in mirror.containers.items()
+            },
+        }
+        record["tools"] = provenance.tools_record(f"{unreal_decoder.DECODER_NAME} container ({image.tag})")
+    else:
+        pixel_files = acquire.hash_pixel_files(client_dir, route.pixel_files)
+        record["pixels"] = {
             "source": "client",
             "decoder": pixels["decoder"],
             "files": {name: {**pixel_files[name], **mapped.pack_usage[name]} for name in route.pixel_files},
-        },
-        "client": client,
-        "mapper": {"name": mapper.name, "version": mapper.version, "notes": mapped.notes},
-        "tools": provenance.tools_record(),
-    }
+        }
+        record["tools"] = provenance.tools_record()
+    return record

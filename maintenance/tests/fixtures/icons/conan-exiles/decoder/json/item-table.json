@@ -1,0 +1,229 @@
+[
+  {
+    "Type": "DataTable",
+    "Name": "ItemTable",
+    "Class": "UScriptClass'DataTable'",
+    "Package": "/Game/Items/ItemTable",
+    "Properties": {
+      "RowStruct": {
+        "ObjectName": "Class'ItemTableRow'",
+        "ObjectPath": "/Script/ConanSandbox"
+      }
+    },
+    "Rows": {
+      "991": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_991_Name",
+          "SourceString": "Smelted Iron Siege Boulder",
+          "LocalizedString": "Smelted Iron Siege Boulder"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_siege_boulder_ironstone.icon_siege_boulder_ironstone",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "19230": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_19230_Name",
+          "SourceString": "Stray Cat",
+          "LocalizedString": "Stray Cat"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Pets/icon_pet_housecat_black.icon_pet_housecat_black",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "80223": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_80223_Name",
+          "SourceString": "Treasure Coffer",
+          "LocalizedString": "Treasure Coffer"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Building/icon_clancoffer_chest.icon_clancoffer_chest",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "1612": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_1612_Name",
+          "SourceString": "Helm of the Mad Prophet",
+          "LocalizedString": "Helm of the Mad Prophet"
+        },
+        "Icon": {
+          "AssetPathName": "",
+          "SubPathString": ""
+        },
+        "IconLayers": [
+          {
+            "AssetPathName": "/Game/UI/Textures/Icons/Armor/icon_armor_helmet_thugrakhotan.icon_armor_helmet_thugrakhotan",
+            "SubPathString": ""
+          },
+          {
+            "AssetPathName": "/Game/UI/Textures/Icons/Overlays/epic_icon_border.epic_icon_border",
+            "SubPathString": ""
+          }
+        ]
+      },
+      "51636": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_51636_Name",
+          "SourceString": "Axe of the Grey Ones",
+          "LocalizedString": "Axe of the Grey Ones"
+        },
+        "Icon": {
+          "AssetPathName": "",
+          "SubPathString": ""
+        },
+        "IconLayers": [
+          {
+            "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_obsidianones_1h_axe.icon_obsidianones_1h_axe",
+            "SubPathString": ""
+          },
+          {
+            "AssetPathName": "/Game/UI/Textures/Icons/Overlays/epic_icon_border.epic_icon_border",
+            "SubPathString": ""
+          }
+        ]
+      },
+      "1529": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_1529_Name",
+          "SourceString": "XX_Rhino Embedded Saddle",
+          "LocalizedString": "XX_Rhino Embedded Saddle"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_DEV_needs_icon.icon_DEV_needs_icon",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "992": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_992_Name",
+          "SourceString": "Salvaged Star Metal Shell",
+          "LocalizedString": "Salvaged Star Metal Shell"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_trebuchet_ammunition_starmetal_battlepass.icon_trebuchet_ammunition_starmetal_battlepass",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "52228": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_52228_Name",
+          "SourceString": "Acheronian Legate Primus Chest",
+          "LocalizedString": "Acheronian Legate Primus Chest"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Armor/icon_armor_chest_sorcery_light.icon_armor_chest_sorcery_light",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "80646": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_80646_Name",
+          "SourceString": "Wooden Bowl",
+          "LocalizedString": "Wooden Bowl"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_Tavern_Inside_Bowl.icon_Tavern_Inside_Bowl",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "90114": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_90114_Name",
+          "SourceString": "Wooden Wedge Sloped Roof",
+          "LocalizedString": "Wooden Wedge Sloped Roof"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Building/icon_t2_roofSloped_triangle_up.icon_t2_roofSloped_triangle_up",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "29014": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_29014_Name",
+          "SourceString": "Scroll (Throne of Skelos)",
+          "LocalizedString": "Scroll (Throne of Skelos)"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_scrawled_note.icon_scrawled_note",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "9000001": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_991_Name",
+          "SourceString": "Dev Probe",
+          "LocalizedString": "Smelted Iron Siege Boulder"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_siege_boulder_ironstone.icon_siege_boulder_ironstone",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "9000002": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_991_Name",
+          "SourceString": "",
+          "LocalizedString": "Smelted Iron Siege Boulder"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_siege_boulder_ironstone.icon_siege_boulder_ironstone",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "NotATemplateId": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_991_Name",
+          "SourceString": "Smelted Iron Siege Boulder",
+          "LocalizedString": "Smelted Iron Siege Boulder"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/UI/Textures/Icons/Items/icon_siege_boulder_ironstone.icon_siege_boulder_ironstone",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "9000003": {
+        "Name": {
+          "Namespace": "",
+          "Key": "ItemTable_991_Name",
+          "SourceString": "Placeholder Without Icon",
+          "LocalizedString": "Smelted Iron Siege Boulder"
+        },
+        "Icon": {
+          "AssetPathName": "",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      }
+    }
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "Type": "DataTable",
+    "Name": "DLC_Pict_ItemNameToTemplateID",
+    "Class": "UScriptClass'DataTable'",
+    "Package": "/Game/DLC/DLC_Pict/DLC_Pict_ItemNameToTemplateID",
+    "Properties": {
+      "RowStruct": {
+        "ObjectName": "UserDefinedStruct'ItemNameToTemplateIDStruct'",
+        "ObjectPath": "/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateIDStruct.0"
+      }
+    },
+    "Rows": {
+      "Warpaint_Pict1": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 6100
+      },
+      "Pict_WarAxe": {
+        "ID_XX_6_7ED8A4BD4E9D07B8E7077B82BED9F5D7": 6272
+      }
+    }
+  }
+]
