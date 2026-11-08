@@ -9,10 +9,8 @@ touches the network.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import shutil
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,8 +19,8 @@ from .. import net, output, paths
 from ..exit_codes import IntegrityError, UpstreamUnavailable, UsageError
 from ..steam import depotdownloader as dd
 from ..steam import vdf
-from ..steam.install import COMPLETE_MARKER
 from ..steam.selectors import selects
+from . import cache_entry
 from .catalog_route import APPMANIFEST, IconsRoute
 
 REPIN_HINT = (
@@ -70,17 +68,6 @@ def _merged(roots: list[Path], work: Path) -> Path:
     return merged
 
 
-def _read_marker(directory: Path) -> dict[str, Any] | None:
-    marker = directory / COMPLETE_MARKER
-    if not marker.is_file():
-        return None
-    try:
-        document = json.loads(marker.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    return document if isinstance(document, dict) and isinstance(document.get("files"), dict) else None
-
-
 def _problems(directory: Path, marker: dict[str, Any]) -> list[str]:
     problems = []
     for relative, expected in sorted(marker["files"].items()):
@@ -94,16 +81,16 @@ def _problems(directory: Path, marker: dict[str, Any]) -> list[str]:
 
 def _fetch_depot(route: IconsRoute, depot: str, cache: Path) -> tuple[Path, dict[str, Any]]:
     destination = route.data_cache(cache, depot)
-    marker = _read_marker(destination)
+    marker = cache_entry.read_marker(destination, "files")
     if marker is not None:
         problems = _problems(destination, marker)
         if not problems:
             output.info(f"depot {depot} manifest {route.depots[depot]} is already in the filtered cache")
             return destination, marker["files"]
         output.warn(f"corrupt filtered cache {destination} ({problems[0]}); downloading it again once")
-    if destination.exists():
-        shutil.rmtree(destination)
-    marker = _download(route, depot, destination, cache)
+    elif destination.exists():
+        output.warn(f"corrupt filtered cache {destination} (no usable marker); downloading it again once")
+    marker = cache_entry.store(destination, lambda staging: _download(route, depot, staging, cache))
     problems = _problems(destination, marker)
     if problems:
         raise IntegrityError(
@@ -114,44 +101,34 @@ def _fetch_depot(route: IconsRoute, depot: str, cache: Path) -> tuple[Path, dict
     return destination, marker["files"]
 
 
-def _download(route: IconsRoute, depot: str, destination: Path, cache: Path) -> dict[str, Any]:
+def _download(route: IconsRoute, depot: str, staging: Path, cache: Path) -> dict[str, Any]:
     manifest = route.depots[depot]
-    staging = destination.parent / f"tmp-{uuid.uuid4().hex}"
     try:
-        try:
-            dd.download(
-                route.steam.app,
-                depot,
-                manifest,
-                branch=route.steam.branch,
-                os_=route.steam.os_,
-                arch=route.steam.arch,
-                dir=staging,
-                cache=cache,
-                log=log_path(cache, route),
-                filelist=route.selectors,
-                validate=True,
-                credentials=route.steam.credentials,
-            )
-        except UpstreamUnavailable as exc:
-            hint = REPIN_HINT.format(game=route.catalog_game, target=route.target.id)
-            raise UpstreamUnavailable(f"{exc.message}\n{hint}", **exc.detail) from exc
-        files = _keep_selected(staging, route.selectors)
-        marker = {
-            "app": route.steam.app,
-            "depot": depot,
-            "manifest": manifest,
-            "selectors": route.selectors,
-            "tool": dd.read_lock().version,
-            "files": files,
-        }
-        (staging / COMPLETE_MARKER).parent.mkdir(parents=True, exist_ok=True)
-        (staging / COMPLETE_MARKER).write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staging, destination)
-        return marker
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        dd.download(
+            route.steam.app,
+            depot,
+            manifest,
+            branch=route.steam.branch,
+            os_=route.steam.os_,
+            arch=route.steam.arch,
+            dir=staging,
+            cache=cache,
+            log=log_path(cache, route),
+            filelist=route.selectors,
+            validate=True,
+            credentials=route.steam.credentials,
+        )
+    except UpstreamUnavailable as exc:
+        hint = REPIN_HINT.format(game=route.catalog_game, target=route.target.id)
+        raise UpstreamUnavailable(f"{exc.message}\n{hint}", **exc.detail) from exc
+    return {
+        "app": route.steam.app,
+        "depot": depot,
+        "manifest": manifest,
+        "selectors": route.selectors,
+        "tool": dd.read_lock().version,
+        "files": _keep_selected(staging, route.selectors),
+    }
 
 
 def _keep_selected(directory: Path, selectors: list[str]) -> dict[str, dict[str, Any]]:

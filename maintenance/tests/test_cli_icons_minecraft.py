@@ -428,6 +428,16 @@ def test_a_corrupt_cached_download_is_fetched_once_more(run: Any, env: Env, tmp_
     assert env.upstream.requested.count(CLIENT_PATH) == before + 1
 
 
+def test_a_cached_download_without_its_marker_is_fetched_once_more(run: Any, env: Env, tmp_path: Path) -> None:
+    assert build(run, env, tmp_path / "first")[0] == 0
+    (env.downloads_dir(CLIENT_SHA1) / ".takaro" / "complete.json").unlink()
+    before = env.upstream.requested.count(CLIENT_PATH)
+    code, payload, stderr = build(run, env, tmp_path / "second")
+    assert code == 0, payload
+    assert "corrupt cached download client.jar" in stderr
+    assert env.upstream.requested.count(CLIENT_PATH) == before + 1
+
+
 def test_inputs_reports_cached_downloads(run: Any, env: Env, tmp_path: Path) -> None:
     assert build(run, env, tmp_path / "out")[0] == 0
     _, payload, _ = run("icons", "inputs", "--game", "minecraft", "--target", TARGET, repo=env.repo)

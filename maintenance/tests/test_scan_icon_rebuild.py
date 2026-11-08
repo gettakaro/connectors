@@ -34,7 +34,8 @@ def line(catalog: str = "stubgame", pack: str = "stub-pack", client: str = CLIEN
         "- [ ] the Icon Pack is rebuilt for the new target and published: "
         f"`maintenance/bin/takaro-maint icons build --game {catalog} --target <new target>{client} --out <out>`, "
         f"then `maintenance/bin/takaro-maint icons publish --env staging --pack <out>/pack/{pack}`, "
-        f"then `maintenance/bin/takaro-maint icons promote --game {pack}` "
+        f"then `maintenance/bin/takaro-maint icons promote --game {pack}`, "
+        "then re-apply any earlier `icons takedown` on staging and production "
         "(see `maintenance/docs/icons.md`)"
     )
 

@@ -1,7 +1,7 @@
 """Render recipes into an Icon Pack, a coverage report, a contact sheet and a build record.
 
-The entry point is ``build_pack``, which takes a parsed recipe document, so a later source of recipes
-(derived from the catalog and game data) feeds the same builder.
+The entry point is ``build_pack``, which takes a parsed recipe document; the ``--recipes`` route and the
+catalog routes all feed it.
 
 Byte reproducibility is the point of the pinned rendering below: the same recipes and images give the
 same WebP bytes, so the same object names, so a rebuild publishes nothing new.

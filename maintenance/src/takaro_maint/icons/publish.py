@@ -20,7 +20,10 @@ PUBLISH_ENV = "staging"
 
 
 def merge(live: contract.Index | None, new: contract.Index) -> tuple[contract.Index, dict[str, Any]]:
-    """Every earlier code survives; a changed code points at its new object; a live takedown is kept."""
+    """Every earlier code survives; a changed code points at its new object; only ``enabled`` comes from live.
+
+    A code removed by ``takedown`` comes back when the new index contains it.
+    """
     live_icons = live.icons if live else {}
     diff = {
         "added": sorted(code for code in new.icons if code not in live_icons),

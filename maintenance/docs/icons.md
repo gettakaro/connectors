@@ -383,7 +383,7 @@ index is exit 6. `icons/client_ranges.py` checks every `.utoc` and implied `.uca
 under `--client` before any network (exit 4 with `missing`), then builds a sparse mirror at
 `<cache>/icons/clients/<pack game>/<app>/<client build | unknown>/<plan16>/`: `.utoc` files and `global.ucas` whole,
 every other `.ucas` truncated to its source size, and each planned range copied (8 MiB chunks, hashed) with the marker
-`.takaro/complete.json` replaced atomically. A hit re-hashes the ranges; a mismatch warns and re-reads once, a second
+`.takaro/complete.json` written in a staging directory that is renamed into place. A hit re-hashes the ranges; a mismatch warns and re-reads once, a second
 mismatch or a short source read is exit 5. `--client` may be a local install or a read-only mount of one:
 
     rclone mount ":sftp:/D:/Program Files (x86)/Steam/steamapps" "$MNT" --sftp-ssh "ssh gamer" \
@@ -932,8 +932,8 @@ None of them is inside `pack/`, so none is published.
 4. `GET <game>/index.json`. A 404 means there is no live index; an invalid one (or one for another
    game) stops the run with exit 7 before anything is uploaded.
 5. Merge: every live code survives, a changed code points at the new object, and `enabled` is
-   taken from the live index (a takedown is not undone; a new pack is enabled). The merged index is
-   validated.
+   taken from the live index: `enabled: false` stays, a new pack is enabled, and a code removed by
+   `takedown` comes back when the published pack contains it. The merged index is validated.
 6. `HEAD` every object; existing ones are skipped.
 7. In a dry run, stop and print the plan.
 8. `PUT` each missing object, then `PUT` `index.json` last, then `GET` it back and compare. An index
@@ -1001,6 +1001,12 @@ used).
 `promote` merges staging into production, so a code taken down only in production comes back on the
 next promote while staging still has it. Take down in staging first, then production. `publish` and
 `promote` both preserve a live `enabled: false`.
+
+No takedown record exists yet, so every later build, publish and promote re-adds a taken-down code
+that the game data still produces. Apply the takedown again each time. `takedown` prints a warning
+saying so. `promote` never removes codes: when production holds codes that staging lacks, it warns
+with the first ten of them and the count, and a staging takedown needs
+`icons takedown --env production`.
 
 ## Production promotion
 

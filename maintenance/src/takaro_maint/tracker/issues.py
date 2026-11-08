@@ -259,7 +259,8 @@ def icon_rebuild_line(pack: IconPack) -> str:
         f"`maintenance/bin/takaro-maint icons build --game {pack.catalog_game} "
         f"--target <new target>{client} --out <out>`, "
         f"then `maintenance/bin/takaro-maint icons publish --env staging --pack <out>/pack/{pack.pack_game}`, "
-        f"then `maintenance/bin/takaro-maint icons promote --game {pack.pack_game}` "
+        f"then `maintenance/bin/takaro-maint icons promote --game {pack.pack_game}`, "
+        "then re-apply any earlier `icons takedown` on staging and production "
         "(see `maintenance/docs/icons.md`)"
     )
 

@@ -37,6 +37,14 @@ def promote_pack(game: str, *, dry_run: bool) -> dict[str, Any]:
     if live_index is None and not staged_index.enabled:
         output.warn(f"the staging {game} index is disabled; production will be created disabled")
 
+    if diff["kept"]:
+        listed = ", ".join(diff["kept"][:10])
+        more = f" and {len(diff['kept']) - 10} more" if len(diff["kept"]) > 10 else ""
+        output.warn(
+            f"production keeps {len(diff['kept'])} {game} codes that staging lacks ({listed}{more}); "
+            "promote never removes codes, so a staging takedown needs `icons takedown --env production`"
+        )
+
     needed = sorted(set(staged_index.icons.values()))
     present = [name for name in needed if destination.exists(f"{game}/{name}")]
     to_copy = [name for name in needed if name not in present]

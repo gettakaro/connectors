@@ -8,18 +8,14 @@ changed client gives a different directory.
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import shutil
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .. import net, output
 from ..exit_codes import IntegrityError
-
-MARKER = Path(".takaro") / "complete.json"
+from . import cache_entry
 
 
 @dataclass(frozen=True)
@@ -39,8 +35,8 @@ def _hash_all(root: Path, names: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def _intact(directory: Path, files: dict[str, dict[str, Any]]) -> bool:
-    marker = directory / MARKER
-    if not marker.is_file() or json.loads(marker.read_text(encoding="utf-8"))["files"] != files:
+    marker = cache_entry.read_marker(directory, "files")
+    if marker is None or marker["files"] != files:
         return False
     return all((directory / name).is_file() and _hash_all(directory, [name])[name] == files[name] for name in files)
 
@@ -56,24 +52,15 @@ def mirror(cache: Path, *, pack: str, app: int, buildid: int | None, client: Pat
             output.info(f"client files mirror {tree[:12]} is already complete")
             return ClientMirror(directory, wanted, tree)
         output.warn(f"corrupt client files mirror {directory}; copying it again once")
-        shutil.rmtree(directory)
-    _copy(client, wanted, directory)
+    cache_entry.store(directory, lambda staging: _copy(client, wanted, staging))
     if not _intact(directory, wanted):
         raise IntegrityError(f"the client files mirror {directory} does not match its own marker after a fresh copy")
     return ClientMirror(directory, wanted, tree)
 
 
-def _copy(client: Path, files: dict[str, dict[str, Any]], directory: Path) -> None:
-    staging = directory.parent / f"tmp-{uuid.uuid4().hex}"
-    try:
-        for name in files:
-            destination = staging / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(client / name, destination)
-        marker = staging / MARKER
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(json.dumps({"files": files}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        directory.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staging, directory)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+def _copy(client: Path, files: dict[str, dict[str, Any]], staging: Path) -> dict[str, Any]:
+    for name in files:
+        destination = staging / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(client / name, destination)
+    return {"files": files}

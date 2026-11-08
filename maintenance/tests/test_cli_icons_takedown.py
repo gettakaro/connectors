@@ -69,7 +69,25 @@ def test_taking_down_a_code_removes_it_and_its_object(
     assert payload["objects"] == {"deleted": [_key(pebble)], "retained": []}
     assert payload["index"] == {"action": "uploaded", "codes": 5, "enabled": True}
     assert "warning" in stderr and _key(pebble) in stderr and "purge" in stderr
+    assert "re-adds them to staging" in stderr and GAME in stderr
     assert production.requests == []
+
+
+def test_a_later_publish_of_the_same_pack_re_adds_a_taken_down_code(
+    run: Any, tmp_path: Path, staging: FakeS3, production: FakeS3, published: dict[str, Any]
+) -> None:
+    pebble = _key(published["icons"]["fixture-pebble"])
+    assert _takedown(run, "--code", "fixture-pebble")[0] == 0
+    assert pebble not in staging.objects
+    staging.requests.clear()
+
+    pack = tmp_path / "built" / "pack" / GAME
+    code, payload, _ = run("icons", "publish", "--env", "staging", "--pack", str(pack))
+    assert code == 0, payload
+    assert payload["index"]["added"] == ["fixture-pebble"]
+    assert payload["objects"]["uploaded"] == [pebble]
+    assert [request.key for request in staging.puts() if request.key == pebble] == [pebble]
+    assert stored_index(staging)["icons"] == published["icons"]
 
 
 def test_an_object_another_code_still_uses_is_retained(
@@ -140,8 +158,9 @@ def test_a_disabled_pack_stays_disabled(
 def test_dry_run_plans_without_writing(
     run: Any, staging: FakeS3, production: FakeS3, published: dict[str, Any]
 ) -> None:
-    code, payload, _ = _takedown(run, "--code", "fixture-pebble", "fixture-circle", "--dry-run")
+    code, payload, stderr = _takedown(run, "--code", "fixture-pebble", "fixture-circle", "--dry-run")
     assert code == 0 and payload["dryRun"] is True
+    assert "re-adds" not in stderr
     assert staging.puts() == [] and staging.deletes() == []
     assert payload["index"]["action"] == "would-upload"
     assert payload["objects"]["toDelete"] == [_key(published["icons"]["fixture-pebble"])]

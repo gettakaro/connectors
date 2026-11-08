@@ -6,20 +6,17 @@ is copied. The decoder containers read one read-only mirror of the selected clie
 
 from __future__ import annotations
 
-import hashlib
-import json
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from .. import net, output, paths
-from . import acquire, build, client_files, mappers, provenance
+from . import acquire, client_files, mappers, provenance, route_common
 from .catalog_route import IconsRoute
 from .clr_session import ClrSession
 from .decoders import clr as clr_decoder
 from .decoders import container
 from .decoders import xnb as xnb_decoder
-from .pipeline import client_build_side
 from .xnb_session import XnbSession
 
 
@@ -30,7 +27,7 @@ def _decoder_record(image: container.DecoderImage, tool: dict[str, Any]) -> dict
 def build_from_connector(route: IconsRoute, mapper: mappers.Mapper, client: Path | None, out: Path) -> dict[str, Any]:
     container.require_docker()
     directory, selected = acquire.check_client_selectors(client, route.client_selectors)
-    client_side = client_build_side(route, directory)
+    client_side = route_common.client_build_side(route, directory)
     xnb_image = container.ensure_image(xnb_decoder.DECODER_NAME)
     clr_image = container.ensure_image(clr_decoder.DECODER_NAME)
 
@@ -73,10 +70,7 @@ def build_from_connector(route: IconsRoute, mapper: mappers.Mapper, client: Path
             clr=clr_session,
             client_files=selected,
         )
-        mapped = mapper.run(context)
-        document = {**mapped.document, "game": route.pack_game}
-        build.validate_recipes(document)
-        recipes_bytes = (json.dumps(document, indent=2) + "\n").encode("utf-8")
+        mapped, document, recipes_bytes = route_common.map_recipes(route, mapper, context)
         pixel_files = [name for name in selected if name not in route.code_files]
         decoders = [_decoder_record(xnb_image, xnb_session.tool), _decoder_record(clr_image, clr_session.tool)]
         record: dict[str, Any] = {
@@ -111,27 +105,9 @@ def build_from_connector(route: IconsRoute, mapper: mappers.Mapper, client: Path
             ),
             "warnings": client_side.warnings,
         }
-        result = build.build_pack(
-            document,
-            work / "textures-root",
-            out,
-            recipes_sha256=hashlib.sha256(recipes_bytes).hexdigest(),
-            provenance=record,
-        )
-    (out / "recipes.json").write_bytes(recipes_bytes)
-    reports = {**result.reports, "recipes": out / "recipes.json"}
+        result, reports = route_common.write_pack(document, recipes_bytes, work, out, record)
     return {
-        "game": result.game,
-        "catalogGame": route.catalog_game,
-        "target": route.target.id,
-        "fingerprint": route.target.fingerprint,
-        "pack": str(result.pack_dir.resolve()),
-        "index": str(result.index_path.resolve()),
-        "codes": result.codes,
-        "objects": result.objects,
-        "coverage": result.coverage,
-        "reports": {name: str(path.resolve()) for name, path in reports.items()},
-        "encoder": result.encoder,
+        **route_common.report_head(route, result, reports),
         "inputs": {
             "data": {
                 "source": "connector",

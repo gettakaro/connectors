@@ -23,7 +23,6 @@ import shutil
 import stat
 import subprocess
 import tempfile
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +34,7 @@ from PIL import Image, UnidentifiedImageError
 from ... import output, paths, redact
 from ...exit_codes import BuildFailed, IntegrityError, UsageError
 from ...paths import safe_relative
+from .. import cache_entry
 
 DECODERS_DIR = Path("maintenance") / "decoders"
 CONTEXT_LABEL = "org.takaro.icons.decoder.context"
@@ -44,7 +44,6 @@ MAX_EDGE = 4096
 MAX_JSON_BYTES = 256 * 1024 * 1024
 STDERR_TAIL_LINES = 40
 REQUEST_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-DECODE_MARKER = Path(".takaro") / "complete.json"
 
 MANIFEST_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -292,13 +291,6 @@ def check_tree(root: Path) -> None:
                     raise BuildFailed(f"the decoder output holds a hardlinked file: {entry.path}", path=entry.path)
 
 
-def write_new(path: Path, text: str) -> None:
-    """Create ``path`` exclusively and without following a link planted at it."""
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(text)
-
-
 def read_manifest(out: Path, expected_ids: list[str]) -> Manifest:
     """The manifest under ``out``, checked against the contract; any violation is a failed build."""
     check_tree(out)
@@ -371,7 +363,7 @@ def _output_hashes(root: Path) -> dict[str, str]:
     return {
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob("*"))
-        if path.is_file() and path.relative_to(root) != DECODE_MARKER
+        if path.is_file() and path.relative_to(root) != cache_entry.MARKER
     }
 
 
@@ -391,27 +383,21 @@ def run_cached(
     key = decode_key(image, request, inputs_sha256)
     directory = cache / "icons" / "decoded" / key
     expected_ids = [str(export["id"]) for export in request["exports"]]
-    marker = directory / DECODE_MARKER
-    if marker.is_file():
+    marker = cache_entry.read_marker(directory, "files")
+    if marker is not None:
         check_tree(directory)
-        recorded = json.loads(marker.read_text(encoding="utf-8"))["files"]
-        if _output_hashes(directory) == recorded:
+        if _output_hashes(directory) == marker["files"]:
             output.info(f"decoded outputs {key[:12]} are already in the decode cache")
             return read_manifest(directory, expected_ids)
         output.warn(f"corrupt decode cache {key[:12]}; decoding again once")
-        shutil.rmtree(directory)
-    staging = directory.parent / f"tmp-{uuid.uuid4().hex}"
-    try:
+    elif directory.exists():
+        output.warn(f"corrupt decode cache {key[:12]}; decoding again once")
+
+    def decode(staging: Path) -> dict[str, Any]:
         run(image, request, mounts, staging, env_names)
-        (staging / DECODE_MARKER).parent.mkdir(parents=True, exist_ok=True)
-        write_new(
-            staging / DECODE_MARKER, json.dumps({"image": image.id, "files": _output_hashes(staging)}, indent=2) + "\n"
-        )
-        directory.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staging, directory)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    recorded = json.loads(marker.read_text(encoding="utf-8"))["files"]
-    if _output_hashes(directory) != recorded:
+        return {"image": image.id, "files": _output_hashes(staging)}
+
+    marker = cache_entry.store(directory, decode)
+    if _output_hashes(directory) != marker["files"]:
         raise IntegrityError(f"the decode cache {key[:12]} does not match its own marker after a fresh decode")
     return read_manifest(directory, expected_ids)

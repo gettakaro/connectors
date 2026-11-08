@@ -396,6 +396,15 @@ def test_a_tampered_mirror_range_is_read_again_and_changed_toc_bytes_plan_afresh
     assert len(list(mirror.parent.iterdir())) == 2
 
 
+def test_an_unparsable_client_mirror_marker_is_rebuilt_not_a_crash(run: Any, env: Env, tmp_path: Path) -> None:
+    assert build(run, env, tmp_path / "one")[0] == 0
+    [mirror] = (paths.cache_dir() / "icons" / "clients" / "conan-exiles" / "440900" / "25791535").iterdir()
+    (mirror / ".takaro" / "complete.json").write_text("not json", encoding="utf-8")
+    code, _, stderr = build(run, env, tmp_path / "two")
+    assert code == 0 and "corrupt client mirror" in stderr
+    assert tree(tmp_path / "one") == tree(tmp_path / "two")
+
+
 def test_a_client_of_another_build_warns_and_still_builds(run: Any, env: Env, tmp_path: Path) -> None:
     manifest = env.client / "appmanifest_440900.acf"
     manifest.write_text(manifest.read_text().replace("25791535", "25791600"))

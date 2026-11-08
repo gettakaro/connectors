@@ -98,6 +98,11 @@ def takedown(env: str, game: str, codes: list[str], objects: list[str], *, dry_r
             "deleted objects were served with 'immutable, max-age=31536000' and may stay in the Cloudflare edge "
             "cache until purged; purge: " + ", ".join(f"{game}/{name}" for name in to_delete)
         )
+    if removed:
+        output.warn(
+            f"publishing or promoting a {game} pack that still holds these codes re-adds them to {env}; "
+            f"apply this takedown again afterwards: {', '.join(removed)}"
+        )
     return report
 
 
