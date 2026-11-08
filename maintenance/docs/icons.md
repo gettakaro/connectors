@@ -357,8 +357,11 @@ source, README) and is used through `icons/decoders/container.py`:
   `unsupported-format|not-found|failed`) out. The host validates it with jsonschema, requires every id exactly once,
   `safe_relative` file names built from ids (never from game paths), PNGs opened as PNG and capped at 4096x4096, JSON
   capped at 256 MB. Any violation is exit 6.
-- **Decode cache.** `<cache>/icons/decoded/<sha256(image id + canonical request + input tree hash)>/`, with a marker of
-  per-file hashes; a hit is re-hashed and a mismatch decodes once more. Decoded pictures stay in the cache.
+- **Decode cache.** `<cache>/icons/decoded/<key>/`, where the key is `sha256(image id + canonical request + input tree
+  hash [+ sha256 of the values of the secret variables passed to the decoder, when there are any])`; the values
+  themselves are never stored or printed. The entry holds a marker of per-file hashes; a hit is re-hashed and a mismatch
+  decodes once more. An entry holding an `errorKind: failed` result is never reused; the next build decodes it again.
+  Decoded pictures stay in the cache.
 
 ### The Unreal decoder
 
