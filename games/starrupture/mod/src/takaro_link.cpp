@@ -189,6 +189,9 @@ private:
                 TakaroGameIconBase64() + "\"}");
         if (!TakaroProtocol::RunsOnGameThread(request->action))
             return fail("unsupported", "StarRupture does not support " + request->action + ".");
+        // Game-thread work only runs once the world ticks; until then it could only time out.
+        if (state.WorldPhase() != TakaroWorldPhase::Gameplay)
+            return fail("game_error", "The server is still starting; try again once it shows as reachable.");
 
         const auto deadline = std::chrono::duration_cast<std::chrono::milliseconds>(
             (std::chrono::system_clock::now() + ActionTimeout).time_since_epoch()).count();
