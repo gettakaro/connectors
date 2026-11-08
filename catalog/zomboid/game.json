@@ -29,5 +29,30 @@
     }
   },
   "legacyAssetAliases": {"TakaroConnector-{version}.jar": "linux-42.21.0/agent"},
-  "devServers": {"composeFile": "zomboid.yml"}
+  "devServers": {"composeFile": "zomboid.yml"},
+  "icons": {
+    "game": "zomboid",
+    "mapper": "zomboid",
+    "data": {
+      "source": "server-depot",
+      "input": "server",
+      "depots": ["380871"],
+      "files": ["regex:^media/scripts/.*\\.txt$"]
+    },
+    "pixels": {
+      "source": "client",
+      "app": 108600,
+      "depot": 108604,
+      "decoder": "pz-texturepack",
+      "files": [
+        "media/texturepacks/UI2.pack",
+        "media/texturepacks/UI.pack",
+        "media/texturepacks/IconsMoveables.pack",
+        "media/texturepacks/Tiles2x.pack",
+        "media/texturepacks/Tiles2x.floor.pack"
+      ],
+      "clientBuilds": {"42.21.0": [25485521]}
+    },
+    "secrets": []
+  }
 }

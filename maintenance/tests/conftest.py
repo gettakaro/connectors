@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import sys
 import zipfile
@@ -31,6 +32,9 @@ def _isolated_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch:
     """No test may touch the developer's cache, repo root or credentials."""
     monkeypatch.setenv("TAKARO_MAINT_CACHE", str(tmp_path_factory.mktemp("cache")))
     monkeypatch.delenv("GH_TOKEN", raising=False)
+    for name in list(os.environ):
+        if name.startswith(("STG_R2_", "PROD_")) or name == "STG_ICON_HOST":
+            monkeypatch.delenv(name)
     paths.set_repo_root(None)
     redact.forget()
     yield
@@ -108,6 +112,12 @@ def catalog_copy(tmp_path: Path) -> Path:
             destination = root / lockfile
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+    for game_file in (root / "catalog").glob("*/game.json"):
+        data = json.loads(game_file.read_text(encoding="utf-8")).get("icons", {}).get("data", {})
+        for name in data.get("files", []) if data.get("source") == "connector" else []:
+            destination = root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / name, destination)
     mod = root / "games" / "minecraft" / "mod"
     (mod / "gradle").mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "games/minecraft/mod/gradle/libs.versions.toml", mod / "gradle")
@@ -297,6 +307,17 @@ def _repin_fabric(record: dict[str, Any], upstream: Any) -> bool:
 _REPINNERS: dict[str, Any] = {"fabric": _repin_fabric}
 
 
+def drop_unbuildable_icons(root: Path) -> None:
+    """Drop the icons block of a public-download route whose pinned target revisions are no longer in the copy."""
+    revisions = {json.loads(path.read_text())["revision"] for path in (root / "catalog").glob("*/targets/*.json")}
+    for game_file in (root / "catalog").glob("*/game.json"):
+        game = json.loads(game_file.read_text())
+        downloads = (game.get("icons") or {}).get("pixels", {}).get("downloads")
+        if downloads is not None and not revisions & set(downloads):
+            del game["icons"]
+            game_file.write_text(json.dumps(game))
+
+
 @pytest.fixture
 def wired(catalog_copy: Path) -> Any:
     """Serve and re-pin targets with a fake upstream, declaring the unsupported boundary.
@@ -335,6 +356,8 @@ def wired(catalog_copy: Path) -> Any:
             if kept != aliases:
                 game["legacyAssetAliases"] = kept
                 game_file.write_text(json.dumps(game))
+
+        drop_unbuildable_icons(catalog_copy)
 
         assert served, "no target could be re-pinned at the fake upstream"
         point_at(catalog_copy, upstream.base_url)

@@ -101,6 +101,32 @@ Whatever the block names in this repository has to exist: `gradle-project-exists
 project, `build-script-exists` for a script. `runtime.java` is `null` for a game that ships its
 own runtime rather than running on a JRE.
 
+## Icon routes (`icons` block)
+
+A game record may carry an optional `icons` block saying how its Icon Pack is built: `game` (the pack
+directory and Takaro game identifier, which can differ from the catalog id), `mapper` (a registered
+mapping module), `data` (a `server-depot` input of the target, the depots and file-list selectors to
+fetch) and `pixels` (the client app and depot, the decoder, the exact client files in precedence order
+and, per revision, the known client build ids; or, with `source: "server-depot"`, just the selectors of pixel files that come down in the same filtered download as the data, so the build needs no game client), plus `secrets`, the names of environment variables the
+build reads. Games whose files are Unreal containers add `unreal` (`engine`, the CUE4Parse `EGame` value, and
+`aesKeyEnv`, the name of the variable holding the AES key or `null`), `data.decoder: "unreal"` and, for the client
+pixels, `pixels.decoder: "unreal"` with `pixels.access: "iostore-ranges"` (the listed `.utoc` files are read whole
+and only the `.ucas` byte ranges that hold the needed packages are copied). Unity games set
+`data.decoder: "unity"` (a container that reads asset bundles, no settings block) and server-depot `pixels` may
+carry the same `decoder: "unity"`; the `icons-server-pixels-decoder` check requires it to equal `data.decoder`,
+because both roles are decoded from the one mounted tree. `data` may instead be `{"source": "connector", "files":
+[...]}`: repo-relative files of the connector (its own item list) that supply the codes, with no depot involved. An
+optional `code` role (`{"source": "client", "decoder": "clr", "files": [...]}`) names game code read from the same client as
+the pixels; client `pixels.files` entries may be `regex:` patterns as well as exact paths; and `xnb`
+(`{"alpha": "straight"}`) accompanies `pixels.decoder: "xnb"`. `data` and `pixels` may also be
+`{"source": "public-download", ...}`: the item registry comes from the data reports of the target's pinned Mojang server jar
+(`data.input` names its `mojang-version` input; the decoder `minecraft-datagen` runs the jar's data generator in a
+container) and the pixels from a client jar pinned per target revision in `pixels.downloads` (`source`, `path`, `sha1`,
+`size`), which the version manifest must vouch for. It is validated by `schema/v1/icons.schema.json` and the `icons-*` checks of
+`catalog validate`, and it is not part of a target's fingerprint. Details and the commands that read it
+are in [maintenance/docs/icons.md](../maintenance/docs/icons.md). The block also makes `takaro-maint scan` add an Icon Pack
+rebuild line to that game's new-build issues.
+
 ## Fingerprint
 
 The **fingerprint** is `sha256` over a canonical serialization of `id`, `game`, `platform`,

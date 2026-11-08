@@ -60,7 +60,9 @@ worth stating plainly:
 
 * **No upstream bytes are kept here.** No game binaries, no depot manifests, no installer jars,
   no framework packages, no container images. A record names an input and its sha256; every
-  install fetches from upstream and verifies by hash.
+  install fetches from upstream and verifies by hash. Derived item icons (small WebP images built
+  by `takaro-maint icons build`, see [icons.md](icons.md)) are not kept in git either; they live
+  only in the icon buckets.
 * **When upstream withdraws an input, the target becomes uninstallable.** A purged Steam manifest,
   a deleted release asset or a removed image tag makes `install` exit 4, and it **never** falls
   back to a branch head or a "latest" of anything. The response is a new, reviewed target and the
@@ -113,6 +115,13 @@ There is no time-bound promise attached to any of it. "Supported" means an exact
 exists and is proven; it does not mean that the day upstream ships a new build there is a target
 for it. What is promised is that the move is *visible*: filed within one scheduled run, with the
 readiness of every framework it depends on written into the issue.
+
+## Third-party binaries in icon builds
+
+The Unreal icon decoder needs Epic's Oodle decompression library, which no connector ships. It is fetched at
+build time from an unofficial mirror (`WorkingRobot/OodleUE`, pinned to a commit) and pinned by sha256 and size in
+`maintenance/tools.lock.json` (`tools.oodle`); a mismatch is an integrity failure. The library is mounted into the
+decoder container read-only at run time and is never part of the image. Moving to a licensed source is a follow-up.
 
 ## Connectors outside the catalog
 

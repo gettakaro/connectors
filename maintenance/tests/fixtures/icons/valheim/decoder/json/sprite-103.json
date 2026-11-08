@@ -1,0 +1,28 @@
+{
+  "name": "variant-b",
+  "rect": [
+    0,
+    0,
+    8,
+    8
+  ],
+  "textureRect": [
+    8,
+    40,
+    8,
+    8
+  ],
+  "textureRectOffset": [
+    0,
+    0
+  ],
+  "packed": true,
+  "packingMode": "rectangle",
+  "packingRotation": "none",
+  "texture": {
+    "cab": "cab-d",
+    "pathId": 400
+  },
+  "alphaTexture": null,
+  "atlas": null
+}

@@ -1,0 +1,97 @@
+module Base
+{
+    /* Synthetic. A commented-out item and a nested comment: neither is a code.
+       /* nested */
+    item Commented
+    {
+        Icon = Axe,
+    }
+    */
+
+    /* Synthetic: an icon that exists only in UI.pack, with a lowercase key. */
+    item Hammer_Fixture
+    {
+        DisplayCategory = Tool,
+        icon = Hammer,
+    }
+
+    /* Synthetic: obsolete, disabled and debug-only items never reach ScriptManager. */
+    item ObsoleteThing
+    {
+        Icon = Axe,
+        OBSOLETE = true,
+    }
+
+    item DisabledThing
+    {
+        Icon = Axe,
+        enabled = false,
+    }
+
+    item DebugThing
+    {
+        Icon = Axe,
+        DebugOnly = true,
+    }
+
+    /* Synthetic: the texture the item names is in no pack. */
+    item MissingTexture
+    {
+        Icon = NoSuchTexture,
+    }
+
+    /* Synthetic: moveables whose sprite is missing, or that name none. */
+    item Mov_MissingSprite
+    {
+        ItemType = base:moveable,
+        Icon = default,
+        WorldObjectSprite = nowhere_01_0,
+    }
+
+    item Mov_NoSprite
+    {
+        ItemType = base:moveable,
+        Icon = default,
+    }
+
+    /* Synthetic: a second definition of Base.Axe, which the game takes as the same item. */
+    item Axe
+    {
+        Icon = Hammer,
+    }
+
+    /* Real excerpt of an entity: its input line names an item, but it is not an item definition. */
+    entity WoodStake
+    {
+        component UiConfig
+        {
+            xuiSkin = default,
+            entityStyle = ES_Wood_Stake,
+            uiEnabled = false,
+        }
+        component SpriteConfig
+        {
+            isThumpable = false,
+            face W
+            {
+                layer
+                {
+                    row = fencing_01_19,
+                }
+            }
+        }
+        component CraftRecipe
+        {
+            timedAction = BuildWoodenStructureSmall,
+            time = 200,
+            xpAward = Woodwork:6,
+            category = Outdoors,
+            Tags = Carpentry,
+            Tooltip = Tooltip_craft_woodenStakeDesc,
+            inputs
+            {
+                item 1 [Base.Plank],
+            }
+        }
+    }
+}

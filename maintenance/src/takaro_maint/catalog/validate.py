@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import Any
 
 from .. import net, output, paths
 from ..exit_codes import INTEGRITY, USAGE, MaintError, UsageError
+from ..icons import contract as icon_contract
+from ..icons import mappers as icon_mappers
 from . import ids, schema
 from .loader import Catalog, Target
 
@@ -505,6 +508,238 @@ def _check_separate_names(result: ValidationResult, target: Target) -> None:
     )
 
 
+def _check_icons_unreal(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """The decoder settings, the key variable and the IoStore file list of an ``icons`` block."""
+    pixels = block.get("pixels") or {}
+    uses_unreal = (block.get("data") or {}).get("decoder") == "unreal" or pixels.get("decoder") == "unreal"
+    result.add(
+        "icons-unreal-settings",
+        uses_unreal == ("unreal" in block),
+        "icons.unreal must be present exactly when data.decoder or pixels.decoder is 'unreal'",
+        file,
+    )
+    key_env = (block.get("unreal") or {}).get("aesKeyEnv")
+    result.add(
+        "icons-aes-key-declared",
+        key_env is None or key_env in (block.get("secrets") or []),
+        f"icons.unreal.aesKeyEnv {key_env!r} must be listed in icons.secrets",
+        file,
+    )
+    files = pixels.get("files") or []
+    problems = []
+    if pixels.get("access") == "iostore-ranges":
+        problems = [name for name in files if not str(name).endswith(".utoc")]
+        problems += [f"{name} (listed twice)" for name in sorted({n for n in files if files.count(n) > 1})]
+    result.add(
+        "icons-iostore-files",
+        not problems,
+        f"icons.pixels.files with access 'iostore-ranges' must be distinct .utoc paths: {problems}",
+        file,
+    )
+
+
+def _check_icons_server_pixels_decoder(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """Server-depot pixels and data are decoded from one mounted tree, so a pixels decoder must be the data decoder."""
+    pixels = block.get("pixels") or {}
+    decoder = pixels.get("decoder")
+    applies = pixels.get("source") == "server-depot" and decoder is not None
+    data_decoder = (block.get("data") or {}).get("decoder")
+    result.add(
+        "icons-server-pixels-decoder",
+        not applies or decoder == data_decoder,
+        f"icons.pixels.decoder {decoder!r} must equal icons.data.decoder {data_decoder!r} for server-depot pixels",
+        file,
+    )
+
+
+def _check_icons_client_files(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """``regex:`` file entries, the ``code`` role and the ``xnb`` settings of an ``icons`` block."""
+    pixels = block.get("pixels") or {}
+    patterns = [
+        str(name)[len("regex:") :]
+        for role in (pixels, block.get("code") or {})
+        for name in role.get("files") or []
+        if str(name).startswith("regex:")
+    ]
+    broken = []
+    for pattern in patterns:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            broken.append(f"{pattern!r} ({exc})")
+    pixel_patterns = any(str(name).startswith("regex:") for name in pixels.get("files") or [])
+    stray = bool(patterns) and pixels.get("access") == "iostore-ranges"
+    unresolvable = pixel_patterns and pixels.get("source") == "client" and pixels.get("decoder") != "xnb"
+    result.add(
+        "icons-client-regex",
+        not broken and not stray and not unresolvable,
+        f"icons.pixels.files: regex entries must compile {broken}, are not allowed with access 'iostore-ranges' "
+        "and are only resolved for the xnb decoder",
+        file,
+    )
+    connector = (block.get("data") or {}).get("source") == "connector"
+    result.add(
+        "icons-connector-route",
+        connector == (pixels.get("decoder") == "xnb" and (block.get("code") or {}).get("decoder") == "clr"),
+        "icons.data.source 'connector' goes with pixels.decoder 'xnb' and code.decoder 'clr', and only with them",
+        file,
+    )
+    result.add(
+        "icons-code-role",
+        "code" not in block or pixels.get("source") == "client",
+        "icons.code requires icons.pixels.source 'client': the code files are read from the same installed client",
+        file,
+    )
+    result.add(
+        "icons-xnb-settings",
+        (pixels.get("decoder") == "xnb") == ("xnb" in block),
+        "icons.xnb must be present exactly when icons.pixels.decoder is 'xnb'",
+        file,
+    )
+
+
+def _check_icons_connector_data(result: ValidationResult, block: dict[str, Any], file: str) -> None:
+    """Connector data files are read from this repository, so they have to be in it."""
+    data = block.get("data") or {}
+    if data.get("source") != "connector":
+        return
+    missing = []
+    for name in data.get("files") or []:
+        try:
+            present = (paths.repo_root() / paths.safe_relative(str(name), field="icons.data.files")).is_file()
+        except UsageError:
+            present = False
+        if not present:
+            missing.append(str(name))
+    result.add(
+        "icons-data-input",
+        not missing,
+        f"icons.data.files are not in the repository: {missing}" if missing else "every connector data file exists",
+        file,
+    )
+
+
+def _check_client_builds_revisions(
+    result: ValidationResult, block: dict[str, Any], revisions: set[str], file: str
+) -> None:
+    stray = sorted(set((block.get("pixels") or {}).get("clientBuilds") or {}) - revisions)
+    result.add(
+        "icons-client-builds-revisions",
+        not stray,
+        f"icons.pixels.clientBuilds names revisions no target has: {stray}" if stray else "every revision exists",
+        file,
+    )
+
+
+def _check_icons_public(result: ValidationResult, game: Any, block: dict[str, Any], file: str) -> None:
+    """A public-download route: the pinned revisions are targets with a mojang-version input and valid client pins."""
+    data, pixels = block.get("data") or {}, block.get("pixels") or {}
+    downloads: dict[str, Any] = pixels.get("downloads") or {}
+    targets = {target.revision: target for target in game.targets}
+    pinned = [target for revision, target in targets.items() if revision in downloads]
+    wrong = [
+        target.id
+        for target in pinned
+        if (target.record["inputs"].get(data.get("input")) or {}).get("kind") != "mojang-version"
+    ]
+    result.add(
+        "icons-data-input",
+        bool(pinned) and not wrong,
+        f"targets {wrong} have no mojang-version input named {data.get('input')!r}"
+        if wrong
+        else "no target has a revision with a client pin"
+        if not pinned
+        else f"every pinned target has the mojang-version input {data.get('input')!r}",
+        file,
+    )
+    stray = sorted(set(downloads) - set(targets))
+    result.add(
+        "icons-public-download-revisions",
+        not stray,
+        f"icons.pixels.downloads names revisions no target has: {stray}" if stray else "every revision exists",
+        file,
+    )
+    problems = []
+    for revision, pin in sorted(downloads.items()):
+        if pin.get("source") not in game.record.get("sources", {}):
+            problems.append(f"{revision}: source {pin.get('source')!r} is not a source of the game record")
+        if pin.get("path") != f"/v1/objects/{pin.get('sha1')}/client.jar":
+            problems.append(f"{revision}: path {pin.get('path')!r} must be /v1/objects/<sha1>/client.jar for its sha1")
+    result.add(
+        "icons-public-download-pins",
+        not problems,
+        "; ".join(problems) or "every client pin names a known source and a path derived from its sha1",
+        file,
+    )
+
+
+def _check_icons(result: ValidationResult, catalog: Catalog) -> None:
+    """The optional ``icons`` block: what it names must exist, without asking the network."""
+    for game in sorted(catalog.games.values(), key=lambda game: game.id):
+        block = game.record.get("icons")
+        if block is None:
+            continue
+        file = _relative(game.path)
+        pack_game = block.get("game")
+        result.add(
+            "icons-game-identifier",
+            icon_contract.is_game_identifier(pack_game) and pack_game != "_store",
+            f"icons.game {pack_game!r} must be a pack game identifier and not _store",
+            file,
+        )
+        known = icon_mappers.names()
+        result.add(
+            "icons-mapper-known",
+            block.get("mapper") in known,
+            f"icons.mapper {block.get('mapper')!r}; registered mappers: {known}",
+            file,
+        )
+        _check_icons_unreal(result, block, file)
+        _check_icons_server_pixels_decoder(result, block, file)
+        _check_icons_client_files(result, block, file)
+        _check_icons_connector_data(result, block, file)
+        data = block.get("data") or {}
+        result.add(
+            "icons-public-download-roles",
+            (data.get("source") == "public-download")
+            == ((block.get("pixels") or {}).get("source") == "public-download"),
+            "icons.data.source and icons.pixels.source are 'public-download' together, and only together",
+            file,
+        )
+        if not game.targets:
+            # Trimmed test catalogs keep a game record and drop its targets; there is nothing to check against.
+            continue
+        if data.get("source") == "public-download":
+            _check_icons_public(result, game, block, file)
+            continue
+        if data.get("source") == "connector":
+            _check_client_builds_revisions(result, block, {target.revision for target in game.targets}, file)
+            continue
+        problems = []
+        default_platform = game.record.get("defaultPlatform")
+        for target in game.targets:
+            # Only the default target of the default platform: the data files of a server depot are
+            # platform-specific (Unreal's `-LinuxServer` containers), so another platform needs its own route.
+            if not target.is_default or (
+                data.get("decoder") == "unreal" and default_platform and target.platform != default_platform
+            ):
+                continue
+            spec = target.record["inputs"].get(data.get("input"))
+            if spec is None or spec.get("kind") != "steam-depots":
+                problems.append(f"{target.id} has no steam-depots input named {data.get('input')!r}")
+                continue
+            absent = sorted(set(data.get("depots") or []) - set(spec["depots"]))
+            if absent:
+                problems.append(f"{target.id}: icons.data.depots {absent} are not depots of input {data['input']!r}")
+        result.add(
+            "icons-data-input",
+            not problems,
+            "; ".join(problems) or f"the default target has the steam-depots input {data.get('input')!r}",
+            file,
+        )
+        _check_client_builds_revisions(result, block, {target.revision for target in game.targets}, file)
+
+
 def _guarded(result: ValidationResult, check_id: str, file: str, run: Any) -> None:
     """A malformed record must fail its check, not crash the validator."""
     try:
@@ -520,6 +755,7 @@ def validate_catalog(catalog: Catalog, *, online: bool = False, cache: Path | No
     _guarded(result, "single-default", "catalog", lambda: _check_single_default(result, catalog))
     _guarded(result, "default-platform", "catalog", lambda: _check_default_platform(result, catalog))
     _guarded(result, "legacy-alias-single-build", "catalog", lambda: _check_legacy_aliases(result, catalog))
+    _guarded(result, "icons-block", "catalog", lambda: _check_icons(result, catalog))
     per_target = (
         ("target-schema", _check_target_schema),
         ("id-matches-stem", _check_ids),

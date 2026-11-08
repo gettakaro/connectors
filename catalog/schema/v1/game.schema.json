@@ -78,6 +78,7 @@
       "additionalProperties": false,
       "required": ["composeFile"],
       "properties": {"composeFile": {"type": "string", "minLength": 1}}
-    }
+    },
+    "icons": {"$ref": "icons.schema.json"}
   }
 }

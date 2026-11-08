@@ -1,0 +1,32 @@
+﻿Key,File,Type,UsedInMainMenu,NoTranslate,english,Context / Alternate Text,german
+itemOwnIcon,items,Item,,,"Quoted, name
+second line",,Fixture itemOwnIcon de
+itemNameFallback,items,Item,,,Fixture itemNameFallback,,Fixture itemNameFallback de
+parentTinted,items,Item,,,Fixture parentTinted,,Fixture parentTinted de
+childInherits,items,Item,,,Fixture childInherits,,Fixture childInherits de
+grandchild,items,Item,,,Fixture grandchild,,Fixture grandchild de
+childExcludesIcon,items,Item,,,Fixture childExcludesIcon,,Fixture childExcludesIcon de
+childExcludesBoth,items,Item,,,Fixture childExcludesBoth,,Fixture childExcludesBoth de
+childOverrides,items,Item,,,Fixture childOverrides,,Fixture childOverrides de
+tintHex,items,Item,,,Fixture tintHex,,Fixture tintHex de
+tintRgb,items,Item,,,Fixture tintRgb,,Fixture tintRgb de
+tintRgba,items,Item,,,Fixture tintRgba,,Fixture tintRgba de
+tintHexAlpha,items,Item,,,Fixture tintHexAlpha,,Fixture tintHexAlpha de
+tintWhite,items,Item,,,Fixture tintWhite,,Fixture tintWhite de
+tintNone,items,Item,,,Fixture tintNone,,Fixture tintNone de
+tintBad,items,Item,,,Fixture tintBad,,Fixture tintBad de
+itemMissingIcon,items,Item,,,Fixture itemMissingIcon,,Fixture itemMissingIcon de
+itemCaseIcon,items,Item,,,Fixture itemCaseIcon,,Fixture itemCaseIcon de
+itemNestedDecoy,items,Item,,,Fixture itemNestedDecoy,,Fixture itemNestedDecoy de
+itemOrphan,items,Item,,,Fixture itemOrphan,,Fixture itemOrphan de
+itemCycleA,items,Item,,,Fixture itemCycleA,,Fixture itemCycleA de
+itemCycleB,items,Item,,,Fixture itemCycleB,,Fixture itemCycleB de
+itemBigIcon,items,Item,,,Fixture itemBigIcon,,Fixture itemBigIcon de
+modByName,items,Item,,,Fixture modByName,,Fixture modByName de
+blockOwnIcon,items,Item,,,Fixture blockOwnIcon,,Fixture blockOwnIcon de
+blockNameFallback,items,Item,,,Fixture blockNameFallback,,Fixture blockNameFallback de
+blockTinted,items,Item,,,Fixture blockTinted,,Fixture blockTinted de
+blockExcludes,items,Item,,,Fixture blockExcludes,,Fixture blockExcludes de
+blockExtendsItem,items,Item,,,Fixture blockExtendsItem,,Fixture blockExtendsItem de
+itemKeyAsValue,items,Item,,,itemKeyAsValue,,
+itemEmptyEnglish,items,Item,,,,,Nur Deutsch

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from conftest import FIXTURES, Wired, make_jar, point_at, read_target, sha256, write_target
+from conftest import FIXTURES, Wired, drop_unbuildable_icons, make_jar, point_at, read_target, sha256, write_target
 from test_cli_install import tree
 
 TARGET = "paper-1.21.11"
@@ -40,6 +40,7 @@ def solo(root: Path) -> None:
     for path in (root / "catalog").glob("*/targets/*.json"):
         if path.stem != TARGET:
             path.unlink()
+    drop_unbuildable_icons(root)
 
 
 def install(run: Any, wired: Any, dest: Path, *extra: str) -> tuple[int, Any, str]:

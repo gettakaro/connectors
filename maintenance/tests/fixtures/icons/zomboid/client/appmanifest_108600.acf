@@ -1,0 +1,15 @@
+"AppState"
+{
+	"appid"		"108600"
+	"name"		"Project Zomboid"
+	"installdir"		"ProjectZomboid"
+	"buildid"		"25485521"
+	"InstalledDepots"
+	{
+		"108604"
+		{
+			"manifest"		"7544133343391543313"
+			"size"		"10335862594"
+		}
+	}
+}

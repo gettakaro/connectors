@@ -50,8 +50,10 @@ upstream failure (exit 4), never content cached under the pinned manifest's key.
 re-hashes the declared files it holds; a corrupt cache is deleted and downloaded once more, and a
 second failure is an integrity error rather than a third attempt.
 
-Game bytes never leave the machine: the cache is local, and a release contains the connector
-artifact alone.
+Game binaries and raw game files never leave the machine: the cache is local, and a release
+contains the connector artifact alone. The one exception is deliberate and narrow: small derived
+item icons (WebP, at most 128px, built by `takaro-maint icons build`) may be published to the icon
+buckets with `icons publish`; see [icons.md](icons.md).
 
 ## The install
 
@@ -131,5 +133,7 @@ fingerprint, so a re-pinned target never compiles against the previous build's a
 
 - Install the branch head when a manifest is pinned, or when the pinned one is gone.
 - Run an in-place updater (`app_update`, LinuxGSM auto-install) against a pinned install.
-- Upload game files anywhere. The cache is local; the release carries the connector only.
+- Upload game binaries or raw game files anywhere. The cache is local; the release carries the
+  connector only. Derived item icons published through `icons publish` are the only game-derived
+  bytes that leave the machine ([icons.md](icons.md)).
 - Put a credential in the catalog, a log or the command's output.

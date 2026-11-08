@@ -10,6 +10,7 @@ BUILD = 6
 CONFLICT = 7
 VERIFICATION = 8
 TRACKER = 9
+PUBLISH = 10
 INTERRUPTED = 130
 
 DESCRIPTIONS: dict[int, str] = {
@@ -23,6 +24,7 @@ DESCRIPTIONS: dict[int, str] = {
     CONFLICT: "artifact, ledger or asset conflict",
     VERIFICATION: "verification failed or evidence missing",
     TRACKER: "tracker or GitHub failure, or missing auth",
+    PUBLISH: "icon bucket read or upload failed",
     INTERRUPTED: "interrupted",
 }
 
@@ -75,3 +77,8 @@ class VerificationFailed(MaintError):
 class TrackerError(MaintError):
     def __init__(self, message: str, **detail: object) -> None:
         super().__init__(TRACKER, message, **detail)
+
+
+class PublishFailed(MaintError):
+    def __init__(self, message: str, **detail: object) -> None:
+        super().__init__(PUBLISH, message, **detail)

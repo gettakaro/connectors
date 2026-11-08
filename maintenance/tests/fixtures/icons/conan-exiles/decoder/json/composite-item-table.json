@@ -1,0 +1,48 @@
+[
+  {
+    "Type": "CompositeDataTable",
+    "Name": "Special_ItemTable_Composite",
+    "Class": "UScriptClass'CompositeDataTable'",
+    "Package": "/Game/DLC/Special/Special_ItemTable_Composite",
+    "Properties": {
+      "RowStruct": {
+        "ObjectName": "Class'ItemTableRow'",
+        "ObjectPath": "/Script/ConanSandbox"
+      },
+      "ParentTables": [
+        {
+          "ObjectName": "DataTable'Special_ItemTable'",
+          "ObjectPath": "/Game/DLC/Special/Special_ItemTable.0"
+        }
+      ]
+    },
+    "Rows": {
+      "100": {
+        "Name": {
+          "Namespace": "",
+          "Key": "Special_ItemTable_100_Name",
+          "SourceString": "Soul Altar",
+          "LocalizedString": "Soul Altar"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/DLC/Special/UI/Textures/Icons/icon_sorcery_soulaltar_shop.icon_sorcery_soulaltar_shop",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      },
+      "6100": {
+        "Name": {
+          "Namespace": "",
+          "Key": "DLC_Pict_ItemTable_6100_Name",
+          "SourceString": "Warpaint - Snake",
+          "LocalizedString": "Warpaint - Snake"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_tier3_savage_pillar.icon_tier3_savage_pillar",
+          "SubPathString": ""
+        },
+        "IconLayers": []
+      }
+    }
+  }
+]

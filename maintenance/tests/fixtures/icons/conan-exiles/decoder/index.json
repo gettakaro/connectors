@@ -1,0 +1,288 @@
+{
+  "asset-registry": {
+    "file": "registry.json",
+    "meta": {}
+  },
+  "json:/Game/DLC/DLC_Pict/DLC_Pict_ItemNameToTemplateID": {
+    "file": "json/dlc-name-table.json",
+    "meta": {}
+  },
+  "json:/Game/DLC/DLC_Pict/DLC_Pict_ItemTable": {
+    "file": "json/dlc-item-table.json",
+    "meta": {}
+  },
+  "json:/Game/DLC/Special/Special_ItemTable_Composite": {
+    "file": "json/composite-item-table.json",
+    "meta": {}
+  },
+  "json:/Game/Items/ItemTable": {
+    "file": "json/item-table.json",
+    "meta": {}
+  },
+  "json:/Game/Systems/Survival/Gathering/Gathering_v2/ItemNameToTemplateID": {
+    "file": "json/name-table.json",
+    "meta": {}
+  },
+  "texture:/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_pict_warpaint_01": {
+    "file": "png/000-icon_pict_warpaint_01.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 4096,
+        "sha256": "28d396379fd136e7c7dc479b8d7dd8b29b577dbc137d4b9e181db2462cf24f9a"
+      }
+    ]
+  },
+  "texture:/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_pictish_waraxe": {
+    "file": "png/001-icon_pictish_waraxe.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 8192,
+        "sha256": "d5f95fc4c2af9d4248b9a1e29119e1b56f2c9b1c421dac84296a2d733adbd6ce"
+      }
+    ]
+  },
+  "texture:/Game/DLC/DLC_Pict/UI/Textures/Icons/icon_tier3_savage_pillar": {
+    "file": "png/002-icon_tier3_savage_pillar.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 12288,
+        "sha256": "70d9044ff4bb7a911dc0a70063b6ae559738e5cfa20a29e4feebc21961b3d8ba"
+      }
+    ]
+  },
+  "texture:/Game/DLC/Special/UI/Textures/Icons/icon_sorcery_soulaltar_shop": {
+    "file": "png/003-icon_sorcery_soulaltar_shop.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 16384,
+        "sha256": "5c3aa5ab2a1c984f9656526b412f16b57bd0ceb76276daa4c0dcd67976d0b1d4"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Armor/icon_armor_chest_sorcery_light": {
+    "file": "png/004-icon_armor_chest_sorcery_light.png",
+    "meta": {
+      "bulk": "bulk",
+      "format": "PF_BC4",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1010-Windows.ucas",
+        "length": 4096,
+        "offset": 4096,
+        "sha256": "c52e368335b583b783f12e26665353eeba234fe900b396483bb6c1820cebab15"
+      },
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1010-Windows_s1.ucas",
+        "length": 4096,
+        "offset": 0,
+        "sha256": "50fca3a133e80c7370fbcc81fe773e45ad0b272ea1ba1bf5eb977c150488b419"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Armor/icon_armor_helmet_thugrakhotan": {
+    "file": "png/005-icon_armor_helmet_thugrakhotan.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 20480,
+        "sha256": "c6070a9bb23159c1ba64f7fc3bac0e3dfe2a84f9397f0ee88192f98c6c872f2d"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Building/icon_clancoffer_chest": {
+    "file": "png/006-icon_clancoffer_chest.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 24576,
+        "sha256": "2a610820fe8e6a3a9a72edd1f0c800fb252d78d34ed6452905ffddb940f20469"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Items/icon_DEV_needs_icon": {
+    "file": "png/008-icon_DEV_needs_icon.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 28672,
+        "sha256": "d28a9b55777bf56a45a2665096fd2fb445d61bb6c56e66a20c1537b6fcd3d6ac"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Items/icon_Tavern_Inside_Bowl": {
+    "error": "PF_ASTC_4x4",
+    "errorKind": "unsupported-format"
+  },
+  "texture:/Game/UI/Textures/Icons/Items/icon_obsidianones_1h_axe": {
+    "file": "png/010-icon_obsidianones_1h_axe.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 36864,
+        "sha256": "06c14e8e9e2ae9c24b731ea291e754815a6227a2796b859785889551ba5bdfa4"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Items/icon_scrawled_note": {
+    "file": "png/011-icon_scrawled_note.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 128,
+      "mip": 0,
+      "width": 127
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 40960,
+        "sha256": "74fd95af07bca5fa3bcbaa3136d738502542bf15eb6ec96846630cec75638709"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Items/icon_siege_boulder_ironstone": {
+    "file": "png/012-icon_siege_boulder_ironstone.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 45056,
+        "sha256": "6eebb1bb41a721992731a47e77ba76823587a173d17f2f20d320507d30e17feb"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Items/icon_trebuchet_ammunition_starmetal_battlepass": {
+    "file": "png/013-icon_trebuchet_ammunition_starmetal_battlepass.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 500,
+      "mip": 0,
+      "width": 500
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 49152,
+        "sha256": "7caf039de0ed44cdf7c4e24077c22f0dceb257ccc68b302dbf066cd29c62d324"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Overlays/epic_icon_border": {
+    "file": "png/014-epic_icon_border.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 53248,
+        "sha256": "97a3ba4b60c533fa223b2f7e5ef187ee8cd076aa53ba9f50fe3a877dbd268043"
+      }
+    ]
+  },
+  "texture:/Game/UI/Textures/Icons/Pets/icon_pet_housecat_black": {
+    "file": "png/015-icon_pet_housecat_black.png",
+    "meta": {
+      "bulk": "inline",
+      "format": "PF_DXT5",
+      "height": 64,
+      "mip": 0,
+      "width": 64
+    },
+    "requires": [
+      {
+        "file": "ConanSandbox/Content/Paks/pakchunk1000-Windows.ucas",
+        "length": 4096,
+        "offset": 57344,
+        "sha256": "aa203d6314bb04ac22a0639d42a7e582a3bdde41e02a832950948cc8c32b70cf"
+      }
+    ]
+  }
+}

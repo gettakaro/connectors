@@ -47,5 +47,49 @@
   "legacyAssetAliases": {},
   "devServers": {
     "composeFile": "conan-exiles.yml"
+  },
+  "icons": {
+    "game": "conan-exiles",
+    "mapper": "conan-exiles",
+    "unreal": {"engine": "GAME_ConanExilesEnhanced", "aesKeyEnv": null},
+    "data": {
+      "source": "server-depot",
+      "input": "server",
+      "depots": ["443032"],
+      "decoder": "unreal",
+      "files": [
+        "regex:^ConanSandbox/Content/Paks/(global\\.(utoc|ucas)|pakchunk0-LinuxServer\\.(pak|utoc|ucas)|pakchunk(1050|1100|50[0-9]0|51[0-5]0)-LinuxServer\\.(utoc|ucas))$"
+      ]
+    },
+    "pixels": {
+      "source": "client",
+      "app": 440900,
+      "depot": 440901,
+      "decoder": "unreal",
+      "access": "iostore-ranges",
+      "files": [
+        "ConanSandbox/Content/Paks/global.utoc",
+        "ConanSandbox/Content/Paks/pakchunk1100-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk1110-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5000-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5010-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5020-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5030-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5040-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5050-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5060-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5070-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5080-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5090-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5100-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5110-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5120-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5130-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5140-Windows.utoc",
+        "ConanSandbox/Content/Paks/pakchunk5150-Windows.utoc"
+      ],
+      "clientBuilds": {"25792439": [25791535]}
+    },
+    "secrets": []
   }
 }

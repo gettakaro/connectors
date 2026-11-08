@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<item_modifiers>
+	<item_modifier name="modByName" installable_tags="melee">
+		<property name="Material" value="Mmetal"/>
+	</item_modifier>
+	<item_modifier name="modUnlocalized">
+		<property name="CustomIcon" value="iconA"/>
+	</item_modifier>
+</item_modifiers>

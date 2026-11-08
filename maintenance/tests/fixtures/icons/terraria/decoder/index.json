@@ -1,0 +1,139 @@
+{
+  "assembly-info:Terraria.exe": {
+    "file": "json/assembly-info.json"
+  },
+  "callers:Terraria.Main::RegisterItemAnimation": {
+    "file": "json/callers.json"
+  },
+  "decompile-type:Synth.World": {
+    "file": "json/decompile-world.json"
+  },
+  "decompile-type:Terraria.ID.ItemID+Sets": {
+    "file": "json/decompile-sets.json"
+  },
+  "texture:Content/Images/Item_1.xnb": {
+    "file": "png/it1.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_2.xnb": {
+    "file": "png/it2.png",
+    "meta": {
+      "width": 6,
+      "height": 28,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_3.xnb": {
+    "file": "png/it3.png",
+    "meta": {
+      "width": 6,
+      "height": 21,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_4.xnb": {
+    "file": "png/it4.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_5.xnb": {
+    "file": "png/it5.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_10.xnb": {
+    "file": "png/it10.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_12.xnb": {
+    "file": "png/it12.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_13.xnb": {
+    "file": "png/it13.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_16.xnb": {
+    "error": "Content/Images/Item_16.xnb has SurfaceFormat 4",
+    "errorKind": "unsupported-format"
+  },
+  "texture:Content/Images/Item_17.xnb": {
+    "file": "png/it17.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_5644.xnb": {
+    "file": "png/it5644.png",
+    "meta": {
+      "width": 6,
+      "height": 63,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  },
+  "texture:Content/Images/Item_99.xnb": {
+    "file": "png/it99.png",
+    "meta": {
+      "width": 8,
+      "height": 8,
+      "format": "Color",
+      "xnbVersion": 5,
+      "platform": "w",
+      "compressed": true
+    }
+  }
+}

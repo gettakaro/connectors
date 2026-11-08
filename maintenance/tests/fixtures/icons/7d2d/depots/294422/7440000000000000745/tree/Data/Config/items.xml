@@ -1,0 +1,91 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<items>
+	<item name="itemOwnIcon">
+		<property name="CustomIcon" value="iconA"/>
+	</item>
+	<item name="itemNameFallback">
+		<property name="Material" value="Mmetal"/>
+	</item>
+	<item name="parentTinted">
+		<property name="CustomIcon" value="iconParent"/>
+		<property name="CustomIconTint" value="ff0000"/>
+	</item>
+	<item name="childInherits">
+		<property name="Extends" value="parentTinted"/>
+	</item>
+	<item name="grandchild">
+		<property name="Extends" value="childInherits"/>
+	</item>
+	<item name="childExcludesIcon">
+		<property name="Extends" value="parentTinted" param1="CustomIcon"/>
+	</item>
+	<item name="childExcludesBoth">
+		<property name="Extends" value="parentTinted" param1="CustomIcon, CustomIconTint"/>
+	</item>
+	<item name="childOverrides">
+		<property name="Extends" value="parentTinted"/>
+		<property name="CustomIcon" value="iconB"/>
+	</item>
+	<item name="tintHex">
+		<property name="CustomIcon" value="tintBase"/>
+		<property name="CustomIconTint" value="80FF40"/>
+	</item>
+	<item name="tintRgb">
+		<property name="CustomIcon" value="tintBase"/>
+		<property name="CustomIconTint" value="128, 255,64"/>
+	</item>
+	<item name="tintRgba">
+		<property name="CustomIcon" value="tintBase"/>
+		<property name="CustomIconTint" value="128,255,64,200"/>
+	</item>
+	<item name="tintHexAlpha">
+		<property name="CustomIcon" value="tintBase"/>
+		<property name="CustomIconTint" value="#80ff40cc"/>
+	</item>
+	<item name="tintWhite">
+		<property name="CustomIcon" value="tintBase"/>
+		<property name="CustomIconTint" value="ffffff"/>
+	</item>
+	<item name="tintNone">
+		<property name="CustomIcon" value="tintBase"/>
+	</item>
+	<item name="tintBad">
+		<property name="CustomIcon" value="tintBase"/>
+		<property name="CustomIconTint" value="notacolour"/>
+	</item>
+	<item name="itemMissingIcon">
+		<property name="CustomIcon" value="nope"/>
+	</item>
+	<item name="itemCaseIcon">
+		<property name="CustomIcon" value="ICONA"/>
+	</item>
+	<item name="itemNestedDecoy">
+		<property class="Action0">
+			<property name="CustomIcon" value="decoy"/>
+		</property>
+	</item>
+	<item name="itemOwnIcon">
+		<property name="CustomIcon" value="iconB"/>
+	</item>
+	<item name="itemOrphan">
+		<property name="Extends" value="noSuchParent"/>
+	</item>
+	<item name="itemCycleA">
+		<property name="Extends" value="itemCycleB"/>
+	</item>
+	<item name="itemCycleB">
+		<property name="Extends" value="itemCycleA"/>
+	</item>
+	<item name="itemBigIcon">
+		<property name="CustomIcon" value="bigIcon"/>
+	</item>
+	<item name="itemUnlocalized">
+		<property name="CustomIcon" value="iconA"/>
+	</item>
+	<item name="itemKeyAsValue">
+		<property name="CustomIcon" value="iconA"/>
+	</item>
+	<item name="itemEmptyEnglish">
+		<property name="CustomIcon" value="iconA"/>
+	</item>
+</items>

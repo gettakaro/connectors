@@ -1,0 +1,28 @@
+{
+  "name": "trimmed",
+  "rect": [
+    0,
+    0,
+    16,
+    16
+  ],
+  "textureRect": [
+    40,
+    0,
+    8,
+    8
+  ],
+  "textureRectOffset": [
+    4,
+    2
+  ],
+  "packed": true,
+  "packingMode": "rectangle",
+  "packingRotation": "none",
+  "texture": {
+    "cab": "cab-d",
+    "pathId": 400
+  },
+  "alphaTexture": null,
+  "atlas": null
+}

@@ -1,0 +1,13 @@
+{
+ "downloads": {
+  "client": {
+   "sha1": "22c5c2d80ce00a0ccfb50bb1258386cee1d93b10",
+   "size": 318310
+  },
+  "server": {
+   "sha1": "db1ef5c36870cd09c3b3b4da131ae35e381083b2",
+   "size": 37
+  }
+ },
+ "id": "26.3"
+}

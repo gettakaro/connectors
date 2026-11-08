@@ -1,0 +1,106 @@
+"""The registry of mapping modules: each turns a game's data files into a recipe document."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from .decoders.pz_texturepack import PixelSource
+
+if TYPE_CHECKING:
+    from .clr_session import ClrSession
+    from .unity_session import UnitySession
+    from .unreal_session import UnrealSession
+    from .xnb_session import XnbSession
+
+
+@dataclass(frozen=True)
+class MapResult:
+    """What a mapper hands the builder: the recipe document, per-pack usage, notes and extra build-record fields."""
+
+    document: dict[str, Any]
+    pack_usage: dict[str, dict[str, Any]]
+    notes: list[str]
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MinecraftInputs:
+    """What the Minecraft mapper reads: the client jar, the release, the server jar's sha1 and the data reports."""
+
+    client_jar: Path
+    version: str
+    server_sha1: str
+    reports: dict[str, Path]
+
+
+@dataclass(frozen=True)
+class MapContext:
+    """Everything a mapper may use: the server data, the pixel source of its decoder family and a scratch directory.
+
+    ``codes_from`` is the provenance sentence the pipeline composes for mappers that take it as is;
+    ``codes_from_inputs`` carries the facts a mapper needs to word its own.
+    """
+
+    data_root: Path
+    pixels: PixelSource | None
+    work: Path
+    codes_from: str
+    codes_from_inputs: dict[str, Any]
+    unreal: UnrealSession | None
+    warn: Callable[[str], None]
+    unity: UnitySession | None = None
+    xnb: XnbSession | None = None
+    clr: ClrSession | None = None
+    minecraft: MinecraftInputs | None = None
+    client_files: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Mapper:
+    name: str
+    version: int
+    run: Callable[[MapContext], MapResult]
+    codes_description: str = ""
+    exclusions: str = ""
+
+
+def _zomboid_run(ctx: MapContext) -> MapResult:
+    from ..games.zomboid import icons as zomboid
+
+    assert ctx.pixels is not None
+    return zomboid.map_items(ctx.data_root, ctx.pixels, ctx.work / "textures-root", codes_from=ctx.codes_from)
+
+
+def registry() -> dict[str, Mapper]:
+    from ..games.conan_exiles import icons as conan
+    from ..games.minecraft import icons as minecraft
+    from ..games.seven_days import icons as seven_days
+    from ..games.terraria import icons as terraria
+    from ..games.valheim import icons as valheim
+    from ..games.zomboid import icons as zomboid
+
+    return {
+        "7d2d": Mapper(
+            "7d2d", seven_days.MAPPER_VERSION, seven_days.map_items, seven_days.CODES_DESCRIPTION, seven_days.EXCLUSIONS
+        ),
+        "conan-exiles": Mapper("conan-exiles", conan.MAPPER_VERSION, conan.map_items),
+        "minecraft": Mapper("minecraft", minecraft.MAPPER_VERSION, minecraft.map_items),
+        "terraria": Mapper("terraria", terraria.MAPPER_VERSION, terraria.map_items),
+        "valheim": Mapper(
+            "valheim", valheim.MAPPER_VERSION, valheim.map_items, valheim.CODES_DESCRIPTION, valheim.EXCLUSIONS
+        ),
+        "zomboid": Mapper(
+            "zomboid", zomboid.MAPPER_VERSION, _zomboid_run, zomboid.CODES_DESCRIPTION, zomboid.EXCLUSIONS
+        ),
+    }
+
+
+def names() -> list[str]:
+    return sorted(registry())
+
+
+def open_pixels(root: Path, files: list[str]) -> PixelSource:
+    return PixelSource.open(root, files)

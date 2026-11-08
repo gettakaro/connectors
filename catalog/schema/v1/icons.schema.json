@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gettakaro/connectors/catalog/schema/v1/icons.schema.json",
+  "title": "Icon route",
+  "description": "How a game's Icon Pack is built: where the item data comes from, where the pixels come from and which mapping module joins them. Optional in a game record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["game", "mapper", "data", "pixels"],
+  "properties": {
+    "game": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "The pack directory and the game identifier Takaro looks the pack up by."
+    },
+    "mapper": {"type": "string", "minLength": 1, "description": "A registered mapping module."},
+    "data": {
+      "oneOf": [
+        {"$ref": "#/$defs/serverDepotData"},
+        {"$ref": "#/$defs/connectorData"},
+        {"$ref": "#/$defs/publicDownloadData"}
+      ],
+      "description": "Where the item codes come from: the pinned server depot, or files of this repository (the connector's own item list)."
+    },
+    "code": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "decoder", "files"],
+      "properties": {
+        "source": {"const": "client"},
+        "decoder": {"enum": ["clr"], "description": "The decoder container that reads the code files."},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"},
+          "description": "Exact client-relative paths of the game code a mapper reads facts from (for example the game assembly)."
+        }
+      },
+      "description": "Game code read from the installed client; it is mounted in the same read-only tree as the pixel files."
+    },
+    "pixels": {
+      "oneOf": [
+        {"$ref": "#/$defs/clientPixels"},
+        {"$ref": "#/$defs/serverDepotPixels"},
+        {"$ref": "#/$defs/publicDownloadPixels"}
+      ],
+      "description": "Where the pixels come from: an installed game client, or the same server depot the data comes from."
+    },
+    "unreal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "aesKeyEnv"],
+      "properties": {
+        "engine": {"type": "string", "pattern": "^GAME_[A-Za-z0-9_]+$", "description": "The CUE4Parse EGame value that reads this game's containers."},
+        "aesKeyEnv": {
+          "oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}],
+          "description": "Name of the environment variable holding the containers' AES key; null for unencrypted games. Never the key itself."
+        }
+      },
+      "description": "Settings of the unreal decoder; required exactly when a role uses it."
+    },
+    "xnb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alpha"],
+      "properties": {
+        "alpha": {
+          "enum": ["straight"],
+          "description": "How the decoded RGBA relates to alpha. straight: the colour channels are independent of alpha (a translucent pixel with a colour channel above its alpha cannot be premultiplied; the build reports the count)."
+        }
+      },
+      "description": "Settings of the xnb decoder; required exactly when pixels.decoder is 'xnb'."
+    },
+    "secrets": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+      "description": "Names of environment variables the build reads; never their values."
+    }
+  },
+  "$defs": {
+    "serverDepotData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "input", "files"],
+      "properties": {
+        "source": {"const": "server-depot"},
+        "decoder": {"enum": ["unreal", "unity"], "description": "A decoder container that reads the data files. Absent means an in-process parser."},
+        "input": {"type": "string", "minLength": 1, "description": "The target's steam-depots input the data files come from."},
+        "depots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[0-9]+$"},
+          "description": "A subset of that input's depots; every depot of the input when absent."
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "description": "DepotDownloader file-list selectors: an exact path, or regex: with a case-insensitive pattern."
+        }
+      }
+    },
+    "connectorData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "files"],
+      "properties": {
+        "source": {"const": "connector"},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^games/[a-z0-9-]+/[A-Za-z0-9._/-]+$"},
+          "description": "Repo-relative paths of connector source files the item codes are read from; they are hashed and copied, nothing is downloaded."
+        }
+      }
+    },
+    "publicDownloadData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "input", "artifact", "decoder", "reports"],
+      "properties": {
+        "source": {"const": "public-download"},
+        "input": {"type": "string", "minLength": 1, "description": "The target's mojang-version input; its version manifest and server jar are the pins used."},
+        "artifact": {"const": "server"},
+        "decoder": {"enum": ["minecraft-datagen"], "description": "The decoder container that runs the server jar's data generator."},
+        "reports": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9_]+\\.json$"},
+          "description": "Data reports the generator must produce (for example registries.json)."
+        }
+      }
+    },
+    "publicDownloadPixels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "artifact", "downloads"],
+      "properties": {
+        "source": {"const": "public-download"},
+        "artifact": {"const": "client"},
+        "downloads": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Target revision to the pinned client jar of that release.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "path", "sha1", "size"],
+            "properties": {
+              "source": {"type": "string", "minLength": 1, "description": "A key of the game record's sources."},
+              "path": {"type": "string", "pattern": "^/.+"},
+              "sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+              "size": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    },
+    "clientPixels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "app", "depot", "decoder", "files"],
+      "properties": {
+        "source": {"enum": ["client"]},
+        "app": {"type": "integer", "minimum": 1},
+        "depot": {"type": "integer", "minimum": 1},
+        "decoder": {"enum": ["pz-texturepack", "unreal", "xnb"]},
+        "access": {
+          "enum": ["files", "iostore-ranges"],
+          "default": "files",
+          "description": "files: the listed files are read whole. iostore-ranges: the listed .utoc files are read whole and only the .ucas byte ranges that hold the needed packages are copied."
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(/[A-Za-z0-9][A-Za-z0-9._+-]*)*$"},
+              {"type": "string", "pattern": "^regex:.+"}
+            ]
+          },
+          "description": "Exact client-relative paths in precedence order (a name held by several is taken from the first listed), or regex: entries with a case-insensitive pattern matched against client-relative paths. With access iostore-ranges only .utoc paths; their .ucas files are derived."
+        },
+        "clientBuilds": {
+          "type": "object",
+          "description": "Target revision to the client build ids of the same release.",
+          "additionalProperties": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}}
+        }
+      }
+    },
+    "serverDepotPixels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "files"],
+      "properties": {
+        "source": {"const": "server-depot"},
+        "decoder": {"enum": ["unity"], "description": "A decoder container that reads the pixel files; it must equal data.decoder, because both roles are decoded from the same mounted tree."},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1},
+          "description": "DepotDownloader file-list selectors for the pixel files, fetched with the data from data.input; same semantics as data.files."
+        }
+      }
+    }
+  }
+}

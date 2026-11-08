@@ -1,0 +1,37 @@
+[
+  {
+    "file": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0001",
+    "unityVersion": "0000.0.0f0",
+    "cabs": [
+      "cab-a"
+    ]
+  },
+  {
+    "file": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0002",
+    "unityVersion": "0000.0.0f0",
+    "cabs": [
+      "cab-b"
+    ]
+  },
+  {
+    "file": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0003",
+    "unityVersion": "0000.0.0f0",
+    "cabs": [
+      "cab-c"
+    ]
+  },
+  {
+    "file": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0004",
+    "unityVersion": "0000.0.0f0",
+    "cabs": [
+      "cab-d"
+    ]
+  },
+  {
+    "file": "valheim_server_Data/StreamingAssets/SoftRef/Bundles/aaaa0005",
+    "unityVersion": "0000.0.0f0",
+    "cabs": [
+      "cab-e"
+    ]
+  }
+]
