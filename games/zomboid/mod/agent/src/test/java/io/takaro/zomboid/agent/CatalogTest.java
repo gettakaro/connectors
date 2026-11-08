@@ -50,17 +50,17 @@ class CatalogTest {
     }
 
     @Test
-    void groupInventorySumsCountsByFullType() {
+    void groupInventoryCountsEntriesByFullType() {
         List<Catalog.InvRow> rows = List.of(
-                new Catalog.InvRow("Base.Nails", "Nails", 5, 0, 0),
-                new Catalog.InvRow("Base.Nails", "Nails", 3, 0, 0),
-                new Catalog.InvRow("Base.Axe", "Axe", 1, 8, 10));
+                new Catalog.InvRow("Base.Nails", "Nails", 0, 0),
+                new Catalog.InvRow("Base.Nails", "Nails", 0, 0),
+                new Catalog.InvRow("Base.Axe", "Axe", 8, 10));
         List<InventoryItem> grouped = Catalog.groupInventory(rows);
 
         assertEquals(2, grouped.size());
         InventoryItem nails = grouped.get(0);
         assertEquals("Base.Nails", nails.code());
-        assertEquals(8, nails.amount()); // 5 + 3
+        assertEquals(2, nails.amount()); // two entries, whatever the script's bundle size
         assertEquals("", nails.quality()); // no condition track
 
         InventoryItem axe = grouped.get(1);
@@ -70,11 +70,12 @@ class CatalogTest {
     }
 
     @Test
-    void groupInventoryTreatsZeroCountAsOne() {
-        List<Catalog.InvRow> rows = List.of(
-                new Catalog.InvRow("Base.Axe", "Axe", 0, 10, 10));
-        List<InventoryItem> grouped = Catalog.groupInventory(rows);
-        assertEquals(1, grouped.get(0).amount());
+    void groupInventoryCountsFiveGivenNailsAsFive() {
+        List<Catalog.InvRow> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            rows.add(new Catalog.InvRow("Base.Nails", "Nails", 0, 0));
+        }
+        assertEquals(5, Catalog.groupInventory(rows).get(0).amount());
     }
 
     @Test
