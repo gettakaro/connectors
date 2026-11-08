@@ -55,6 +55,8 @@ export interface AdapterOptions {
   verifyIntervalMs?: number;
   /** Argv run to stop the battlegroup after the shutdown notice. Empty = `shutdown` refuses with a clear message. */
   shutdownCmd?: string;
+  /** How long listEntities waits for the plugin before answering from the cache (default 3 s). */
+  entityWaitMs?: number;
   shutdownNoticeSeconds?: number;
   /** Injectable sleep so the shutdown notice wait is testable without real time. */
   sleep?: (ms: number) => Promise<void>;
@@ -81,6 +83,8 @@ export class DuneAdapter {
   private readonly known = new Map<string, TakaroPlayer>();
   private readonly options: AdapterOptions;
 
+  private pluginEntities: TakaroEntity[] = [];
+  private entityFetch: Promise<void> | null = null;
   private lastReachability: { connectable: boolean; reason: string | null; at: string } | null = null;
   private lastLocation: Record<string, unknown> | null = null;
   private readonly locationSourceCounts: Record<string, number> = {};
@@ -319,34 +323,53 @@ export class DuneAdapter {
     return mapProgression(await this.options.pg.progression(row));
   }
 
+  /**
+   * Takaro gives every action 10 s. The plugin's /entities can take longer while the map is still loading, and an
+   * answer that comes too late leaves a fresh server with no entities at all, so the plugin rows are cached and
+   * fetched in the background; listEntities waits for them only briefly.
+   */
   async listEntities(): Promise<TakaroEntity[]> {
     const fromFile = this.options.catalogue.listEntities();
+    if (!this.options.plugin?.enabled()) return fromFile;
+    const pending = this.refreshEntities();
+    if (!this.pluginEntities.length) {
+      await Promise.race([pending, new Promise((resolve) => setTimeout(resolve, this.options.entityWaitMs ?? 3000).unref?.())]);
+    }
+    const merged = new Map(fromFile.map((e) => [e.code, e] as const));
+    // The file wins on `name`: it is the one carrying curated display names.
+    for (const entity of this.pluginEntities) if (!merged.has(entity.code)) merged.set(entity.code, entity);
+    return [...merged.values()];
+  }
+
+  /** Fetches the plugin's live entity rows into the cache; concurrent calls share one request. */
+  refreshEntities(): Promise<void> {
     const plugin = this.options.plugin;
-    if (!plugin?.enabled()) return fromFile;
-    try {
-      const rows = await plugin.getEntities();
-      if (Array.isArray(rows) && rows.length) {
+    if (!plugin?.enabled()) return Promise.resolve();
+    this.entityFetch ??= (async () => {
+      try {
+        const rows = await plugin.getEntities();
         const { mapEntity } = await import('./mapping.js');
-        const merged = new Map(fromFile.map((e) => [e.code, e] as const));
-        for (const raw of rows) {
+        const mapped: TakaroEntity[] = [];
+        for (const raw of Array.isArray(rows) ? rows : []) {
           try {
-            // The plugin flags a row whose only available name is the blueprint/class name. Those are dev names and
-            // the catalogue gate forbids them, so they are dropped rather than shown to an operator as a creature.
+            // A row named only by its blueprint/class name is a dev name, which the catalogue gate forbids.
             if (isClassNamed(raw)) continue;
-            const entity = mapEntity(raw);
-            // The file wins on `name`: it is the one carrying curated display names.
-            if (!merged.has(entity.code)) merged.set(entity.code, entity);
+            mapped.push(mapEntity(raw));
           } catch {
             /* unidentifiable plugin row */
           }
         }
-        return [...merged.values()];
+        // An empty answer is kept out on purpose: the map is still loading its NPCs, and Takaro only adds entities.
+        if (mapped.length) this.pluginEntities = mapped;
+      } catch (err) {
+        logger.debug(`Plugin /entities unavailable: ${(err as Error).message}`);
+      } finally {
+        this.entityFetch = null;
       }
-    } catch (err) {
-      logger.debug(`Plugin /entities unavailable: ${(err as Error).message}`);
-    }
-    return fromFile;
+    })();
+    return this.entityFetch;
   }
+
 
   // --- mutations -----------------------------------------------------------
 

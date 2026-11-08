@@ -378,3 +378,30 @@ describe('teleport read-back tells the truth about WHY it could not verify', () 
     expect(String(out.reason)).toMatch(/never answered a live pawn position/);
   });
 });
+
+describe('listEntities answers inside Takaro\'s request window', () => {
+  it('answers from the file at once when the plugin is slow, then serves the plugin rows from the cache', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const plugin = new DunePluginClient({
+      baseUrl: 'http://plugin',
+      token: 't',
+      fetchImpl: (async () => {
+        await gate;
+        return new Response(JSON.stringify({ entities: [{ code: 'Atreides Hoplite', name: 'Atreides Hoplite', nameIsClassName: false }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as unknown as typeof fetch,
+    });
+    const { adapter } = await harness({ plugin, entityWaitMs: 20 });
+    const started = Date.now();
+    const first = await adapter.listEntities();
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(first.map((e) => e.code)).not.toContain('Atreides Hoplite');
+    release();
+    await adapter.refreshEntities();
+    expect((await adapter.listEntities()).map((e) => e.code)).toContain('Atreides Hoplite');
+  });
+});
+
