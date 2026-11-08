@@ -102,6 +102,9 @@ std::string ConsoleRefusal(const std::string& command) {
 
 bool LogLineAllowed(const std::string& line) {
     if (Trimmed(line).empty() || line.size() > 512) return false;
+    // The game prints some JSON over several lines; a line of only braces or backslashes says nothing. Bytes from
+    // 0x80 up are UTF-8 text, so a line in another script still counts.
+    if (std::none_of(line.begin(), line.end(), [](unsigned char c) { return std::isalnum(c) != 0 || c >= 0x80; })) return false;
     for (unsigned char c : line)
         if (c < 0x20 || c == 0x7f) return false;
     const std::string lower = Lower(line);

@@ -48,6 +48,11 @@ static void test_log_filter() {
     CHECK(LogLineAllowed("Server: Tribe Example was destroyed"));
     CHECK(!LogLineAllowed(""));
     CHECK(!LogLineAllowed("   "));
+    CHECK(!LogLineAllowed("{"));
+    CHECK(!LogLineAllowed("\\"));
+    CHECK(!LogLineAllowed("},"));
+    CHECK(LogLineAllowed("Server: \\"));
+    CHECK(LogLineAllowed("\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82"));
     CHECK(!LogLineAllowed("ServerAdminPassword=abc"));
     CHECK(!LogLineAllowed("connect from 10.0.0.5:7777"));
     CHECK(!LogLineAllowed("Commandline: TheIsland_WP?listen"));
