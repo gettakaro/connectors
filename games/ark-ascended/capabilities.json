@@ -139,7 +139,7 @@
     "chat-message": {
       "status": "live-supported",
       "responseShape": "EventChatMessage",
-      "reason": "AsaApi chat callback; tribe chat as team, everything else as global",
+      "reason": "AsaApi chat callback; tribe chat as team, everything else as global; admin ServerChat arrives with no player",
       "liveVerified": false
     },
     "player-death": {

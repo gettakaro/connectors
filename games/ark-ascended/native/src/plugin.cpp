@@ -708,6 +708,16 @@ void Hook_SetClientMessage(FString* message)
     URCONServer_SetClientMessage_original(message);
 }
 
+// Admin chat: ServerChat from an admin's console or over RCON. It has no player; player chat goes through OnChat. The
+// connector's own sendMessage uses a different call, so this never echoes Takaro's messages back.
+DECLARE_HOOK(UShooterCheatManager_ServerChat, void, UShooterCheatManager*, FString*);
+void Hook_ServerChat(UShooterCheatManager* cheats, FString* message)
+{
+    const std::string text = message != nullptr ? Utf8(*message) : std::string();
+    UShooterCheatManager_ServerChat_original(cheats, message);
+    if (g_client && !Trim(text).empty()) g_client->Emit("chat-message", tj::obj({{"channel", tj::str("global")}, {"msg", tj::str(text)}}));
+}
+
 DECLARE_HOOK(AShooterGameState_NotifyPlayerDied, void, AShooterGameState*, AShooterCharacter*, AShooterPlayerController*, APawn*, AActor*);
 void Hook_NotifyPlayerDied(AShooterGameState* state, AShooterCharacter* character, AShooterPlayerController* pc, APawn* instigator, AActor* causer)
 {
@@ -921,6 +931,7 @@ constexpr char kHookNewPlayer[] = "AShooterGameMode.HandleNewPlayer_Implementati
 constexpr char kHookLogout[] = "AShooterGameMode.Logout(AController*)";
 constexpr char kHookPrintMessage[] = "UShooterCheatManager.PrintMessageOut(FString&)";
 constexpr char kHookRconReply[] = "URCONServer.SetClientMessage(FString)";
+constexpr char kHookServerChat[] = "UShooterCheatManager.ServerChat(FString&)";
 constexpr char kHookPlayerDied[] = "AShooterGameState.NotifyPlayerDied(AShooterCharacter*,AShooterPlayerController*,APawn*,AActor*)";
 constexpr char kHookDinoDie[] = "APrimalDinoCharacter.Die(float,FDamageEvent&,AController*,AActor*)";
 
@@ -969,6 +980,7 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     hooks.SetHook(kHookPrintMessage, Hook_PrintMessageOut, &UShooterCheatManager_PrintMessageOut_original);
     hooks.SetHook(kHookRconReply, Hook_SetClientMessage, &URCONServer_SetClientMessage_original);
     hooks.SetHook(kHookPlayerDied, Hook_NotifyPlayerDied, &AShooterGameState_NotifyPlayerDied_original);
+    hooks.SetHook(kHookServerChat, Hook_ServerChat, &UShooterCheatManager_ServerChat_original);
     hooks.SetHook(kHookDinoDie, Hook_DinoDie, &APrimalDinoCharacter_Die_original);
     auto& commands = AsaApi::GetCommands();
     commands.AddOnTickCallback(kCallbackId, OnTick);
@@ -987,6 +999,7 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     hooks.DisableHook(kHookPrintMessage, Hook_PrintMessageOut);
     hooks.DisableHook(kHookRconReply, Hook_SetClientMessage);
     hooks.DisableHook(kHookPlayerDied, Hook_NotifyPlayerDied);
+    hooks.DisableHook(kHookServerChat, Hook_ServerChat);
     hooks.DisableHook(kHookDinoDie, Hook_DinoDie);
     g_tailStop = true;
     if (g_tail.joinable()) g_tail.join();
