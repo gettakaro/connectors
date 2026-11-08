@@ -442,6 +442,31 @@ def test_an_aes_key_is_passed_by_name_only(run: Any, env: Env, tmp_path: Path) -
     assert secret not in "".join(path.read_text() for path in (tmp_path / "out").rglob("*.json"))
 
 
+def test_the_decode_cache_is_keyed_by_the_aes_key_value(run: Any, env: Env, tmp_path: Path) -> None:
+    first, second = "k3y-one-7a1c55d0", "k3y-two-91be03f4"
+    env.edit_block(lambda block: (block.update(secrets=["FAKE_AES"]), block["unreal"].update(aesKeyEnv="FAKE_AES")))
+    outputs = ""
+
+    def build_with(key: str, name: str) -> int:
+        nonlocal outputs
+        env.monkeypatch.setenv("FAKE_AES", key)
+        code, payload, stderr = build(run, env, tmp_path / name)
+        assert code == 0, payload
+        outputs += json.dumps(payload) + stderr
+        return len(env.decoder_calls("run"))
+
+    runs = build_with(first, "one")
+    runs_after_second = build_with(second, "two")
+    assert runs_after_second > runs
+    assert build_with(first, "three") == runs_after_second
+
+    cache = paths.cache_dir()
+    listing = " ".join(str(path) for path in cache.rglob("*"))
+    completes = "".join(path.read_text() for path in (cache / "icons" / "decoded").rglob(".takaro/complete.json"))
+    for secret in (first, second):
+        assert secret not in listing + completes + outputs
+
+
 def test_a_missing_key_variable_is_refused_before_any_download(run: Any, env: Env, tmp_path: Path) -> None:
     env.edit_block(lambda block: (block.update(secrets=["FAKE_AES"]), block["unreal"].update(aesKeyEnv="FAKE_AES")))
     env.monkeypatch.delenv("FAKE_AES", raising=False)

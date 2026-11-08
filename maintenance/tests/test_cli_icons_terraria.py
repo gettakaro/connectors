@@ -539,6 +539,26 @@ def test_decoder_failures_fail_the_build_and_write_no_pack(
     assert list((paths.cache_dir() / "icons" / "work").iterdir()) == []
 
 
+def test_a_failed_export_is_decoded_again_not_replayed_from_the_cache(
+    run: Any, env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_DECODER_FAIL", "it5644")
+    code, payload, _ = build(run, env, tmp_path / "fail")
+    assert code == 6 and any("it5644" in line for line in payload["failures"])
+    runs = len(env.decoder_runs())
+    monkeypatch.delenv("FAKE_DECODER_FAIL")
+
+    code, payload, stderr = build(run, env, tmp_path / "ok")
+    assert code == 0, payload
+    assert "holds failed exports; decoding again" in stderr
+    assert len(env.decoder_runs()) > runs
+    runs = len(env.decoder_runs())
+
+    code, payload, _ = build(run, env, tmp_path / "again")
+    assert code == 0, payload
+    assert len(env.decoder_runs()) == runs
+
+
 def test_a_run_that_is_not_hardened_is_a_build_failure(
     run: Any, env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

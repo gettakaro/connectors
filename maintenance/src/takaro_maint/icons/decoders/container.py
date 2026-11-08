@@ -355,8 +355,16 @@ def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def decode_key(image: DecoderImage, request: dict[str, Any], inputs_sha256: str) -> str:
-    return hashlib.sha256("\n".join((image.id, _canonical(request), inputs_sha256)).encode("utf-8")).hexdigest()
+def decode_key(image: DecoderImage, request: dict[str, Any], inputs_sha256: str, secrets_sha256: str = "") -> str:
+    parts = (image.id, _canonical(request), inputs_sha256, *([secrets_sha256] if secrets_sha256 else []))
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _secrets_sha256(env_names: list[str] | None) -> str:
+    if not env_names:
+        return ""
+    values = "\n".join(f"{name}={os.environ.get(name, '')}" for name in sorted(env_names))
+    return hashlib.sha256(values.encode("utf-8")).hexdigest()
 
 
 def _output_hashes(root: Path) -> dict[str, str]:
@@ -379,17 +387,23 @@ def run_cached(
     """``run`` through the decode cache: the same image, request and input tree decode once.
 
     A hit is re-hashed against the marker; a mismatch decodes again once. The decoded files stay in the cache.
+    An entry holding a ``failed`` result is decoded again rather than reused. The values of the secret variables
+    are part of the key (as a digest) and are never stored or logged.
     """
-    key = decode_key(image, request, inputs_sha256)
+    key = decode_key(image, request, inputs_sha256, _secrets_sha256(env_names))
     directory = cache / "icons" / "decoded" / key
     expected_ids = [str(export["id"]) for export in request["exports"]]
     marker = cache_entry.read_marker(directory, "files")
     if marker is not None:
         check_tree(directory)
         if _output_hashes(directory) == marker["files"]:
-            output.info(f"decoded outputs {key[:12]} are already in the decode cache")
-            return read_manifest(directory, expected_ids)
-        output.warn(f"corrupt decode cache {key[:12]}; decoding again once")
+            manifest = read_manifest(directory, expected_ids)
+            if not any(result["errorKind"] == "failed" for result in manifest.failures()):
+                output.info(f"decoded outputs {key[:12]} are already in the decode cache")
+                return manifest
+            output.info(f"decode cache {key[:12]} holds failed exports; decoding again")
+        else:
+            output.warn(f"corrupt decode cache {key[:12]}; decoding again once")
     elif directory.exists():
         output.warn(f"corrupt decode cache {key[:12]}; decoding again once")
 

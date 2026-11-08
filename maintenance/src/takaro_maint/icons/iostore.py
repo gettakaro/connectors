@@ -257,15 +257,16 @@ def _directory_index(data: bytes, name: str, entry_count: int) -> tuple[str, dic
             prefix = prefix[3:]
         files: dict[str, int] = {}
         stack: list[tuple[int, str]] = [(0, prefix)] if directory_count else []
-        visited = 0
+        pushed = 0
+        walked_files = 0
         while stack:
             entry, directory_path = stack.pop()
-            visited += 1
-            if visited > directory_count + 1:
-                raise BuildFailed(f"{name}: the directory index loops")
             _name, first_child, _sibling, first_file = directories[entry * 4 : entry * 4 + 4]
             file_index = first_file
             while file_index != INVALID:
+                walked_files += 1
+                if walked_files > file_count:
+                    raise BuildFailed(f"{name}: the directory index loops")
                 file_name, next_file, user_data = file_entries[file_index * 3 : file_index * 3 + 3]
                 if user_data >= entry_count:
                     raise BuildFailed(f"{name}: a directory index file points past the chunk table")
@@ -273,6 +274,9 @@ def _directory_index(data: bytes, name: str, entry_count: int) -> tuple[str, dic
                 file_index = next_file
             child = first_child
             while child != INVALID:
+                pushed += 1
+                if pushed > directory_count:
+                    raise BuildFailed(f"{name}: the directory index loops")
                 child_name = directories[child * 4]
                 stack.append((child, directory_path + strings[child_name] + "/"))
                 child = directories[child * 4 + 2]
