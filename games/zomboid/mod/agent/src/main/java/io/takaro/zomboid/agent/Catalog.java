@@ -25,7 +25,8 @@ public final class Catalog {
     }
 
     /** One raw row read from an {@code ItemContainer.getItems()} entry. */
-    public record InvRow(String fullType, String displayName, int count, int condition, int conditionMax) {
+    /** One inventory entry, which is one item; the item script's {@code count} is a bundle size, not a quantity. */
+    public record InvRow(String fullType, String displayName, int condition, int conditionMax) {
     }
 
     /**
@@ -62,8 +63,8 @@ public final class Catalog {
 
     /**
      * Group a player's raw inventory items by {@code fullType}: the amount is the
-     * summed {@code getCount()} of all stacks of that type, and the quality is the
-     * first stack's {@code condition/conditionMax} (e.g. {@code "8/10"}; empty when
+     * number of entries of that type, and the quality is the
+     * first entry's {@code condition/conditionMax} (e.g. {@code "8/10"}; empty when
      * the item has no condition track). First occurrence sets name and quality.
      */
     public static List<InventoryItem> groupInventory(List<InvRow> rows) {
@@ -81,15 +82,14 @@ public final class Catalog {
             if (code == null || code.isEmpty()) {
                 continue;
             }
-            int add = Math.max(1, row.count());
             int[] acc = amounts.get(code);
             if (acc == null) {
-                amounts.put(code, new int[] {add});
+                amounts.put(code, new int[] {1});
                 String name = row.displayName();
                 names.put(code, name == null || name.isEmpty() ? code : name);
                 qualities.put(code, formatQuality(row.condition(), row.conditionMax()));
             } else {
-                acc[0] += add;
+                acc[0]++;
             }
         }
         List<InventoryItem> out = new ArrayList<>();

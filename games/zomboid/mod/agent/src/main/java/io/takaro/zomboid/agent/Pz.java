@@ -625,7 +625,7 @@ public final class Pz {
                         continue;
                     }
                     rows.add(new Catalog.InvRow(it.getFullType(), it.getDisplayName(),
-                            it.getCount(), it.getCondition(), it.getConditionMax()));
+                            it.getCondition(), it.getConditionMax()));
                 }
             }
         }
