@@ -1,6 +1,7 @@
 import { Bridge, type EventSource } from './bridge.js';
 import { DuneAdapter } from './dune/adapter.js';
 import type { TakaroPlayer } from './dune/types.js';
+import { waitForBattlegroup } from './dune/readyGate.js';
 import { FileBanStore } from './dune/banStore.js';
 import { BanManager } from './dune/bans.js';
 import { Catalogue } from './dune/catalogue.js';
@@ -421,7 +422,21 @@ async function main(): Promise<void> {
   bridge.startHealthWatch();
   // Game-side duties start NOW, before Takaro is even contacted, and keep running whatever Takaro does.
   await bridge.startSources();
-  takaro.connect();
+  // A schema probe that failed at boot makes reachability fall back to a bare `SELECT 1`, so it is retried first.
+  await waitForBattlegroup(
+    async () => {
+      if (!pg.isProbed()) await pg.probe();
+      return adapter.testReachability();
+    },
+    { maxWaitMs: config.identifyWaitMs },
+  );
+  // Settings saved during the wait apply to the first identify.
+  const changed = settings.poll();
+  if (changed) {
+    takaro.reconfigure(changed.wsUrl, { identityToken: changed.identityToken, registrationToken: changed.registrationToken, serverName: changed.serverName });
+  } else {
+    takaro.connect();
+  }
 
   const settingsWatch = setInterval(() => {
     const next = settings.poll();
