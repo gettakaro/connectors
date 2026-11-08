@@ -235,6 +235,12 @@ async function main(): Promise<void> {
     pluginDrops[reason] = (pluginDrops[reason] ?? 0) + 1;
   };
 
+  if (plugin.enabled()) {
+    // Fill the entity cache before Takaro's first sync asks, and keep it fresh as the map loads its NPCs.
+    void adapter.refreshEntities();
+    setInterval(() => void adapter.refreshEntities(), 5 * 60_000).unref?.();
+  }
+
   const pluginEvents: EventPoller | undefined = plugin.enabled()
     ? new EventPoller({
         getEvents: (since) => plugin.getEvents(since),
