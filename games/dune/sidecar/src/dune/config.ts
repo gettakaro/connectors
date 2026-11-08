@@ -103,6 +103,8 @@ export interface SidecarConfig {
   pluginBaseUrl: string;
   pluginToken: string;
   pluginTimeoutMs: number;
+  /** Longest wait for a ready battlegroup before the first identify (`DUNE_IDENTIFY_WAIT_MS`). */
+  identifyWaitMs: number;
   /**
    * How long the Postgres `life_state` death edge waits for the plugin's ATTRIBUTED death before it is
    * emitted on its own, so a death reaches Takaro exactly once. See `deathCoalescer.ts`.
@@ -286,6 +288,7 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
     pluginBaseUrl: (env.DUNE_PLUGIN_URL || '').replace(/\/+$/, ''),
     pluginToken: env.DUNE_PLUGIN_TOKEN?.trim() ?? '',
     pluginTimeoutMs: int(env.DUNE_PLUGIN_TIMEOUT_MS, 10000),
+    identifyWaitMs: int(env.DUNE_IDENTIFY_WAIT_MS, 600_000),
     deathCoalesceMs: int(env.DUNE_DEATH_COALESCE_MS, 5000),
     pluginJoinTtlMs: int(env.DUNE_PLUGIN_JOIN_TTL_MS, 5000),
 
