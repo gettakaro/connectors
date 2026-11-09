@@ -186,7 +186,7 @@ namespace Takaro.WebSocket
                 if (isTimedBan)
                 {
                     GameManager.Instance.adminTools.Blacklist.AddBan(
-                        "Admin Ban",
+                        BanIdentity.AdminBanLabel,
                         userId,
                         banUntil,
                         banReason
@@ -227,7 +227,7 @@ namespace Takaro.WebSocket
                 if (!banSuccess)
                 {
                     GameManager.Instance.adminTools.Blacklist.AddBan(
-                        "Admin Ban",
+                        BanIdentity.AdminBanLabel,
                         userId,
                         banUntil,
                         banReason
@@ -341,8 +341,6 @@ namespace Takaro.WebSocket
                     );
                     return;
                 }
-
-                playerName = playerName ?? $"Player_{args.GameId}";
 
                 StateMirror.Instance.RefreshBans();
 
