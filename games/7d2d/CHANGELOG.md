@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.8.0...7d2d-v0.9.0) (2026-11-09)
+
+
+### Features
+
+* **7d2d:** report player levels, perks and crafting skills ([#797](https://github.com/gettakaro/connectors/issues/797)) ([bda1d2f](https://github.com/gettakaro/connectors/commit/bda1d2f1079f6f22d0b425d189ece42053bfd648))
+
+
+### Bug Fixes
+
+* **7d2d:** stop sending invented names in ban sync ([#844](https://github.com/gettakaro/connectors/issues/844)) ([3ae1b0c](https://github.com/gettakaro/connectors/commit/3ae1b0ccf9ce0b872752459e9b545339dbbc2c8c))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.7.0...7d2d-v0.8.0) (2026-11-03)
 
 
