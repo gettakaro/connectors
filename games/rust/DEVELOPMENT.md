@@ -409,7 +409,7 @@ maintenance/bin/takaro-maint verify --game rust --artifacts dist --out reports \
   --negative --startup-timeout 1200 --cleanup-orphans
 ```
 
-- **Required check:** `Rust Connector / release / verify (carbon-26431843, …)`, one leg per
+- **Required check:** `Rust Connector / release / verify (carbon-26498655, …)`, one leg per
   candidate or maintained target. `publish` needs every leg to pass, so nothing is released (stable,
   rolling `rust-dev` or a PR build) that did not boot.
 - **Trigger policy:** every push to `main`, every release or recovery run, and every pull request that
@@ -445,5 +445,5 @@ maintenance/bin/takaro-maint verify --game rust --artifacts dist --out reports \
 ## Testing status
 
 The rows the README marks ✅ are proven by `takaro-maint verify` with no client, on every CI run of
-the current target (build 26431843 with Carbon 2.0.264; see **Runtime CI**). Everything a client is
+the current target (build 26498655 with Carbon 2.0.264; see **Runtime CI**). Everything a client is
 needed for is still ⚠️ and unproven; see **Verification coverage** above.
