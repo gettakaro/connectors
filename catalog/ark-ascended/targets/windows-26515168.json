@@ -11,7 +11,7 @@
     "evidence": [
       "games/ark-ascended/README.md (What works, what doesn't)",
       "games/ark-ascended/capabilities.json (status and game API per action and event, kept equal to native/src/plugin.cpp by tests/check_capabilities.py)",
-      "server-side checked 2026-11-09 on build 26515168 (game 97.17): AsaApi offsets load, connector identifies, console, chat and capabilities work; no client join yet (the 97.14 client cannot join)"
+      "live-checked 2026-11-09 on build 26515168 (game 97.17) with AsaApi 2.11 and a real 97.14 client: join, chat, admin chat, levels, survivor switch, inventory, teleport, give, kick, ban, deaths, a dino kill, reconnect after a dropped socket and a restart all work"
     ],
     "notes": "ARK: Survival Ascended dedicated server, game 97.17, Steam build 26515168 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
   },
@@ -66,14 +66,14 @@
     },
     "deps": {
       "asaapi": {
-        "coordinate": "ArkServerApi:AsaApi:2.03",
-        "sha256": "ac72fb29436198ac062cd273e1c496b1ef4e6ffddeec08243d11d9b35e8b8ae3",
-        "resolvedCoordinate": "https://github.com/ArkServerApi/AsaApi/releases/download/2.03/AsaApi_2.03.zip"
+        "coordinate": "ArkServerApi:AsaApi:2.11",
+        "sha256": "64f5f1165ef73f3439bba3794e77e379489167cc385c0ac5c4717ca60ad3e88a",
+        "resolvedCoordinate": "https://github.com/ArkServerApi/AsaApi/releases/download/2.11/AsaApi_2.11.zip"
       },
       "asaapi-source": {
-        "coordinate": "ArkServerApi:AsaApi:77be34d11feca2790b54fcd5a3d48678588d52bb",
-        "sha256": "c6f75a643b1c7150cedf01428bdbb796c8d42980ebe7152018b8d5a53ee852c3",
-        "resolvedCoordinate": "https://codeload.github.com/ArkServerApi/AsaApi/tar.gz/77be34d11feca2790b54fcd5a3d48678588d52bb"
+        "coordinate": "ArkServerApi:AsaApi:bd376a0422291b0b1bf15a0b7868e7e275605da9",
+        "sha256": "5c23ec8ac18382a3b678860ec82d1d503088fc4b0b8ea031708450b8acec3738",
+        "resolvedCoordinate": "https://codeload.github.com/ArkServerApi/AsaApi/tar.gz/bd376a0422291b0b1bf15a0b7868e7e275605da9"
       },
       "fmt": {
         "coordinate": "fmtlib:fmt:11.1.4",
@@ -85,7 +85,7 @@
   "components": [
     {
       "role": "mod",
-      "artifact": "takaro-ark-ascended-windows-26334129-{version}.zip",
+      "artifact": "takaro-ark-ascended-windows-26515168-{version}.zip",
       "installDir": "ShooterGame/Binaries/Win64"
     }
   ],
@@ -102,5 +102,5 @@
     "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/takaro.log",
     "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/state/"
   ],
-  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. TakaroAsa.dll is compiled with MSVC toolset 14.44 on GitHub's windows-2022 runner, because AsaApi's headers and AsaApi.lib target MSVC; that toolset is selected by native/build.bat but the runner image is not pinned by digest. The Debian image runs the unit tests. The headers come from the AsaApi commit pinned here and AsaApi.lib from the pinned release: the release's own headers are older than this game build. Depot 1004 is Valve's redistributable depot, listed by the server app."
+  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. TakaroAsa.dll is compiled with MSVC toolset 14.44 on GitHub's windows-2022 runner, because AsaApi's headers and AsaApi.lib target MSVC; that toolset is selected by native/build.bat but the runner image is not pinned by digest. The Debian image runs the unit tests. Game 97 moved to Unreal Engine 5.8, so this target needs AsaApi 2.11 or later: 2.03 has the old object table layout and no class lookup for this build. The headers come from the commit the 2.11 release was built from, and AsaApi.lib from that release. Depot 1004 is Valve's redistributable depot, listed by the server app."
 }
