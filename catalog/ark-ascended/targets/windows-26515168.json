@@ -11,9 +11,9 @@
     "evidence": [
       "games/ark-ascended/README.md (What works, what doesn't)",
       "games/ark-ascended/capabilities.json (status and game API per action and event, kept equal to native/src/plugin.cpp by tests/check_capabilities.py)",
-      "live-verified 2026-11-09 against build 26515168 with a real game client"
+      "server-side checked 2026-11-09 on build 26515168 (game 97.17): AsaApi offsets load, connector identifies, console, chat and capabilities work; no client join yet (the 97.14 client cannot join)"
     ],
-    "notes": "ARK: Survival Ascended dedicated server, game 97.14, Steam build 26515168 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
+    "notes": "ARK: Survival Ascended dedicated server, game 97.17, Steam build 26515168 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
   },
   "inputs": {
     "server": {
