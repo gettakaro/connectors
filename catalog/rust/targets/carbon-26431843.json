@@ -4,12 +4,12 @@
   "game": "rust",
   "platform": "carbon",
   "revision": "26431843",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
+    "status": "retired",
     "since": "2026-11-06",
     "evidence": [],
-    "notes": "Rust Dedicated Server public build 26431843 with Carbon production build v2.0.264 (commit 7cd15a2, GitHub release asset id 714398650, uploaded 2026-11-05 18:34 UTC). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag."
+    "notes": "Rust Dedicated Server public build 26431843 with Carbon production build v2.0.264 (commit 7cd15a2, GitHub release asset id 714398650, uploaded 2026-11-05 18:34 UTC). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag. Retired 2026-11-07: public build 26498655 replaced 26431843, so Steam no longer serves these depot manifests to anonymous accounts."
   },
   "inputs": {
     "server": {

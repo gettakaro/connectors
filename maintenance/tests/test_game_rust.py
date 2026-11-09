@@ -39,7 +39,7 @@ from takaro_maint.steam import vdf
 from takaro_maint.tracker import identity
 
 GAME = "rust"
-TARGET = "carbon-26431843"
+TARGET = "carbon-26498655"
 APP = 258550
 VERSION = "0.0.6-dev.abc1234"
 ARTIFACT = f"takaro-rust-plugin-{TARGET}-{VERSION}.cs"
@@ -260,9 +260,9 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     env = payload["env"]
     assert env["RUST_STEAM_APP"] == "258550"
     assert env["RUST_STEAM_BRANCH"] == "public"
-    assert env["RUST_STEAM_BUILDID"] == "26431843"
-    assert env["RUST_STEAM_DEPOTS"] == "258552:3647035647797862067;258554:8063586454717275495"
-    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26431843-{version}.cs"
+    assert env["RUST_STEAM_BUILDID"] == "26498655"
+    assert env["RUST_STEAM_DEPOTS"] == "258552:7175333784427202048;258554:8417394343345843224"
+    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26498655-{version}.cs"
     assert env["RUST_CARBON_ASSET"] == "Carbon.Linux.Release.tar.gz"
     assert env["RUST_CARBON_TAG"] == "production_build"
     assert env["RUST_CARBON_SHA256"] == "5c9c5f80904516732b15324badba921622f3c8f5b77e3cfe120d8c16489aa795"
@@ -276,9 +276,9 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     assert not any(key.endswith("_JAVA") for key in env)
 
     assert payload["resolvedUrls"]["server"].startswith(
-        "steam://app/258550/branch/public/build/26431843/depot/258552/manifest/3647035647797862067"
+        "steam://app/258550/branch/public/build/26498655/depot/258552/manifest/7175333784427202048"
     )
-    assert "258554/manifest/8063586454717275495" in payload["resolvedUrls"]["server"]
+    assert "258554/manifest/8417394343345843224" in payload["resolvedUrls"]["server"]
     # The Carbon asset is addressed by the URL that actually serves the bytes: the API's
     # asset-id URL answers with JSON unless the request asks for octet-stream, which
     # `catalog validate --online` (and anything else that re-hashes it) cannot do.
