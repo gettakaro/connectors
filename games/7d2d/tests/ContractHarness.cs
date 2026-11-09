@@ -64,6 +64,7 @@ public static partial class ContractHarness
             AssertBanCaptureKeepsOneRecordPerPlayer();
             AssertUnbanLiftsTheEntriesTheMirrorReports();
             AssertBanCaptureMergesBothStores();
+            AssertBanCaptureSendsOnlyRealNames();
             AssertIdentifyDeadline();
             AssertIdentifyAnswerSetsTheNegotiatedVersion();
             AssertRefusedIdentifyIsNeverConfirmed();
@@ -1395,6 +1396,67 @@ public static partial class ContractHarness
         );
     }
 
+    private static void AssertBanCaptureSendsOnlyRealNames()
+    {
+        var skipped = new List<string>();
+        var blacklist = new[]
+        {
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_nameless",
+                Reason = "unknown to this server",
+            },
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_label",
+                Name = Takaro.Services.BanIdentity.AdminBanLabel,
+                Reason = "label is not a name",
+            },
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_both",
+                Name = "",
+                Reason = "griefing",
+                ExpiresAt = "2030-01-01T00:00:00.000Z",
+            },
+        };
+        var blocked = new[]
+        {
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_both",
+                CrossplatformId = "EOS_both",
+                Name = "from the block",
+                Reason = "Blocked",
+            },
+        };
+
+        List<Takaro.Persistence.BanRecord> captured = Takaro.Services.BanIdentity.Capture(
+            blacklist,
+            blocked,
+            skipped.Add
+        );
+
+        Equal(1, captured.Count, "a ban with no name in either store is not sent");
+        Equal(
+            "EOS_nameless,EOS_label",
+            string.Join(",", skipped),
+            "bans without a real name are reported skipped"
+        );
+        Equal("from the block", captured[0].Name, "the other store supplies a missing name");
+        Equal("griefing", captured[0].Reason, "the Blacklist reason survives the name backfill");
+        Equal(
+            "2030-01-01T00:00:00.000Z",
+            captured[0].ExpiresAt,
+            "the Blacklist expiry survives the name backfill"
+        );
+        Equal(
+            "EOS_nameless",
+            LiftedBy("nameless", StoredBan("EOS_nameless", null)),
+            "unban still lifts a ban that listBans leaves out for having no name"
+        );
+    }
+
     private const string AcceptedV1 =
         "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs-1\",\"protocolVersion\":1}}";
     private const string AcceptedV0 =
@@ -2002,11 +2064,7 @@ public static partial class ContractHarness
                     && !((string)wire["gameId"]).StartsWith("EOS_"),
                 name + " gameId is a bare EOS id"
             );
-            True(
-                !((string)wire["name"]).Contains("Steam_")
-                    && !((string)wire["name"]).Contains("XBL_"),
-                name + " fallback name carries no platform prefix"
-            );
+            True(record.Name == null, name + " gets no invented name");
         }
 
         JToken legacyOnly = legacy["bans"]["legacyResult"][0];
@@ -2018,11 +2076,7 @@ public static partial class ContractHarness
             null,
             null
         );
-        Equal(
-            "Player_" + (string)legacyOnly["gameId"],
-            eosRecord.Name,
-            "unnamed EOS ban gets a bare-id name"
-        );
+        True(eosRecord.Name == null, "unnamed EOS ban keeps no name");
     }
 
     private static void AssertLegacyParityGiveQuality(JObject legacy)

@@ -993,13 +993,14 @@ namespace Takaro.Services
                         playerList,
                         ban.UserIdentifier
                     );
+                    string knownName = playerData?.PlayerName.playerName.Text;
                     blacklist.Add(
                         new BanIdentity.BanSource
                         {
                             BanId = banId,
                             CrossplatformId = playerData?.PrimaryId?.CombinedString,
                             NativeId = playerData?.NativeId?.CombinedString,
-                            Name = playerData?.PlayerName.playerName.Text,
+                            Name = string.IsNullOrEmpty(knownName) ? ban.Name : knownName,
                             Reason = ban.BanReason,
                             ExpiresAt =
                                 ban.BannedUntil == DateTime.MaxValue
@@ -1046,7 +1047,9 @@ namespace Takaro.Services
                 blacklist,
                 blocked,
                 skippedId =>
-                    LogService.Instance.Debug($"Ban entry {skippedId} has no EOS id; not sent")
+                    LogService.Instance.Debug(
+                        $"Ban entry {skippedId} has no EOS id or no name; not sent"
+                    )
             );
         }
 
