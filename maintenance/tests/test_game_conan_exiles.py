@@ -10,6 +10,8 @@ proven install carries it and watched by nobody because it belongs to another ap
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import os
 import re
@@ -32,10 +34,21 @@ from takaro_maint.steam import steamcmd
 GAME = "conan-exiles"
 
 
-def _hook_run(root: Path) -> SimpleNamespace:
+def _hook_run(root: Path, *, wanted: tuple[str, ...] = ()) -> SimpleNamespace:
     (root / "data").mkdir(parents=True)
     (root / "out").mkdir(parents=True)
-    return SimpleNamespace(data_dir=root / "data", out=root / "out", extra_logs=[])
+    recorded: list[Any] = []
+    return SimpleNamespace(
+        data_dir=root / "data",
+        out=root / "out",
+        extra_logs=[],
+        recorded=recorded,
+        wanted=lambda check_id: check_id in wanted,
+        record=recorded.append,
+        skip=lambda check_id, reason: recorded.append(SimpleNamespace(id=check_id, status="skip", detail=reason)),
+        options=SimpleNamespace(run_id="t1"),
+        target=SimpleNamespace(record={"revision": "25792439"}),
+    )
 
 
 def test_every_conan_verification_body_has_pass_and_failure_paths(tmp_path: Path) -> None:
@@ -839,6 +852,11 @@ def test_the_runtime_identity_comes_from_the_two_server_banners(tmp_path: Path) 
         "loaderVersion": "5.6.1",
     }
     assert adapter.parse_runtime_identity("LogInit: Display: Starting Game.") is None
+    assert adapter.parse_runtime_identity("LogInit: Build: ++exiles+release-beta-CL-378132") == {
+        "gameVersion": "exiles+release-beta-CL-378132",
+        "loader": "unreal",
+        "loaderVersion": None,
+    }, "the branch label 25639945 carries"
 
     log = tmp_path / "server.log"
     log.write_text(f"noise\n{BANNER_BUILD}\n{BANNER_ENGINE}\nmore noise\n", encoding="utf-8")
@@ -855,15 +873,17 @@ def test_verify_hooks_know_the_conan_ready_line() -> None:
     )
 
 
-def test_a_bare_run_proves_build_and_startup_and_excludes_the_rest() -> None:
-    """The verifier boots the server without the native library, so only the boot itself is claimed."""
+def test_a_bare_run_boots_the_library_and_names_a_stand_in_for_every_base_row() -> None:
+    """The library is preloaded, so the run claims the protocol through Conan's own checks."""
     from takaro_maint.verify.runner import CHECK_IDS, check_ids
 
-    assert check_ids(GAME) == CHECK_IDS, "the game adds no checks of its own"
+    assert check_ids(GAME) == (*CHECK_IDS, *hooks.CHECK_IDS)
     assert set(CHECK_IDS) - set(hooks.UNSUPPORTED_CHECKS) == {"build", "startup"}
     for reason in hooks.UNSUPPORTED_CHECKS.values():
-        assert "native/tests" in reason
-    assert hooks.HOOKS.before_boot is None and hooks.HOOKS.after_protocol is None
+        assert re.search(r"`(native-[a-z]+|stop)`", reason), reason
+    assert hooks.HOOKS.takaro_tls and hooks.HOOKS.takaro_protocol == 1
+    assert hooks.HOOKS.before_boot is hooks.before_boot and hooks.HOOKS.after_protocol is hooks.after_protocol
+    assert any("chat-message" in row for row in hooks.HOOKS.manual_coverage), "client-only rows stay manual"
 
 
 def test_the_container_command_starts_the_launcher_without_rcon(run: Any, repo: Path, tmp_path: Path) -> None:
@@ -888,7 +908,389 @@ def test_the_container_command_starts_the_launcher_without_rcon(run: Any, repo: 
     mounts = adapter.container_mounts(resolved, tmp_path)
     assert mounts == [f"{tmp_path}:/conan"]
     assert (tmp_path / "ConanSandbox" / "Saved" / "Logs").is_dir()
-    assert adapter.runtime_env(resolved, {}) == {"HOME": "/conan/.takaro/home"}
+    assert adapter.runtime_env(resolved, {"TAKARO_REGISTRATION_TOKEN": "secret"}) == {
+        "HOME": "/conan/.takaro/home",
+        "LD_PRELOAD": "/conan/TakaroConanNative/TakaroConanNative/libtakaro-conan-native.so",
+        "TAKARO_CONAN_SHUTDOWN_SECONDS": "5",
+    }, "the library is preloaded; no Takaro value reaches the docker command line"
+
+
+# -- the native runtime checks -------------------------------------------------------------
+
+BUILD = "25792439"
+ICON = b"\x89PNG\r\n\x1a\n" + b"icon-bytes"
+ICON_REVISION = hashlib.sha256(ICON).hexdigest()[:12]
+
+
+def _identify(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "identityToken": "takaro-verify-t1",
+        "registrationToken": "secret",
+        "name": "takaro-verify-t1",
+        "game": "conan-exiles",
+        "connector": {"name": "takaro-conan-exiles", "version": hooks.expected_version()},
+        "protocolVersions": [0, 1],
+        "capabilities": [
+            {
+                "name": "game.profile",
+                "parameters": {
+                    "name": "Conan Exiles",
+                    "version": BUILD,
+                    "icon": {"revision": ICON_REVISION, "size": len(ICON)},
+                },
+            },
+            {"name": "players.list"},
+        ],
+    }
+    payload.update(overrides)
+    return payload
+
+
+class StubTakaro:
+    """The FakeTakaro surface the Conan checks use, answering from a table."""
+
+    def __init__(self, answers: dict[str, Any] | None = None, identified: dict[str, Any] | None = None) -> None:
+        self.answers = answers or {}
+        self.identified: dict[str, Any] | None = identified if identified is not None else _identify()
+        self.identify_count = 1 if self.identified else 0
+        self.negotiated_protocol = 1
+        self.capability_updates: list[dict[str, Any]] = []
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+        self.reconnects = True
+
+    async def request(self, action: str, args: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:
+        self.requests.append((action, args or {}))
+        answer = self.answers.get(action)
+        if isinstance(answer, list) and answer and isinstance(answer[0], Exception | _Seq):
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
+        if isinstance(answer, _Seq):
+            answer = answer.value
+        if isinstance(answer, Exception):
+            raise answer
+        if callable(answer):
+            return answer(args or {})
+        return answer
+
+    async def wait_for_identify(self, timeout: float, *, minimum: int = 1) -> dict[str, Any]:
+        if self.identify_count < minimum:
+            raise TimeoutError(f"only {self.identify_count} identify frame(s) arrived, expected {minimum}")
+        assert self.identified is not None
+        return self.identified
+
+    async def ping(self, *, timeout: float = 5.0, payload: bytes | None = None) -> float:
+        return 0.01
+
+    async def disconnect(self, code: int = 1001, reason: str = "going away") -> None:
+        if self.reconnects:
+            self.identify_count += 1
+
+
+class _Seq:
+    """One answer in a sequence: the first ones are used once, the last one from then on."""
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+
+def _native_log(run: SimpleNamespace, *lines: str) -> Path:
+    log = run.data_dir / hooks.NATIVE_LOG
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(f"[2026-10-23 01:00:00.000 t1] {line}\n")
+    return log
+
+
+def _alive() -> bool:
+    return True
+
+
+@pytest.fixture
+def quick(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in (("RETRY_SECONDS", 0.0), ("WORLD_BUDGET", 0.05), ("LOAD_BUDGET", 0.05)):
+        monkeypatch.setattr(hooks, name, value)
+    monkeypatch.setattr(
+        hooks.checks_lifecycle,
+        "wait_for_count",
+        lambda log, pattern, minimum, timeout, alive: (hooks.checks_lifecycle.count_lines(log, pattern)),
+    )
+    monkeypatch.setattr(
+        hooks.checks, "wait_for_line", lambda log, pattern, timeout, alive: hooks.checks.find_line(log, pattern)
+    )
+
+
+def test_before_boot_writes_the_takaro_config_with_the_run_ca_and_no_world_readable_token(tmp_path: Path) -> None:
+    run = _hook_run(tmp_path)
+    ca = tmp_path / "ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+    run.takaro_ca_file = ca
+
+    path = hooks.before_boot(
+        run,
+        {
+            "TAKARO_WS_URL": "wss://host.docker.internal:4000/",
+            "TAKARO_IDENTITY_TOKEN": "id",
+            "TAKARO_REGISTRATION_TOKEN": "reg",
+        },
+    )
+
+    assert path == run.data_dir / "ConanSandbox/Saved/Config/Takaro/takaro.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "url": "wss://host.docker.internal:4000/",
+        "identityToken": "id",
+        "registrationToken": "reg",
+        "name": "takaro-verify-t1",
+        "caFile": "/conan/ConanSandbox/Saved/Config/Takaro/verify-ca.pem",
+    }
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert (run.data_dir / hooks.VERIFY_CA).read_text(encoding="utf-8") == ca.read_text(encoding="utf-8")
+
+
+def test_native_load_passes_on_the_pinned_build_and_fails_on_a_refused_one(tmp_path: Path, quick: None) -> None:
+    version = hooks.expected_version()
+    good = _hook_run(tmp_path / "good")
+    _native_log(
+        good,
+        f"Takaro Conan native {version} loading (pid 42)",
+        f"pins: build-id ad0c0103e496b7c19bfda90800c59ae494295d35 = build {BUILD}, scan 141.0 ms: verified",
+        "ProcessEvent hooked at 0x3f12340",
+        "Takaro bridge started (ready)",
+    )
+    result = hooks._check_load(good, _alive)
+    assert result.status == "pass", result.detail
+    assert result.detail["build"] == BUILD and result.detail["libraryVersion"] == version
+
+    refused = _hook_run(tmp_path / "refused")
+    _native_log(
+        refused,
+        "Takaro Conan native 0.0.1 loading (pid 42)",
+        "pins: build-id 0000000000000000000000000000000000000000, scan 140.2 ms: build-id not pinned",
+        "NO HOOK INSTALLED: build-id not pinned; every action will be refused",
+        "Takaro bridge started (refusing actions)",
+    )
+    result = hooks._check_load(refused, _alive)
+    assert result.status == "fail"
+    problems = " | ".join(result.detail["problems"])
+    assert f"this checkout ships {version}" in problems
+    assert "the target is 25792439" in problems and "NO HOOK INSTALLED" in problems
+    assert "'refusing actions'" in problems
+
+    empty = _hook_run(tmp_path / "empty")
+    result = hooks._check_load(empty, _alive)
+    assert result.status == "fail" and "LD_PRELOAD did not load it" in result.detail["problems"][0]
+
+
+def test_native_identify_checks_the_game_profile_and_the_negotiated_protocol(tmp_path: Path, quick: None) -> None:
+    run = _hook_run(tmp_path / "ok")
+    _native_log(run, "takaro: identified gameServerId=x, protocol 1; 0 unconfirmed event(s) to deliver")
+    result = asyncio.run(hooks._check_identify(run, StubTakaro(), _alive))
+    assert result.status == "pass", result.detail
+    assert result.detail["gameProfile"]["version"] == BUILD
+
+    refused = _hook_run(tmp_path / "refused")
+    _native_log(refused, "takaro: identified gameServerId=x, protocol 0; 0 unconfirmed event(s) to deliver")
+    profile_only = [{"name": "game.profile", "parameters": {"name": "Conan Exiles"}}]
+    stub = StubTakaro(
+        identified=_identify(game="other", connector={"name": "x", "version": "0"}, capabilities=profile_only)
+    )
+    result = asyncio.run(hooks._check_identify(refused, stub, _alive))
+    problems = " | ".join(result.detail["problems"])
+    assert result.status == "fail"
+    for expected in ("identify game is 'other'", "identify connector is", "declares version None", "protocol '0'"):
+        assert expected in problems
+
+    nobody = _hook_run(tmp_path / "nobody")
+    result = asyncio.run(hooks._check_identify(nobody, StubTakaro(identified={}), _alive))
+    assert result.status == "fail" and "identify frame(s) arrived" in result.detail["problems"][0]
+
+
+def test_native_players_waits_for_the_world_and_wants_nobody(quick: None) -> None:
+    loading = RuntimeError('{"code": "game_error", "message": "the world is not loaded yet"}')
+    stub = StubTakaro({"testReachability": {"connectable": True}, "getPlayers": [_Seq(loading), _Seq([])]})
+    result = asyncio.run(hooks._check_players(stub))
+    assert result.status == "pass", result.detail
+    assert [action for action, _ in stub.requests].count("getPlayers") == 2
+
+    crowded = StubTakaro({"testReachability": {"connectable": False}, "getPlayers": [{"gameId": "1"}]})
+    result = asyncio.run(hooks._check_players(crowded))
+    problems = " | ".join(result.detail["problems"])
+    assert "expected connectable true" in problems and "1 player(s)" in problems
+
+    refusing = StubTakaro({"testReachability": {"connectable": True}, "getPlayers": [_Seq(loading)]})
+    result = asyncio.run(hooks._check_players(refusing))
+    assert result.status == "fail" and "the world is not loaded yet" in result.detail["problems"][0]
+
+
+def _rows(count: int, names: tuple[str, ...]) -> list[dict[str, str]]:
+    return [{"code": f"row{i}", "name": names[i] if i < len(names) else f"Thing {i}"} for i in range(count)]
+
+
+def test_native_catalog_wants_thousands_of_localised_rows(quick: None) -> None:
+    good = StubTakaro(
+        {
+            "listItems": _rows(hooks.MIN_ITEMS, hooks.ITEM_NAMES),
+            "listEntities": _rows(hooks.MIN_ENTITIES, hooks.ENTITY_NAMES),
+        }
+    )
+    result = asyncio.run(hooks._check_catalog(good))
+    assert result.status == "pass", result.detail
+
+    # A few rows are named after themselves; that alone is not a catalogue of codes.
+    rows = _rows(hooks.MIN_ITEMS, hooks.ITEM_NAMES)
+    rows[-10:] = [{"code": f"Absinthe{i}", "name": f"Absinthe{i}"} for i in range(10)]
+    some = StubTakaro({"listItems": rows, "listEntities": _rows(hooks.MIN_ENTITIES, hooks.ENTITY_NAMES)})
+    assert asyncio.run(hooks._check_catalog(some)).status == "pass"
+    assert result.detail["counts"] == {"listItems": hooks.MIN_ITEMS, "listEntities": hooks.MIN_ENTITIES}
+
+    codes = [{"code": "Stone", "name": "Stone"}]
+    bad = StubTakaro({"listItems": codes, "listEntities": RuntimeError('{"code": "unsupported"}')})
+    result = asyncio.run(hooks._check_catalog(bad))
+    problems = " | ".join(result.detail["problems"])
+    assert result.status == "fail"
+    assert "expected at least 1000" in problems and "names are the code itself" in problems
+    assert "listEntities failed" in problems and "Plant Fiber" in problems
+
+
+def test_native_console_answers_the_engine_console_and_refuses_an_rcon_verb(quick: None) -> None:
+    def console(args: dict[str, Any]) -> Any:
+        if args["command"] == hooks.REFUSED_COMMAND:
+            raise RuntimeError('{"code": "invalid_argument", "message": "use getPlayers"}')
+        return {"success": True, "rawResult": "LogTemp: verbose"}
+
+    result = asyncio.run(hooks._check_console(StubTakaro({"executeConsoleCommand": console})))
+    assert result.status == "pass", result.detail
+    assert "getPlayers" in result.detail["refusal"]
+
+    result = asyncio.run(
+        hooks._check_console(StubTakaro({"executeConsoleCommand": {"success": True, "rawResult": ""}}))
+    )
+    assert result.status == "fail" and "expected a refusal" in result.detail["problems"][0]
+
+    failing = StubTakaro({"executeConsoleCommand": {"success": False, "rawResult": "refused"}})
+    result = asyncio.run(hooks._check_console(failing))
+    assert result.status == "fail" and "expected success true" in result.detail["problems"][0]
+
+
+def test_action_sends_a_message_into_the_game_thread(tmp_path: Path) -> None:
+    run = _hook_run(tmp_path)
+    stub = StubTakaro({"sendMessage": None})
+    result = asyncio.run(hooks._check_action(run, stub))
+    assert result.status == "pass" and stub.requests == [
+        ("sendMessage", {"message": "takaro-verify-t1-action", "opts": {}})
+    ]
+
+    nobody = RuntimeError(json.dumps({"code": "game_error", "message": hooks.NOBODY_ONLINE}))
+    result = asyncio.run(hooks._check_action(run, StubTakaro({"sendMessage": nobody})))
+    assert result.status == "pass" and hooks.NOBODY_ONLINE in result.detail["result"]["refusal"]
+
+    result = asyncio.run(hooks._check_action(run, StubTakaro({"sendMessage": RuntimeError("game_error")})))
+    assert result.status == "fail" and "sendMessage failed" in result.detail["problems"][0]
+
+
+def test_game_icon_matches_what_the_game_profile_declared() -> None:
+    served = {"revision": ICON_REVISION, "data": base64.b64encode(ICON).decode()}
+    result = asyncio.run(hooks._check_game_icon(StubTakaro({"getGameIcon": served})))
+    assert result.status == "pass", result.detail
+
+    other = b"\x89PNG\r\n\x1a\n" + b"another"
+    stale = {"revision": ICON_REVISION, "data": base64.b64encode(other).decode()}
+    result = asyncio.run(hooks._check_game_icon(StubTakaro({"getGameIcon": stale})))
+    problems = " | ".join(result.detail["problems"])
+    assert "first 12 hex" in problems and "game.profile declared icon" in problems
+
+    result = asyncio.run(hooks._check_game_icon(StubTakaro({"getGameIcon": {"revision": "x", "data": "!!"}})))
+    assert result.status == "fail" and "not base64" in result.detail["problems"][0]
+
+    result = asyncio.run(hooks._check_game_icon(StubTakaro({"getGameIcon": None})))
+    assert result.status == "fail" and "expected {revision, data}" in result.detail["problems"][0]
+
+
+def test_map_arrives_as_a_manifest_replacement_once_the_world_loads(quick: None) -> None:
+    stub = StubTakaro()
+    stub.capability_updates.append(
+        {"capabilities": [{"name": "map", "parameters": {"dimensions": [{"id": "exiled_lands"}]}}]}
+    )
+    result = asyncio.run(hooks._check_map(stub))
+    assert result.status == "pass" and result.detail["dimensions"] == ["exiled_lands"]
+
+    result = asyncio.run(hooks._check_map(StubTakaro()))
+    assert result.status == "fail" and "no `map` capability" in result.detail["problems"][0]
+
+
+def test_a_refused_build_ends_the_waits_at_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A pinned library that refused the build never answers differently, so no budget is waited out."""
+    for name in ("WORLD_BUDGET", "STOP_BUDGET"):
+        monkeypatch.setattr(hooks, name, 3600.0)
+    monkeypatch.setattr(hooks, "RETRY_SECONDS", 0.01)
+    refusal = RuntimeError('{"code": "game_error", "message": "getPlayers refused: unsupported server build (x)"}')
+    stub = StubTakaro({"getPlayers": [_Seq(refusal), _Seq([])]})
+    answer, errors = asyncio.run(hooks._request_until(stub, "getPlayers", {}, 3600.0, lambda a: True))
+    assert answer is None and len(errors) == 1
+
+    result = asyncio.run(hooks._check_map(StubTakaro(), lambda: True))
+    assert result.status == "fail" and result.duration_ms < 1000
+    assert result.detail["problems"] == ["no `map` capability: the library refused the build"]
+
+    budgets: list[float] = []
+    run = _hook_run(tmp_path, wanted=("stop",))
+    run.container = SimpleNamespace(wait_for_exit=lambda timeout: budgets.append(timeout) or -1)
+    result = asyncio.run(hooks._check_stop(run, StubTakaro({"shutdown": refusal})))
+    assert result.status == "fail" and budgets == [hooks.REFUSED_STOP_BUDGET]
+    assert result.detail["budgetSeconds"] == hooks.REFUSED_STOP_BUDGET
+
+
+def test_reconnect_needs_a_second_identify_and_a_usable_socket(tmp_path: Path, quick: None) -> None:
+    run = _hook_run(tmp_path / "ok")
+    _native_log(
+        run,
+        "takaro: identified gameServerId=x, protocol 1; 0 unconfirmed event(s) to deliver",
+        "takaro: WebSocket closed (epoch 1): server closed the connection (code 1001); 0 event(s) unconfirmed",
+        "takaro: identified gameServerId=x, protocol 1; 0 unconfirmed event(s) to deliver",
+    )
+    result = asyncio.run(hooks._check_reconnect(run, StubTakaro({"testReachability": {"connectable": True}}), _alive))
+    assert result.status == "pass", result.detail
+
+    gone = _hook_run(tmp_path / "gone")
+    stub = StubTakaro()
+    stub.reconnects = False
+    hooks_budget = hooks.RECONNECT_BUDGET
+    try:
+        hooks.RECONNECT_BUDGET = 0.05
+        result = asyncio.run(hooks._check_reconnect(gone, stub, _alive))
+    finally:
+        hooks.RECONNECT_BUDGET = hooks_budget
+    problems = " | ".join(result.detail["problems"])
+    assert "no identify frame arrived" in problems and "never logged the close" in problems
+
+
+def test_after_protocol_runs_the_selected_checks_and_skips_the_rest(tmp_path: Path, quick: None) -> None:
+    run = _hook_run(tmp_path, wanted=("action",))
+    asyncio.run(hooks.after_protocol(run, StubTakaro({"sendMessage": None}), _alive))
+    statuses = {result.id: result.status for result in run.recorded}
+    assert statuses.pop("action") == "pass"
+    assert set(statuses) == set(hooks.CHECK_IDS) - {"action", "stop"} and set(statuses.values()) == {"skip"}
+
+
+def test_stop_wants_exit_code_zero_and_the_library_stopped(tmp_path: Path) -> None:
+    run = _hook_run(tmp_path / "ok", wanted=("stop",))
+    _native_log(run, "Takaro Conan native stopped")
+    run.container = SimpleNamespace(wait_for_exit=lambda timeout: 0)
+    asyncio.run(hooks.after_shutdown(run, StubTakaro({"shutdown": None}), "wss://x/", []))
+    assert [(r.id, r.status) for r in run.recorded] == [("stop", "pass")]
+    assert (run.out / "TakaroConanNative.log").is_file() and run.extra_logs == [run.out / "TakaroConanNative.log"]
+
+    hung = _hook_run(tmp_path / "hung", wanted=("stop",))
+    hung.container = SimpleNamespace(wait_for_exit=lambda timeout: -1)
+    result = asyncio.run(hooks._check_stop(hung, StubTakaro({"shutdown": RuntimeError("game_error")})))
+    problems = " | ".join(result.detail["problems"])
+    assert result.status == "fail"
+    assert "shutdown failed" in problems and "exited -1" in problems and "never logged" in problems
+
+
+def test_request_until_returns_the_errors_it_saw(quick: None) -> None:
+    stub = StubTakaro({"getPlayers": [_Seq(RuntimeError("a")), _Seq(RuntimeError("a")), _Seq(RuntimeError("b"))]})
+    answer, errors = asyncio.run(hooks._request_until(stub, "getPlayers", {}, 0.0, lambda a: True))
+    assert answer is None and errors == ["getPlayers failed: a"]
 
 
 # -- the release record ------------------------------------------------------------------
