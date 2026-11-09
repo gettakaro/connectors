@@ -19,6 +19,7 @@ from typing import Any
 
 from .. import channels, net, output, paths
 from ..exit_codes import OK, ConflictError, IntegrityError, UpstreamUnavailable, UsageError
+from ..fingerprint import references_key
 from ..steam import depotdownloader as dd
 from ..steam import steamcmd
 from ..steam.install import SteamInput
@@ -77,6 +78,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     add_selection_arguments(references)
     references.add_argument("--dest", required=True, help="the flat directory the build compiles against")
     references.add_argument("--force", action="store_true", help="replace a directory pinned to another fingerprint")
+    references.add_argument(
+        "--reuse-by-manifests",
+        action="store_true",
+        help="accept a directory fetched for another fingerprint when its depot manifests and file selection match",
+    )
     references.set_defaults(handler=_references, op="steam references")
 
     parser.set_defaults(handler=None, op="steam")
@@ -409,14 +415,21 @@ def _references(args: Any) -> int:
     cache = paths.cache_dir()
     log = _log_path(cache, target.game, target.id)
 
+    key = references_key(target.record["inputs"]["server"], selectors)
     existing = _read_marker(dest)
-    if existing is not None and existing.get("fingerprint") != target.fingerprint and not args.force:
+    # The manifests and the selection decide these bytes; a game whose directory is named
+    # after them opts in, so a change elsewhere in its target does not force a download.
+    same_bytes = existing is not None and (
+        existing.get("fingerprint") == target.fingerprint
+        or (args.reuse_by_manifests and existing.get("referencesKey") == key)
+    )
+    if existing is not None and not same_bytes and not args.force:
         raise ConflictError(
             f"{dest} was built for fingerprint {existing.get('fingerprint', '?')[:16]}; "
             f"this target is {target.fp16} — stale reference cache. Pass --force to replace it.",
             dest=str(dest),
         )
-    if existing is not None and existing.get("fingerprint") == target.fingerprint:
+    if existing is not None and same_bytes:
         problems = _verify_marker(dest, existing)
         if not problems:
             output.info(f"{dest} already holds the references for {target.id} ({target.fp16})")
@@ -497,6 +510,7 @@ def _references(args: Any) -> int:
                 "target": target.id,
                 "fingerprint": target.fingerprint,
                 "fp16": target.fp16,
+                "referencesKey": key,
                 "createdAt": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
                 "files": rows,
             },

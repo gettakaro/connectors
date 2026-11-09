@@ -42,6 +42,16 @@ _FILE_ROW = re.compile(
     r"^\s*(?P<size>[0-9]+)\s+(?P<chunks>[0-9]+)\s+(?P<sha1>[0-9a-f]{40})\s+(?P<flags>[0-9]+)\s+(?P<name>\S.*)$"
 )
 
+#: Steam's answer to an anonymous request for a manifest that is no longer the branch head. Set
+#: as ``reason`` on the error so a caller can tell it apart from every other upstream failure,
+#: which all share exit 4: a pull request that changes nothing about the game may skip this one.
+MANIFEST_NOT_SERVED = "manifest-not-served"
+_NOT_SERVED_MARKERS = (
+    "no manifest request code",
+    "unable to get manifest request code",
+    "encountered 401 for depot manifest",
+)
+
 _UNAVAILABLE_MARKERS = (
     "unable to get manifest request code",
     "is not available",
@@ -209,7 +219,9 @@ def _classify(argv: list[str], completed: subprocess.CompletedProcess[str], log:
         return
     text = (completed.stdout or "") + (completed.stderr or "")
     lowered = text.lower()
-    reason = next((marker for marker in _UNAVAILABLE_MARKERS if marker in lowered), None)
+    not_served = any(marker in lowered for marker in _NOT_SERVED_MARKERS)
+    # Checked first: "depot key" also matches the success line printed just before the 401.
+    reason = "manifest not served" if not_served else next((m for m in _UNAVAILABLE_MARKERS if m in lowered), None)
     tail = "\n".join(_hide(line, secrets) for line in text.strip().splitlines()[-20:])
     what = f"DepotDownloader exited {completed.returncode}"
     if reason:
@@ -217,6 +229,7 @@ def _classify(argv: list[str], completed: subprocess.CompletedProcess[str], log:
     raise UpstreamUnavailable(
         f"{what}; {NO_FALLBACK}. See {log.name}:\n{tail}",
         argv=[_hide(part, secrets) for part in argv[1:]],
+        **({"reason": MANIFEST_NOT_SERVED} if not_served else {}),
     )
 
 

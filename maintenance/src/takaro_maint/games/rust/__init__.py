@@ -28,6 +28,7 @@ from typing import Any
 
 from ... import net, output, paths
 from ...exit_codes import OK, BuildFailed, ConflictError, IntegrityError
+from ...fingerprint import references_key
 from ...install.ledger import check_ledger, ledger_path, read_ledger, write_ledger
 from ...providers import provider_for
 from ...steam import install as steam_install
@@ -298,6 +299,7 @@ class RustAdapter(BaseAdapter):
         server = resolved["inputs"]["server"]
         carbon = _carbon_spec(resolved)
         depots = ";".join(f"{depot}:{server['depots'][depot]['manifest']}" for depot in sorted(server["depots"]))
+        key = references_key(server, list(resolved["build"]["references"]))
         env = {
             **common_env(resolved, prefix),
             f"{prefix}_TOOLCHAIN": str(resolved["toolchainRef"]),
@@ -307,7 +309,8 @@ class RustAdapter(BaseAdapter):
             f"{prefix}_STEAM_BUILDID": str(server["buildid"]),
             f"{prefix}_STEAM_DEPOTS": depots,
             f"{prefix}_ARTIFACT": str(resolved["artifactFileNames"]["plugin"]),
-            f"{prefix}_REFERENCES_DIR": f"{REFERENCES_ROOT}/{resolved['fp16']}",
+            f"{prefix}_REFERENCES_DIR": f"{REFERENCES_ROOT}/{key}",
+            f"{prefix}_REFERENCES_KEY": key,
             f"{prefix}_CARBON_REFERENCES_DIR": f"{CARBON_REFERENCES_ROOT}/{resolved['fp16']}",
             f"{prefix}_CARBON_ASSET": str(carbon["asset"]),
             f"{prefix}_CARBON_TAG": str(carbon["tag"]),

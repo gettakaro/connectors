@@ -22,7 +22,7 @@ rust_parse_target_flag "$@"
 rust_resolve_target "${TARGET}"
 
 cd "${PROJECT_ROOT}"
-GAME_REFS="_data/rust-binaries/${RUST_FP16}"
+GAME_REFS="_data/rust-binaries/${RUST_REFERENCES_KEY}"
 [ -f "${GAME_REFS}/Newtonsoft.Json.dll" ] || { echo "error: ${GAME_REFS}/Newtonsoft.Json.dll is missing; run ./scripts/setup-environment.sh first" >&2; exit 2; }
 
 WORK="_data/protocol-tests/${RUST_FP16}"

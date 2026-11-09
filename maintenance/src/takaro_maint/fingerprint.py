@@ -71,3 +71,15 @@ def fingerprint(record: dict[str, Any]) -> str:
 def fp16(record_or_fingerprint: dict[str, Any] | str) -> str:
     value = record_or_fingerprint if isinstance(record_or_fingerprint, str) else fingerprint(record_or_fingerprint)
     return value[:16]
+
+
+def references_key(server: dict[str, Any], selectors: list[str]) -> str:
+    """The identity of a reference-assembly directory: which depot manifests, which files of them.
+
+    Deliberately not the fingerprint. A change to anything else in the target (a framework
+    release, a runtime image) leaves these bytes the same, so it must not force a download
+    Steam may no longer serve.
+    """
+    manifests = {str(depot): str(entry["manifest"]) for depot, entry in server["depots"].items()}
+    identity = {"app": int(server["app"]), "manifests": manifests, "references": [str(s) for s in selectors]}
+    return hashlib.sha256(canonical(identity).encode("utf-8")).hexdigest()[:16]

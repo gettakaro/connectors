@@ -57,13 +57,34 @@ rather than reused (exit 7; `--force` replaces it).
 
 | Directory | Holds |
 |---|---|
-| `_data/rust-binaries/<fp16>` | the `RustDedicated_Data/Managed/*.dll` reference assemblies, fetched from the pinned depot manifests by `takaro-maint steam references` — a filelist, never the whole 5.9 GB depot set |
+| `_data/rust-binaries/<references key>` | the `RustDedicated_Data/Managed/*.dll` reference assemblies, fetched from the pinned depot manifests by `takaro-maint steam references` — a filelist, never the whole 5.9 GB depot set. Keyed on the depot manifests and the file selection rather than the fingerprint, so a Carbon-only target change keeps them |
 | `_data/carbon-refs/<fp16>` | `carbon/managed/*.dll` out of the verified Carbon archive |
 | `_data/nuget` | the restored publicizer package, hash-checked after the restore |
 | `_data/compile/<fp16>` | the generated compile project |
 | `_data/dist/<fp16>` | the staged artifact |
 
-CI keys its cache `rust-refs-<fp16>` for the same reason.
+CI caches those assemblies as `rust-refs-<references key>`, and the rest as `rust-build-<fp16>`.
+
+### When Steam has moved past the pinned build
+
+Steam serves only the current `public` manifest to anonymous accounts, so a Rust update makes the
+pinned manifest answer 401 until a new target lands. `scripts/ci-fetch-references.sh` decides what
+that means for a pull request:
+
+| Reference cache | Pull request | Result |
+|---|---|---|
+| Hit | Any | Every check runs against the cached assemblies, exactly as before. Steam is never asked. |
+| Miss, pin no longer served | Changes neither `games/rust/**` nor `catalog/rust/**` | A warning names the stale target and the newer public build. The steps that need the assemblies (compile, config, map, protocol) are skipped, the name catalogue still runs, and the job passes. |
+| Miss, pin no longer served | Changes `games/rust/**` or `catalog/rust/**` | Fails, so a real Rust change is never merged untested. |
+| Miss, any other download failure | Any | Fails. Only the 401 / no-manifest-request-code answer is tolerated. |
+
+A push to `main`, a release and a manual run never reach this logic and fail as they always did, so
+`main` keeps catching a stale pin. The push-to-`main` run is also what saves `rust-refs-*` where pull
+requests can restore it.
+
+While the public build is newer than the pin, a pull request that changes no Rust file also skips
+the release `build` and `verify` legs. `verify` needs the 6 GB depot set, which is either in a cache
+that is evicted under pressure or no longer downloadable, so the result would depend on cache luck.
 
 ### The scripts
 
