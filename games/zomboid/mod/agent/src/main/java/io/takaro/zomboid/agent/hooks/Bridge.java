@@ -7,6 +7,7 @@ import io.takaro.zomboid.agent.PlayerRegistry;
 import io.takaro.zomboid.agent.Pz;
 import io.takaro.zomboid.agent.Reconciler;
 import io.takaro.zomboid.agent.TokenBucket;
+import io.takaro.zomboid.agent.research.CommandProbeRuntime;
 import io.takaro.zomboid.core.EventEmitter;
 import io.takaro.zomboid.core.model.PlayerInfo;
 
@@ -219,6 +220,19 @@ public final class Bridge {
     }
 
     /** {@code zombie.network.chat.ChatServer.sendMessage(ChatMessage)} — chat-message event. */
+    /**
+     * {@code GameServer.receiveReceiveCommand} entry, bound only for the #201 command probe.
+     * True means the probe claimed the input and the game must skip it.
+     */
+    public static boolean receiveCommand(Object reader, Object connection) {
+        try {
+            return CommandProbeRuntime.onReceiveCommand(reader, connection);
+        } catch (Throwable t) {
+            AgentLog.error("command-probe hook failed", t);
+            return false;
+        }
+    }
+
     public static void chat(Object chatMessage) {
         try {
             if (FIRED_CHAT.compareAndSet(false, true)) {
