@@ -536,7 +536,11 @@ public static partial class ContractHarness
                 "capability name " + name + " satisfies Takaro's pattern"
             );
             True(names.Add(name), "capability " + name + " is declared once");
-            if (name != "migration.native" && name != GameProfile.Capability)
+            if (
+                name != "migration.native"
+                && name != GameProfile.Capability
+                && name != ProtocolHandshake.ProgressionCapability
+            )
                 True(capability["parameters"] == null, name + " declares no parameters");
         }
 
@@ -2436,6 +2440,16 @@ public static partial class ContractHarness
             new JArray(),
             "missing getPlayerInventory"
         );
+        AssertSingleTerminalPayload(
+            () => ReadHandlers.GetPlayerProgression("fixture-missing-tracks", "missing-player"),
+            JValue.CreateNull(),
+            "getPlayerProgression answers null for an unknown player"
+        );
+        AssertSingleTerminalPayload(
+            () => ReadHandlers.GetPlayerProgression("fixture-no-tracks", "known-no-tracks"),
+            new JArray(),
+            "getPlayerProgression answers [] for a known player without tracks"
+        );
     }
 
     // gettakaro/connectors#756: a V 3.2 zip on a V 3.4 server answered getPlayerInventory
@@ -2639,7 +2653,7 @@ public static partial class ContractHarness
     private static void AssertRouterParsingAndCardinality(JObject fixture)
     {
         JArray functions = (JArray)fixture["functions"];
-        Equal(17, functions.Count, "fixture function count");
+        Equal(18, functions.Count, "fixture function count");
 
         var successRoutes = new HashSet<string>();
         foreach (JObject function in functions)
@@ -2731,9 +2745,17 @@ public static partial class ContractHarness
                     successRoutes.Add(action);
             }
         }
-        Equal(17, successRoutes.Count, "all 17 valid function routes exercise the router seam");
+        Equal(18, successRoutes.Count, "all 18 valid function routes exercise the router seam");
 
-        foreach (string action in new[] { "getPlayer", "getPlayerLocation", "getPlayerInventory" })
+        foreach (
+            string action in new[]
+            {
+                "getPlayer",
+                "getPlayerLocation",
+                "getPlayerInventory",
+                "getPlayerProgression",
+            }
+        )
         {
             HandlerProbe.Configure(JValue.CreateNull());
             var invalidRequest = new JObject
@@ -3858,6 +3880,13 @@ namespace Takaro.Services
 
         public bool IsGameReady => true;
 
+        public bool ReportsCharacters { get; set; }
+
+        public TakaroCharacter CurrentCharacter(string gameId, string name) =>
+            ReportsCharacters
+                ? new TakaroCharacter { Id = PlayerCharacter.Id(gameId, 0), Name = name }
+                : null;
+
         public string InventoryUnsupportedReason;
 
         public string MapRoot;
@@ -3898,6 +3927,28 @@ namespace Takaro.Services
                     Quality = "1",
                 },
             };
+        }
+
+        public List<Takaro.Services.TakaroProgressionTrack> GetPlayerProgression(string gameId)
+        {
+            if (gameId == "known-no-tracks")
+                return new List<Takaro.Services.TakaroProgressionTrack>();
+            if (gameId != "fixture-player")
+                return null;
+            return Takaro.Services.PlayerProgression.Build(
+                13,
+                48210,
+                0.42,
+                new[]
+                {
+                    new Takaro.Services.TakaroProgressionTrack
+                    {
+                        Key = "perkminer69r",
+                        Name = "Miner 69'r",
+                        Level = 2,
+                    },
+                }
+            );
         }
 
         public List<Takaro.TakaroItem> GetItems()

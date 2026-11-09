@@ -283,8 +283,10 @@ namespace Takaro
             GameEventPublisher.SendPlayerDeath(
                 victim,
                 DeathAttacker(data.SecondaryName, victimEntity),
-                deathPosition
+                deathPosition,
+                StateMirror.Instance.ReportsCharacters
             );
+            StateMirror.Instance.EndCharacter(victim.GameId);
             return ModEvents.EModEventResult.Continue;
         }
 
@@ -337,6 +339,9 @@ namespace Takaro
             // Refresh the mirror on every spawn type (join, respawn, teleport)
             StateMirror.Instance.UpsertPlayerOnline(data.ClientInfo);
 
+            if (data.RespawnType == RespawnType.Died)
+                StateMirror.Instance.CharacterRespawned(data.ClientInfo);
+
             if (
                 data.RespawnType == RespawnType.JoinMultiplayer
                 || data.RespawnType == RespawnType.EnterMultiplayer
@@ -344,6 +349,7 @@ namespace Takaro
             {
                 // Seed the inventory mirror from the player data received at login
                 StateMirror.Instance.UpsertInventory(data.ClientInfo);
+                StateMirror.Instance.UpsertProgression(data.ClientInfo);
 
                 LogService.Instance.Debug(
                     $"Player connected: {data.ClientInfo.playerName} ({data.ClientInfo.PlatformId})"
@@ -354,8 +360,9 @@ namespace Takaro
 
         private static void SavePlayerData(ref ModEvents.SSavePlayerDataData data)
         {
-            // The client just pushed a fresh PlayerDataFile — mirror the inventory
+            // The client just pushed a fresh PlayerDataFile — mirror what it carries
             StateMirror.Instance.UpsertInventory(data.ClientInfo);
+            StateMirror.Instance.UpsertProgression(data.ClientInfo);
         }
 
         private static void HandleNativeLogMessage(

@@ -28,6 +28,12 @@ namespace Takaro.Persistence
         public float Y { get; set; }
         public float Z { get; set; }
         public DateTime LastSeenUtc { get; set; }
+
+        // Characters ended by Permanent Death, the part of the character id that changes.
+        public int CharacterLife { get; set; }
+
+        // Dead on a Permanent Death server and not respawned, so saves hold the old character.
+        public bool AwaitingCharacterReset { get; set; }
     }
 
     public class ItemSlot

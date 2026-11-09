@@ -104,6 +104,18 @@ namespace Takaro.WebSocket
             );
         }
 
+        public static void GetPlayerProgression(string requestId, string gameId)
+        {
+            // Null for a player the game does not know, never an error: Takaro polls this
+            // for every online player on each player sync.
+            Send(
+                WebSocketMessage.CreateResponse(
+                    requestId,
+                    StateMirror.Instance.GetPlayerProgression(gameId)
+                )
+            );
+        }
+
         public static void ListItems(string requestId)
         {
             List<TakaroItem> items = StateMirror.Instance.GetItems();
@@ -248,6 +260,9 @@ namespace Takaro.WebSocket
             _declaredMapFrame = frame;
             return frame?.BuildCapability(StateMirror.Instance.WorldName);
         }
+
+        public static Dictionary<string, object> CurrentCharactersCapability() =>
+            StateMirror.Instance.ReportsCharacters ? PlayerCharacter.BuildCapability() : null;
 
         /// <summary>
         /// Protocol v1 <c>getMapTile {dimension, zoom, x, y}</c>: the game tile

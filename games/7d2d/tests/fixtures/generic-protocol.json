@@ -62,6 +62,13 @@
       "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Wood", "code": "resourceWood", "amount": 2, "quality": "1"}]}
     },
     {
+      "name": "getPlayerProgression",
+      "args": {"gameId": "fixture-player"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": null}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerProgression", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"key": "character", "name": "Level", "level": 13, "experience": 48210, "progress": 0.42}, {"key": "perkminer69r", "name": "Miner 69'r", "level": 2}]}
+    },
+    {
       "name": "listItems",
       "args": {},
       "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
@@ -211,6 +218,9 @@
       "getPlayerInventory": {
         "capability": "players.inventory"
       },
+      "getPlayerProgression": {
+        "capability": "players.progression"
+      },
       "teleportPlayer": {
         "capability": "players.teleport"
       },
@@ -289,6 +299,10 @@
           },
           {
             "name": "players.inventory"
+          },
+          {
+            "name": "players.progression",
+            "parameters": {"source": "client-reported"}
           },
           {
             "name": "items.list"

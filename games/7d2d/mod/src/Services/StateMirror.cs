@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using Takaro.Config;
 using Takaro.Interfaces;
 using Takaro.Persistence;
 using Takaro.WebSocket;
@@ -51,6 +54,8 @@ namespace Takaro.Services
         private int _mapSizeZ;
         private int _mapHalfExtent;
         private volatile bool _mapRenderingEnabled;
+        private volatile bool _permanentDeath;
+        private volatile bool _reportCharacters;
         private volatile string _worldName;
 
         public string MapRoot => _mapRoot;
@@ -64,7 +69,24 @@ namespace Takaro.Services
         /// <summary>The server renders map tiles (serverconfig EnableMapRendering).</summary>
         public bool MapRenderingEnabled => _mapRenderingEnabled;
 
+        public bool ReportsCharacters => _reportCharacters;
+
         public string WorldName => _worldName;
+
+        // Written on the game thread, read on the WebSocket thread. A reading lives as long as
+        // the server process: Takaro only asks for online players, whom every save keeps current.
+        private readonly ConcurrentDictionary<string, List<TakaroProgressionTrack>> _progression =
+            new ConcurrentDictionary<string, List<TakaroProgressionTrack>>();
+        private bool _progressionFailureLogged;
+
+        // Lives ended per player, read from the registry at start and on the game thread after.
+        private readonly ConcurrentDictionary<string, int> _characterLives =
+            new ConcurrentDictionary<string, int>();
+
+        // Players dead on a Permanent Death server: the game resets them when they respawn,
+        // and until then each save still carries the character that ended.
+        private readonly ConcurrentDictionary<string, bool> _awaitingReset =
+            new ConcurrentDictionary<string, bool>();
 
         public static StateMirror Instance
         {
@@ -152,6 +174,32 @@ namespace Takaro.Services
             )
                 ? record
                 : null;
+        }
+
+        /// <summary>
+        /// The last progression seen for a player, an empty list for a known player not
+        /// saved yet (Takaro keeps what it stored), or null for an unknown player.
+        /// </summary>
+        public TakaroCharacter CurrentCharacter(string gameId, string name)
+        {
+            if (!_reportCharacters)
+                return null;
+
+            _characterLives.TryGetValue(gameId, out int life);
+            return new TakaroCharacter { Id = PlayerCharacter.Id(gameId, life), Name = name };
+        }
+
+        public List<TakaroProgressionTrack> GetPlayerProgression(string gameId)
+        {
+            if (_progression.TryGetValue(gameId, out List<TakaroProgressionTrack> tracks))
+                return tracks;
+
+            lock (Database.Instance.SyncRoot)
+            {
+                return Database.Instance.Players.FindById(gameId) != null
+                    ? new List<TakaroProgressionTrack>()
+                    : null;
+            }
         }
 
         public List<TakaroItem> GetPlayerInventory(string gameId)
@@ -358,6 +406,8 @@ namespace Takaro.Services
                 LogService.Instance.Warn($"Could not read map rendering settings: {ex.Message}");
             }
 
+            CaptureCharacters();
+
             LogService.Instance.Info(
                 $"World map captured (extent {_mapSizeX}x{_mapSizeY}x{_mapSizeZ}, tiles '{_mapRoot}', "
                     + $"rendering {(_mapRenderingEnabled ? "on" : "off")})"
@@ -429,6 +479,9 @@ namespace Takaro.Services
 
             PlayerRecord record = Shared.BuildPlayerRecord(cInfo);
             record.Online = true;
+            _characterLives.TryGetValue(record.GameId, out int life);
+            record.CharacterLife = life;
+            record.AwaitingCharacterReset = _awaitingReset.ContainsKey(record.GameId);
 
             if (
                 GameManager.Instance.World.Players.dict.TryGetValue(
@@ -450,6 +503,83 @@ namespace Takaro.Services
             });
         }
 
+        private void CaptureCharacters()
+        {
+            try
+            {
+                _permanentDeath =
+                    GameStats.GetInt(EnumGameStats.DeathPenalty)
+                    == (int)EnumDeathPenalty.Permadeath;
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not read the death penalty: {ex.Message}");
+            }
+
+            // A Takaro without Characters refuses every event that carries a character.
+            _reportCharacters = _permanentDeath && ConfigManager.Instance.ReportCharacters;
+            if (_reportCharacters)
+                LogService.Instance.Info("Permanent Death is on: reporting player characters");
+            else if (_permanentDeath)
+                LogService.Instance.Info(
+                    "Permanent Death is on, but ReportCharacters is off in Config.xml: "
+                        + "not reporting player characters"
+                );
+
+            DbWriter.Instance.Enqueue(() =>
+            {
+                foreach (PlayerRecord record in Database.Instance.Players.FindAll())
+                {
+                    _characterLives[record.GameId] = record.CharacterLife;
+                    if (record.AwaitingCharacterReset)
+                        _awaitingReset[record.GameId] = true;
+                }
+            });
+        }
+
+        /// <summary>
+        /// A death on a Permanent Death server: the next character starts here. Its tracks
+        /// stay empty until the respawn resets the player and the client saves again.
+        /// </summary>
+        public void EndCharacter(string gameId)
+        {
+            if (!_permanentDeath)
+                return;
+
+            int life = _characterLives.AddOrUpdate(gameId, 1, (_, ended) => ended + 1);
+            _awaitingReset[gameId] = true;
+            _progression.TryRemove(gameId, out _);
+            DbWriter.Instance.Enqueue(() =>
+            {
+                Database.Instance.Inventories.Delete(gameId);
+                PlayerRecord record = Database.Instance.Players.FindById(gameId);
+                if (record == null)
+                    return;
+                record.CharacterLife = life;
+                record.AwaitingCharacterReset = true;
+                Database.Instance.Players.Update(record);
+            });
+        }
+
+        public void CharacterRespawned(ClientInfo cInfo)
+        {
+            if (cInfo?.CrossplatformId == null)
+                return;
+
+            string gameId = Shared.GameIdFromClientInfo(cInfo);
+            if (!_awaitingReset.TryRemove(gameId, out _))
+                return;
+
+            DbWriter.Instance.Enqueue(() =>
+            {
+                PlayerRecord record = Database.Instance.Players.FindById(gameId);
+                if (record == null)
+                    return;
+                record.AwaitingCharacterReset = false;
+                Database.Instance.Players.Update(record);
+            });
+        }
+
         public void MarkOffline(ClientInfo cInfo)
         {
             if (cInfo?.CrossplatformId == null)
@@ -465,6 +595,91 @@ namespace Takaro.Services
                 record.LastSeenUtc = DateTime.UtcNow;
                 Database.Instance.Players.Update(record);
             });
+        }
+
+        /// <summary>
+        /// Caches a player's tracks from the PlayerDataFile the client just pushed, at login and
+        /// on each of its saves. The live entity is no use here: the client only sends it new
+        /// values when its stats flag is set, so its experience goes stale between saves.
+        /// </summary>
+        public void UpsertProgression(ClientInfo cInfo)
+        {
+            if (cInfo?.CrossplatformId == null || cInfo.latestPlayerData == null)
+                return;
+            if (_awaitingReset.ContainsKey(Shared.GameIdFromClientInfo(cInfo)))
+                return;
+
+            try
+            {
+                byte[] blob = cInfo.latestPlayerData.progressionData.ToArray();
+                if (blob.Length == 0)
+                    return;
+
+                ProgressionBlob saved = ProgressionBlob.Parse(blob);
+                // Parameterless, so it only serves the level costs and touches no player.
+                var curve = new Progression();
+                Func<int, int> costOfLevel = level =>
+                    curve.getExpForLevel(
+                        UnityEngine.Mathf.Clamp(level + 1, 0, Progression.ClampExpCostAtLevel)
+                    );
+
+                _progression[Shared.GameIdFromClientInfo(cInfo)] = PlayerProgression.Build(
+                    saved.Level,
+                    PlayerProgression.TotalExperience(
+                        saved.Level,
+                        saved.ExpToNextLevel,
+                        costOfLevel
+                    ),
+                    PlayerProgression.LevelProgress(saved.ExpToNextLevel, costOfLevel(saved.Level)),
+                    ProgressionTracks(saved)
+                );
+            }
+            catch (Exception ex)
+            {
+                if (!_progressionFailureLogged)
+                {
+                    _progressionFailureLogged = true;
+                    LogService.Instance.Warn($"Could not read player progression: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Attributes, perks and crafting skills, at level 0 too: a track missing from a
+        /// reading means "unknown" to Takaro, so a perk reset would otherwise never show and
+        /// a first perk point would be a silent baseline. Skills are left out because the game
+        /// reports them at their maximum, books because they are collected, not levelled.
+        /// </summary>
+        private static IEnumerable<TakaroProgressionTrack> ProgressionTracks(ProgressionBlob saved)
+        {
+            var known = new List<KeyValuePair<ProgressionClass, int>>();
+            foreach (KeyValuePair<string, int> value in saved.Values)
+            {
+                if (
+                    Progression.ProgressionClasses.TryGetValue(value.Key, out ProgressionClass kind)
+                    && !kind.Hidden
+                    && kind.MaxLevel > 0
+                    && (kind.IsAttribute || kind.IsPerk || kind.IsCrafting)
+                )
+                    known.Add(new KeyValuePair<ProgressionClass, int>(kind, value.Value));
+            }
+
+            return known
+                .OrderBy(p =>
+                    p.Key.IsAttribute ? 0
+                    : p.Key.IsPerk ? 1
+                    : 2
+                )
+                .ThenBy(p => p.Key.Name, StringComparer.Ordinal)
+                .Select(p => new TakaroProgressionTrack
+                {
+                    Key = p.Key.Name,
+                    Name = Shared.LocalizedOrNull(
+                        p.Key.NameKey,
+                        Localization.Get(p.Key.NameKey, true)
+                    ),
+                    Level = p.Value,
+                });
         }
 
         public void UpdatePositions(List<PositionSample> batch)
@@ -489,6 +704,11 @@ namespace Takaro.Services
         public void UpsertInventory(ClientInfo cInfo)
         {
             if (InventoryUnsupportedReason != null)
+                return;
+            if (
+                cInfo?.CrossplatformId != null
+                && _awaitingReset.ContainsKey(Shared.GameIdFromClientInfo(cInfo))
+            )
                 return;
 
             // A game build that reshapes PlayerDataFile (V3.3.0 serialises the

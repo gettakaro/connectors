@@ -176,6 +176,8 @@ mod/src/
 │   ├── ConsoleCommandOutcome.cs # native console failure classification
 │   ├── ProtocolDiagnostics.cs   # bounded Takaro error diagnostics
 │   ├── PlayerLocationReadWindow.cs # bounded post-disconnect location access
+│   ├── PlayerCharacter.cs      # players.characters capability and character id (game-free)
+│   ├── PlayerProgression.cs    # getPlayerProgression track rules (game-free)
 │   ├── ServerMessageEchoGuard.cs # bounded one-shot native chat echo guard
 │   ├── ServerChatName.cs       # game-free chat sender name resolution and rendering
 │   ├── ServerChat.cs           # sends server chat (global, whisper) with that name
@@ -230,6 +232,24 @@ mod/src/
   v1 `getMapTile {dimension, zoom, x, y}` answers `{mimeType: "image/png", data}`; an unrendered
   tile is `not_found` (Takaro shows it transparent). v0 `getMapTile {x, y, z}` still answers the
   bare base64 tile at the game's own index.
+- `players.progression` is declared with `source: client-reported`: the client earns the XP and
+  sends its level, perks and crafting skills in `NetPackagePlayerStats`, and the server keeps what
+  it is told. The live entity only gets new values when the client's stats flag is set, so
+  `StateMirror.UpsertProgression` reads the `PlayerDataFile` the client pushes at login and on every
+  save (about 30 s) instead, parsing the blob itself because the game's `Progression.Read` writes into
+  the entity it is given.
+  `getPlayerProgression` answers from that cache on the WebSocket thread: `character` (`experience`
+  is lifetime XP, derived from the level costs), then attributes, perks and crafting skills, also at
+  level 0, with the game's own names as keys (it stores them in lowercase, such as `perkminer69r`). Skills are left out (the game reports them at their
+  maximum) and so are books (collected, not levelled). Keys Takaro would refuse, from a modded
+  `progression.xml`, are left out so one bad name cannot fail the reading.
+- `players.characters` is declared only when the server's death penalty is Permanent Death: an
+  account otherwise has one avatar per save, so Takaro's implicit Character fits. It needs a Takaro
+  version with Characters support. `held` is `server` and `ends` is `death`. The game has no character
+  id, so the id is `<gameId>-<life>`, with `life` kept in the player registry. `character` goes on
+  `getPlayers`, `getPlayer` and every player event, and `player-death` carries `characterEnded`.
+  The game resets the player at the respawn, so saves between the death and the `Died` respawn
+  still hold the old character and are ignored.
 - `game` is `7d2d`. `migration.native { from: "7d2d" }` is the promise that the mod meets the
   parity contract of Takaro's built-in integration (gettakaro/connectors#419,
   gettakaro/takaro#4349); do not declare it for a change that weakens that parity.

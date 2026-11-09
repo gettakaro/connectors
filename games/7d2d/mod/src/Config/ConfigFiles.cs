@@ -15,6 +15,7 @@ namespace Takaro.Config
         public bool Enabled = true;
         public int ReconnectIntervalSeconds = ConfigFiles.DefaultReconnectIntervalSeconds;
         public string ServerChatName = "";
+        public bool ReportCharacters = false;
 
         public bool SameConnection(ConfigValues other)
         {
@@ -49,7 +50,10 @@ namespace Takaro.Config
             + "\n"
             + "  ServerChatName is the sender players see on messages from Takaro, instead\n"
             + "  of \"Server\". The chat name set in Takaro wins over it; leave both empty\n"
-            + "  for \"Server\".\n";
+            + "  for \"Server\".\n"
+            + "\n"
+            + "  ReportCharacters tells Takaro about each life on a Permanent Death server.\n"
+            + "  Turn it on only when your Takaro supports Characters, then restart the server.\n";
 
         /// <summary>
         /// Reads the config, creating it when it is missing and writing a new
@@ -109,6 +113,12 @@ namespace Takaro.Config
             XmlNode chat = doc.DocumentElement?.SelectSingleNode("Chat");
             if (chat != null)
                 values.ServerChatName = Text(chat, "ServerChatName");
+            XmlNode players = doc.DocumentElement?.SelectSingleNode("Players");
+            if (
+                players != null
+                && bool.TryParse(Text(players, "ReportCharacters"), out bool report)
+            )
+                values.ReportCharacters = report;
             XmlNode webSocket = doc.DocumentElement?.SelectSingleNode("WebSocket");
             if (webSocket == null)
                 return values;
@@ -145,6 +155,9 @@ namespace Takaro.Config
                 + "  <Chat>\n"
                 + Element("ServerChatName", values.ServerChatName)
                 + "  </Chat>\n"
+                + "  <Players>\n"
+                + Element("ReportCharacters", values.ReportCharacters ? "true" : "false")
+                + "  </Players>\n"
                 + "</Takaro>\n";
         }
 
