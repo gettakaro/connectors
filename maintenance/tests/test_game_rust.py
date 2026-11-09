@@ -31,11 +31,12 @@ import fake_steamcmd
 from fake_github import FakeGitHub
 from fake_upstream import FakeUpstream
 from fake_verify import CannedSocket, FakeRun
+from takaro_maint.exit_codes import UpstreamUnavailable
 from takaro_maint.games import adapter_for
 from takaro_maint.games.rust import verify as hooks
 from takaro_maint.install.ledger import read_ledger
 from takaro_maint.publish.manifest import artifact_row, write_manifest, write_meta
-from takaro_maint.steam import vdf
+from takaro_maint.steam import depotdownloader, vdf
 from takaro_maint.tracker import identity
 
 GAME = "rust"
@@ -269,7 +270,7 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     assert env["RUST_CARBON_DOWNLOAD_URL"] == (
         "https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
     )
-    assert env["RUST_REFERENCES_DIR"].endswith(payload["fp16"])
+    assert env["RUST_REFERENCES_DIR"].endswith(env["RUST_REFERENCES_KEY"])
     assert env["RUST_CARBON_REFERENCES_DIR"].endswith(payload["fp16"])
     assert env["RUST_DEP_BEPINEX_ASSEMBLYPUBLICIZER_MSBUILD_SHA256"]
     # This server ships its own runtime; there is no JVM anywhere in the record.
@@ -512,6 +513,82 @@ def test_steam_references_fetches_only_the_managed_assemblies(
     code, payload, _ = references()
     assert code == 7, payload
     assert references("--force")[0] == 0
+
+
+def test_a_carbon_only_target_change_keeps_the_fetched_references(
+    run: Any, repo: Path, dd_log: Path, tmp_path: Path
+) -> None:
+    dest = tmp_path / "rust-binaries" / "key"
+    argv = ("steam", "references", "--game", GAME, "--target", TARGET, "--dest", str(dest), "--reuse-by-manifests")
+    before = resolve(run, repo)
+    assert run(*argv, repo=repo)[1]["status"] == "fetched"
+    downloads = len(fake.argv_log(dd_log))
+
+    record_path = repo / "catalog" / GAME / "targets" / f"{TARGET}.json"
+    record = json.loads(record_path.read_text())
+    record["inputs"]["carbon"]["updatedAt"] = "2099-01-01T00:00:00Z"
+    record_path.write_text(json.dumps(record))
+    after = resolve(run, repo)
+
+    assert after["fingerprint"] != before["fingerprint"]
+    assert after["env"]["TAKARO_TARGET_REFERENCES_KEY"] == before["env"]["TAKARO_TARGET_REFERENCES_KEY"]
+    assert run(*argv, repo=repo)[1]["status"] == "up-to-date"
+    assert len(fake.argv_log(dd_log)) == downloads
+
+
+def test_a_new_depot_manifest_changes_the_references_key(run: Any, repo: Path) -> None:
+    before = resolve(run, repo)["env"]["TAKARO_TARGET_REFERENCES_KEY"]
+    record_path = repo / "catalog" / GAME / "targets" / f"{TARGET}.json"
+    record = json.loads(record_path.read_text())
+    record["inputs"]["server"]["depots"]["258552"]["manifest"] = "1234567890123456789"
+    record_path.write_text(json.dumps(record))
+    assert resolve(run, repo)["env"]["TAKARO_TARGET_REFERENCES_KEY"] != before
+
+
+def test_a_pinned_manifest_steam_stopped_serving_is_classified(
+    run: Any, repo: Path, dd_log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_DD_UNAVAILABLE", PINNED["258552"])
+    code, payload, _ = run(
+        "steam", "references", "--game", GAME, "--target", TARGET, "--dest", str(tmp_path / "refs"), repo=repo
+    )
+    assert code == 4, payload
+    assert payload["reason"] == "manifest-not-served"
+
+
+# What DepotDownloader 3.4.0 printed for an anonymous request of a superseded Rust manifest.
+ANONYMOUS_401 = """Got depot key for 258552 result: OK
+
+Processing depot 258552
+Downloading depot 258552 manifest
+No manifest request code was returned for depot 258552 from app 258550, manifest 3647035647797862067
+Suggestion: Try logging in with -username as old manifests may not be available for anonymous accounts.
+Encountered 401 for depot manifest 258552 3647035647797862067. Aborting.
+"""
+
+
+@pytest.mark.parametrize(
+    ("text", "not_served"),
+    [
+        (ANONYMOUS_401, True),
+        ("Encountered 401 for depot manifest 258552 1. Aborting.", True),
+        ("No manifest request code was returned for depot 258552", True),
+        ("Unable to get manifest request code for depot 258552 manifest 1 (result: AccessDenied)", True),
+        # The success line a real 401 follows must not be enough on its own.
+        ("Got depot key for 258552 result: OK\nConnection to Steam lost", False),
+        ("Depot 258552 manifest 1 is not available", False),
+        ("Disk full", False),
+        ("Rate limit exceeded", False),
+    ],
+)
+def test_only_a_refused_manifest_is_classified_as_not_served(tmp_path: Path, text: str, not_served: bool) -> None:
+    completed = subprocess.CompletedProcess(["dd"], 1, stdout=text, stderr="")
+    with pytest.raises(UpstreamUnavailable) as caught:
+        depotdownloader._classify(["dd", "-app", "258550"], completed, tmp_path / "dd.log", [])
+
+    assert caught.value.code == 4
+    assert ("reason" in caught.value.detail) is not_served
+    assert (caught.value.detail.get("reason") == depotdownloader.MANIFEST_NOT_SERVED) is not_served
 
 
 # --------------------------------------------------------------------------- build, deploy
@@ -1017,7 +1094,7 @@ def test_rust_workflow_delegates_to_connector_release() -> None:
     assert "runtime_negative: true" in workflow
     assert "compile-check.sh" in workflow
     assert "setup-environment.sh" in workflow
-    assert "rust-refs-${{ steps.target.outputs.fp16 }}" in workflow
+    assert "rust-refs-${{ fromJson(steps.target.outputs.env).TAKARO_TARGET_REFERENCES_KEY" in workflow
     assert "app_update" not in workflow
     assert "docker build" not in workflow
 

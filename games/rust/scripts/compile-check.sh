@@ -15,7 +15,7 @@ rust_parse_target_flag "$@"
 rust_resolve_target "${TARGET}"
 
 cd "${PROJECT_ROOT}"
-GAME_REFS="_data/rust-binaries/${RUST_FP16}"
+GAME_REFS="_data/rust-binaries/${RUST_REFERENCES_KEY}"
 CARBON_REFS="_data/carbon-refs/${RUST_FP16}"
 WORK="_data/compile/${RUST_FP16}"
 

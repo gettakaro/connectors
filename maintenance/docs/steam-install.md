@@ -106,7 +106,7 @@ command exists to prevent.
 ## Build references: `steam references`
 
 ```
-takaro-maint steam references --game G [--target ID] --dest DIR [--force]
+takaro-maint steam references --game G [--target ID] --dest DIR [--force] [--reuse-by-manifests]
 ```
 
 Downloads only the files `build.references` selects (a DepotDownloader filelist; plain paths or
@@ -115,6 +115,9 @@ flattens them into `DIR`, with `DIR/.takaro/references.json` written last. `DIR`
 fingerprint, so a re-pinned target never compiles against the previous build's assemblies.
 
 - A directory recorded for another fingerprint exits 7 (stale reference cache) unless `--force`.
+  With `--reuse-by-manifests`, a directory recorded for the same depot manifests and file selection
+  is accepted as `up-to-date` whatever else in the target changed; a game names such a directory
+  after its references key rather than its fingerprint (Rust does).
 - A directory whose files no longer hash as recorded exits 5.
 - An unchanged directory is `up-to-date` and nothing is downloaded.
 
@@ -123,7 +126,7 @@ fingerprint, so a re-pinned target never compiles against the previous build's a
 | Code | When |
 |---|---|
 | 2 | The lock is missing or malformed, or a credential environment variable the target names is unset. |
-| 4 | Steam will not serve a pinned manifest (purged, no licence, login refused). The message always says **not falling back to branch head**. |
+| 4 | Steam will not serve a pinned manifest (purged, no licence, login refused). The message always says **not falling back to branch head**. An anonymous 401 or "no manifest request code" for a superseded manifest also sets `"reason": "manifest-not-served"` in the JSON document. |
 | 5 | Bytes that are not what the catalog pins: the tool archive, a downloaded file, a reference assembly. |
 | 7 | A stale reference directory, a rollback with no previous install, or an artifact that escapes its folder. |
 

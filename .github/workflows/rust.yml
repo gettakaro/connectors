@@ -52,6 +52,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    outputs:
+      pin_unavailable: ${{ steps.fetch.outputs.pin_unavailable }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -59,6 +61,8 @@ jobs:
           # gated on that tag's sources and catalog, never on whatever main has become.
           ref: ${{ inputs.tag || github.ref }}
           fetch-tags: true
+          # A pull request's own changes are its merge commit against its first parent.
+          fetch-depth: 2
 
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
@@ -74,26 +78,59 @@ jobs:
             --game rust \
             --format gha >> "$GITHUB_OUTPUT"
 
-      # Keyed on the fingerprint: a re-pinned target fetches its own assemblies and its
-      # own Carbon rather than compiling against the previous target's.
+      # Keyed on the depot manifests alone, so a Carbon-only target change restores these
+      # instead of asking Steam for a manifest it may no longer serve. Restored and saved
+      # separately so a run saves them even when a later check fails, and so the
+      # push-to-main run leaves them where pull request runs can restore them.
+      - name: Restore the pinned reference assemblies
+        id: refs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: games/rust/_data/rust-binaries
+          key: rust-refs-${{ fromJson(steps.target.outputs.env).TAKARO_TARGET_REFERENCES_KEY || steps.target.outputs.fp16 }}
+
+      # Keyed on the fingerprint: a re-pinned target fetches its own Carbon rather than
+      # compiling against the previous target's.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            games/rust/_data/rust-binaries
             games/rust/_data/carbon-refs
             games/rust/_data/nuget
             ~/.cache/takaro-maint
-          key: rust-refs-${{ steps.target.outputs.fp16 }}
+          key: rust-build-${{ steps.target.outputs.fp16 }}
 
       # The reference assemblies only — a filelist against the pinned depot manifests
       # plus the pinned Carbon asset by sha256, not the 5.9 GB depot set a hosted
       # runner has no room for, and never Carbon's moving release alias unchecked.
+      #
+      # Steam serves only the current public manifest to anonymous accounts, so once Rust
+      # updates, a cache miss here answers 401 until a new target lands. A pull request that
+      # changes no Rust file then skips the steps below with a warning naming the stale target;
+      # one that does change Rust files, and every push to main, fails as it always has.
+      # See "When Steam has moved past the pinned build" in games/rust/DEVELOPMENT.md.
       - name: Fetch the pinned reference assemblies and Carbon
-        run: games/rust/scripts/setup-environment.sh --target "${{ steps.target.outputs.target }}"
+        id: fetch
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            games/rust/scripts/ci-fetch-references.sh --target "$TARGET"
+          else
+            games/rust/scripts/setup-environment.sh --target "$TARGET"
+          fi
+
+      - name: Save the pinned reference assemblies
+        if: steps.refs.outputs.cache-hit != 'true' && steps.fetch.outputs.skip != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: games/rust/_data/rust-binaries
+          key: rust-refs-${{ fromJson(steps.target.outputs.env).TAKARO_TARGET_REFERENCES_KEY || steps.target.outputs.fp16 }}
 
       # Carbon compiles the released .cs when it loads it, so this is the authoritative
       # build for the fingerprint: nothing else proves the source compiles at all.
       - name: Compile-check the plugin against the pinned target
+        if: steps.fetch.outputs.skip != 'true'
         run: games/rust/scripts/compile-check.sh --target "${{ steps.target.outputs.target }}"
 
       # The entity display names, run rather than grepped: the name region compiles on its
@@ -104,16 +141,19 @@ jobs:
       # The config file resolution (fresh install, upgrade, env precedence, half-saved file,
       # identity generation), run from the shipped region rather than a copy of it.
       - name: Check the config resolution
+        if: steps.fetch.outputs.skip != 'true'
         run: games/rust/tests/config/run.sh --target "${{ steps.target.outputs.target }}"
 
       # The world-map tile layout (geometry, range, map info, args, orientation, world key),
       # run from the shipped region.
       - name: Check the world map tiles
+        if: steps.fetch.outputs.skip != 'true'
         run: games/rust/tests/map/run.sh --target "${{ steps.target.outputs.target }}"
 
       # Protocol v0 and v1 (identify offer, manifest, identifyResponse, error frames, the
       # numbered event stream with acks and resend), run from the shipped region.
       - name: Check the protocol handshake
+        if: steps.fetch.outputs.skip != 'true'
         run: games/rust/tests/protocol/run.sh --target "${{ steps.target.outputs.target }}"
 
   params:
@@ -151,6 +191,10 @@ jobs:
       tag: ${{ needs.params.outputs.tag }}
       publish: ${{ needs.params.outputs.publish }}
       pr_number: ${{ github.event.pull_request.number }}
+      # The build leg compiles against the same assemblies the test job saved.
+      references_cache: games/rust/_data/rust-binaries
+      # Only ever true on a pull request that changes no Rust file: see the fetch step above.
+      skip_pr_build: ${{ needs.test.outputs.pin_unavailable == 'true' }}
       # The pinned Rust server and Carbon boot on the hosted runner against the local fake
       # Takaro (`takaro-maint verify --game rust`, see games/rust/DEVELOPMENT.md). The
       # 6.1 GB depot set is cached by the verify leg alone, never installed twice; the

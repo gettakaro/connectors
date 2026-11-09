@@ -54,6 +54,20 @@ on:
         required: false
         default: 600
         type: number
+      references_cache:
+        description: >-
+          Paths of the reference-assembly cache the caller's test job saved as
+          <connector>-refs-<references key>; the build leg restores it rather than asking Steam
+        required: false
+        default: ''
+        type: string
+      skip_pr_build:
+        description: >-
+          On a pull request, skip the build and verify legs: the caller knows the pinned upstream
+          input can no longer be fetched and that this pull request does not change the connector
+        required: false
+        default: false
+        type: boolean
       runtime_large_server:
         description: >-
           The pinned server is larger than the repository's whole Actions cache: the build leg does
@@ -97,9 +111,15 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           IN_CONNECTOR: ${{ inputs.connector }}
+          IN_SKIP_PR_BUILD: ${{ inputs.skip_pr_build }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$IN_SKIP_PR_BUILD" = "true" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$IN_CONNECTOR release build skipped: its pinned upstream input can no longer be fetched and this pull request does not change the connector"
             exit 0
           fi
           decision="$(git diff --name-only HEAD^1 HEAD | scripts/pr-build-scope.sh "$IN_CONNECTOR")"
@@ -176,6 +196,13 @@ jobs:
             ~/.cache/takaro-maint
             ~/.cache/takaro-maint/gradle
           key: ${{ inputs.connector }}-${{ steps.target.outputs.fp16 }}
+
+      - name: Restore the reference assemblies the test job saved
+        if: inputs.references_cache != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ inputs.references_cache }}
+          key: ${{ inputs.connector }}-refs-${{ fromJson(steps.target.outputs.env).TAKARO_TARGET_REFERENCES_KEY || steps.target.outputs.fp16 }}
 
       # A server the hosted runner cannot hold (tens of gigabytes of Steam depots) is not
       # installed here; that connector builds against references tracked in the repository.
