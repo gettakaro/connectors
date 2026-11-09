@@ -350,4 +350,24 @@ public class NeoForgeGameAdapter implements GameAdapter {
         }
         return null;
     }
+
+    @Override
+    public List<java.nio.file.Path> itemIconRoots() {
+        return net.neoforged.fml.ModList.get()
+                .applyForEachModFileAlphabetical(this::modRoot)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
+    /** The jar's filesystem stays open for the life of the server, like the mod itself. */
+    private java.nio.file.Path modRoot(net.neoforged.neoforgespi.locating.IModFile file) {
+        java.nio.file.Path path = file.getFilePath();
+        try {
+            return java.nio.file.Files.isDirectory(path)
+                    ? path : java.nio.file.FileSystems.newFileSystem(path).getPath("/");
+        } catch (java.io.IOException | RuntimeException e) {
+            logWarning("Cannot read item icons from " + path + ": " + e);
+            return null;
+        }
+    }
 }

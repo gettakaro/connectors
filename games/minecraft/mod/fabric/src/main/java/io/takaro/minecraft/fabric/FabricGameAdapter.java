@@ -298,6 +298,14 @@ public class FabricGameAdapter implements GameAdapter {
     // --- GameAdapter: World map ---
 
     @Override
+    public List<java.nio.file.Path> itemIconRoots() {
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getAllMods().stream()
+                .sorted(java.util.Comparator.comparing(mod -> mod.getMetadata().getId()))
+                .flatMap(mod -> mod.getRootPaths().stream())
+                .toList();
+    }
+
+    @Override
     public List<WorldMap.Dimension> mapDimensions() {
         java.nio.file.Path root = server.getWorldPath(LevelResource.ROOT);
         List<WorldMap.Dimension> out = new ArrayList<>();
