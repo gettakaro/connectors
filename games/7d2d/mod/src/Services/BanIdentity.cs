@@ -15,6 +15,12 @@ namespace Takaro.Services
         private const string XboxPrefix = "XBL_";
 
         /// <summary>
+        /// The name banPlayer stores on a Blacklist entry. It labels the ban and is never
+        /// a player's name.
+        /// </summary>
+        public const string AdminBanLabel = "Admin Ban";
+
+        /// <summary>
         /// Returns null when the entry cannot be keyed by an EOS id; the legacy
         /// integration skipped those entries as well.
         /// </summary>
@@ -42,7 +48,7 @@ namespace Takaro.Services
                 Id = banId,
                 GameId = gameId,
                 EpicOnlineServicesId = gameId,
-                Name = string.IsNullOrEmpty(name) ? $"Player_{gameId}" : name,
+                Name = name,
                 Reason = reason,
                 ExpiresAt = expiresAt,
             };
@@ -130,7 +136,7 @@ namespace Takaro.Services
         /// <summary>
         /// The ban list Takaro sees: both stores merged, Blacklist first, one record per
         /// player. <paramref name="onSkipped"/> receives the id of each entry that has no
-        /// EOS id.
+        /// EOS id or no name in either store.
         /// </summary>
         public static List<BanRecord> Capture(
             IEnumerable<BanSource> blacklist,
@@ -154,7 +160,32 @@ namespace Takaro.Services
                 else
                     candidates.Add(record);
             }
-            return DistinctByGameId(candidates);
+
+            var names = new Dictionary<string, string>();
+            foreach (BanRecord candidate in candidates)
+            {
+                bool isRealName =
+                    !string.IsNullOrEmpty(candidate.Name) && candidate.Name != AdminBanLabel;
+                if (isRealName && !names.ContainsKey(candidate.GameId))
+                    names[candidate.GameId] = candidate.Name;
+            }
+
+            // Takaro rejects the whole list over one entry without a name, and writes any
+            // name it receives onto the player, so an entry with no real name is not sent.
+            var named = new List<BanRecord>();
+            foreach (BanRecord record in DistinctByGameId(candidates))
+            {
+                if (names.TryGetValue(record.GameId, out string name))
+                {
+                    record.Name = name;
+                    named.Add(record);
+                }
+                else
+                {
+                    onSkipped?.Invoke(record.Id);
+                }
+            }
+            return named;
         }
 
         private static IEnumerable<BanSource> Concat(
