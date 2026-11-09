@@ -260,6 +260,14 @@ mod/src/
   `icon: { revision, size }` for `assets/icon-256.png`, which is embedded in `Takaro.dll`; the
   revision is the first 12 hex characters of its sha256, computed at startup. `getGameIcon`
   answers `{ revision, data }` with the whole PNG in base64, or `game_error` without an icon.
+- Item icons: the manifest declares `items.icons` when the server holds item art. `listItems` reports
+  `iconHash`, the SHA-256 of the PNG on disk, for each item whose icon name (`ItemClass.GetIconName`)
+  has a file in `Data/ItemIcons` or a loaded mod's `ItemIcons` or `UIAtlases/ItemIconAtlas`; later
+  folders win. Files are hashed once at startup on a pool thread before the WebSocket connects.
+  `getItemIcons` reads from disk on the WebSocket thread and walks the request in order: unknown,
+  changed or unreadable hashes are skipped, and the walk stops before 1 MiB of decoded PNG. Items the
+  game tints when drawing report no hash, because the file is an untinted template and connector
+  bytes would replace a correct Icon Pack picture.
 - On v1, game events are sent as `{type, data, streamId, seq}`. `streamId` is new for every mod
   process; `seq` is assigned when the event enters `OutboundLedger`, so numbering equals write
   order. Events stay in flight until Takaro's cumulative `eventAck`; a pong no longer confirms

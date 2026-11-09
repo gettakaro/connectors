@@ -307,6 +307,7 @@ namespace Takaro.Services
             }
             records.Sort((left, right) => string.CompareOrdinal(left.Code, right.Code));
 
+            ItemIconCatalog icons = ItemIconCatalog.Current;
             var items = new List<TakaroItem>();
             foreach (ItemRecord record in records)
             {
@@ -316,6 +317,7 @@ namespace Takaro.Services
                         Code = record.Code,
                         Name = record.Name,
                         Description = record.Description,
+                        IconHash = icons.HashFor(record.IconName),
                     }
                 );
             }
@@ -785,6 +787,12 @@ namespace Takaro.Services
             });
         }
 
+        // The game tints these icons when it draws them, so the file on disk is a white or
+        // grey template. Connector bytes outrank Takaro's Icon Pack, so reporting the
+        // template would replace a correct picture with a wrong one.
+        private static string ServableIconName(ItemClass item) =>
+            item.GetIconTint() == UnityEngine.Color.white ? item.GetIconName() : null;
+
         private void SeedItems()
         {
             var records = new List<ItemRecord>();
@@ -816,6 +824,7 @@ namespace Takaro.Services
                         Code = item.GetItemName(),
                         Name = name,
                         Description = Shared.ItemDescription(item.GetItemName()),
+                        IconName = ServableIconName(item),
                     }
                 );
             }

@@ -78,6 +78,7 @@ namespace Takaro.Persistence
 
         public string Name { get; set; }
         public string Description { get; set; }
+        public string IconName { get; set; }
     }
 
     public class EntityRecord
