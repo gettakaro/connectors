@@ -139,6 +139,11 @@ the start command again. Keep `.env` and the sidecar's `/data` volume: it holds 
 identity and the connector's bans. To upgrade the plugin, stop the map server, replace the `.so`
 with one for the same server build, and start it again.
 
+Funcom names the database after the server's code branch, so a game update can change it, for
+example from `dune_sb_1_5_15_0` to `dune_sb_1_5_20_0`. When it does, rename the existing database
+to the new name before you start the battlegroup, and put the new name in `DUNE_PG_URL`. A sidecar
+still on the old name logs a warning and reads a roster that no longer changes.
+
 ## What works, what doesn't
 
 Checked on server build 26081962, 2026-10-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
