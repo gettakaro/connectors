@@ -104,7 +104,7 @@ After an ARK update, read Known issues first.
 
 ## What works, what doesn't
 
-Checked on game 96.9 (Steam build 26334129), 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Game actions, events, levels and Characters checked on game 97.17 (Steam build 26515168), 2026-11-09; shop and modules on game 96.9. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|

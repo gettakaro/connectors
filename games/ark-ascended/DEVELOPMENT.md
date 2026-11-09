@@ -30,7 +30,7 @@ The DLL builds only with MSVC, because AsaApi's headers and `AsaApi.lib` target 
 2022 and the MSVC 14.44 toolset (bash from Git for Windows, plus `jq` and Python):
 
 ```
-scripts/fetch-deps.sh --target windows-26334129 --dest C:/asa-deps
+scripts/fetch-deps.sh --target windows-26515168 --dest C:/asa-deps
 set ASA_DEPS=C:\asa-deps
 native\build.bat
 ```
@@ -48,7 +48,7 @@ against the catalog and writes `takaro-ark-ascended-<target>-<version>.zip` plus
 over the same DLL give identical bytes. The MSVC build itself is not claimed to be reproducible.
 
 ```
-TAKARO_ASA_DLL=<path>/TakaroAsa.dll maintenance/bin/takaro-maint build --game ark-ascended --target windows-26334129 --version 0.1.0-dev --out dist --toolchain container
+TAKARO_ASA_DLL=<path>/TakaroAsa.dll maintenance/bin/takaro-maint build --game ark-ascended --target windows-26515168 --version 0.1.0-dev --out dist --toolchain container
 ```
 
 The zip mirrors `ShooterGame/Binaries/Win64`: the AsaApi release without `Lib/` and the Permissions developer folder,

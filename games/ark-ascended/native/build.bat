@@ -13,5 +13,5 @@ if not exist build mkdir build
 set "API=%ASA_DEPS%\AsaApi\AsaApi\Core\Public"
 set VERSION_DEF=
 if defined TAKARO_VERSION set VERSION_DEF=/DTAKARO_PLUGIN_VERSION=\"%TAKARO_VERSION%\"
-cl /nologo /std:c++20 /O2 /MD /EHsc /W1 /utf-8 /Zc:__cplusplus /Zi /DNDEBUG /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DFMT_HEADER_ONLY /DPROJECT_NAME=\"TakaroAsa\" %VERSION_DEF% /I"%API%" /I"%API%\API\UE" /I"%ASA_DEPS%\fmt\include" /LD /Fobuild\ /Fdbuild\TakaroAsa.pdb /Febuild\TakaroAsa.dll src\plugin.cpp src\takaro_client.cpp src\logic.cpp src\transport.cpp src\transport_winhttp.cpp src\log.cpp /link /DEBUG /OPT:REF /OPT:ICF "%ASA_DEPS%\Lib\AsaApi.lib" winhttp.lib crypt32.lib bcrypt.lib || exit /b 1
+cl /nologo /std:c++20 /O2 /MD /EHsc /W1 /utf-8 /Zi /DNDEBUG /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DFMT_HEADER_ONLY /DPROJECT_NAME=\"TakaroAsa\" %VERSION_DEF% /I"%API%" /I"%API%\API\UE" /I"%ASA_DEPS%\fmt\include" /LD /Fobuild\ /Fdbuild\TakaroAsa.pdb /Febuild\TakaroAsa.dll src\plugin.cpp src\takaro_client.cpp src\logic.cpp src\transport.cpp src\transport_winhttp.cpp src\log.cpp /link /DEBUG /OPT:REF /OPT:ICF "%ASA_DEPS%\Lib\AsaApi.lib" winhttp.lib crypt32.lib bcrypt.lib || exit /b 1
 echo BUILD OK
