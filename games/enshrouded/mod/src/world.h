@@ -30,7 +30,7 @@ bool WorldNearbyJson(const std::string& playerName, double radius, std::string& 
 bool WorldAccountForMachine(uint32_t machine, uint64_t& account, std::string& err);
 bool WorldSlotsJson(std::string& json, std::string& err);  // diagnostic dump of the 16 player slots
 
-// The compiled item and entity tables are the Enshrouded 1.0 tables (game build 1267041). On another game
+// The compiled item and entity tables match game build 1283531 (items exported there, entities on 1267041). On another game
 // build without a gamedata section their ids and names can be wrong, so lookups are refused.
 void SetItemTablesBuild(const std::string& gameBuild, bool haveGamedataSection);
 bool ItemTablesUsable();

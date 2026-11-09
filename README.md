@@ -110,3 +110,11 @@ just build-release-empyrion 0.1.0
 - [Generic Connector Protocol](https://docs.takaro.io/advanced/generic-connector-protocol)
 - [Connection Architecture](https://docs.takaro.io/advanced/connection-architecture)
 - [Adding Support for a New Game](https://docs.takaro.io/advanced/adding-support-for-a-new-game)
+
+## License
+
+The connectors are licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only), with an
+additional permission that lets you load them into the game servers they are built for. See [`NOTICE`](NOTICE) for the
+additional permission, attribution requirements and third-party components.
+
+This license covers the code in this repository only. It grants no rights to the games themselves.
