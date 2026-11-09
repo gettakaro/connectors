@@ -262,7 +262,7 @@ namespace Takaro.WebSocket
         }
 
         public static Dictionary<string, object> CurrentCharactersCapability() =>
-            StateMirror.Instance.PermanentDeath ? PlayerCharacter.BuildCapability() : null;
+            StateMirror.Instance.ReportsCharacters ? PlayerCharacter.BuildCapability() : null;
 
         /// <summary>
         /// Protocol v1 <c>getMapTile {dimension, zoom, x, y}</c>: the game tile

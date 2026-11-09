@@ -32,6 +32,9 @@ namespace Takaro.Config
         /// <summary>Config.xml's chat sender name; empty when unset. Applied without a reconnect.</summary>
         public string ServerChatName { get; private set; } = "";
 
+        /// <summary>Report Permanent Death lives as Characters. Read when the world loads.</summary>
+        public bool ReportCharacters { get; private set; }
+
         /// <summary>
         /// Raised on the watcher thread when a change to Config.xml alters the
         /// URL, a token or Enabled.
@@ -191,6 +194,7 @@ namespace Takaro.Config
                             : $"Server chat name from Config.xml: {values.ServerChatName}"
                     );
                 ServerChatName = values.ServerChatName;
+                ReportCharacters = values.ReportCharacters;
 
                 // Our own write must not count as a change; after a failed
                 // write no stamp is kept, so the next check tries again.

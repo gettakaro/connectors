@@ -61,6 +61,28 @@ public static partial class ContractHarness
         {
             ConfigValues fresh = ConfigFiles.Load(path, () => "identity", out _, out _);
             Equal("", fresh.ServerChatName, "a new config has no chat name");
+            True(!fresh.ReportCharacters, "a new config does not report characters");
+            True(
+                File.ReadAllText(path).Contains("<ReportCharacters>false</ReportCharacters>"),
+                "a new config spells out the characters key"
+            );
+            File.WriteAllText(
+                path,
+                File.ReadAllText(path)
+                    .Replace(
+                        "<ReportCharacters>false</ReportCharacters>",
+                        "<ReportCharacters>true</ReportCharacters>"
+                    )
+            );
+            True(ConfigFiles.Read(path).ReportCharacters, "turning characters on is read");
+            File.WriteAllText(
+                path,
+                File.ReadAllText(path)
+                    .Replace(
+                        "<ReportCharacters>true</ReportCharacters>",
+                        "<ReportCharacters>false</ReportCharacters>"
+                    )
+            );
             True(
                 File.ReadAllText(path).Contains("<ServerChatName></ServerChatName>"),
                 "a new config spells out the chat name key"
@@ -87,6 +109,10 @@ public static partial class ContractHarness
                 "",
                 ConfigFiles.Read(path).ServerChatName,
                 "a file from an older release has no chat name"
+            );
+            True(
+                !ConfigFiles.Read(path).ReportCharacters,
+                "a file from an older release does not report characters"
             );
         }
         finally

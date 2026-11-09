@@ -77,6 +77,9 @@ connector creates it, or create it yourself before the first start:
   ServerChatName is the sender players see on messages from Takaro, instead
   of "Server". The chat name set in Takaro wins over it; leave both empty
   for "Server".
+
+  ReportCharacters tells Takaro about each life on a Permanent Death server.
+  Turn it on only when your Takaro supports Characters, then restart the server.
 -->
 <Takaro>
   <WebSocket>
@@ -89,6 +92,9 @@ connector creates it, or create it yourself before the first start:
   <Chat>
     <ServerChatName></ServerChatName>
   </Chat>
+  <Players>
+    <ReportCharacters>false</ReportCharacters>
+  </Players>
 </Takaro>
 ```
 
@@ -102,6 +108,10 @@ own name, set the server's chat name in Takaro. If your Takaro does not pass tha
 connector yet, put it in `<ServerChatName>` (a file from an older connector version has no `<Chat>`
 section; add it as above). The name set in Takaro wins. It applies within a few seconds; players
 see `Your Name: message` in global chat and `From Your Name: message` in a whisper.
+
+**Characters (optional).** On a server with the Permanent Death penalty, the connector can report
+each life as a separate Character. Set `<ReportCharacters>` to `true` and restart the server, but
+only if your Takaro supports Characters: older versions refuse player events that carry one.
 
 **Map (optional).** For the world map in Takaro, turn on the game's map rendering in
 `serverconfig.xml` and restart the server:

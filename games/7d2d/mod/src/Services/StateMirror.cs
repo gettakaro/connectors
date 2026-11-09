@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Takaro.Config;
 using Takaro.Interfaces;
 using Takaro.Persistence;
 using Takaro.WebSocket;
@@ -54,6 +55,7 @@ namespace Takaro.Services
         private int _mapHalfExtent;
         private volatile bool _mapRenderingEnabled;
         private volatile bool _permanentDeath;
+        private volatile bool _reportCharacters;
         private volatile string _worldName;
 
         public string MapRoot => _mapRoot;
@@ -67,7 +69,7 @@ namespace Takaro.Services
         /// <summary>The server renders map tiles (serverconfig EnableMapRendering).</summary>
         public bool MapRenderingEnabled => _mapRenderingEnabled;
 
-        public bool PermanentDeath => _permanentDeath;
+        public bool ReportsCharacters => _reportCharacters;
 
         public string WorldName => _worldName;
 
@@ -180,7 +182,7 @@ namespace Takaro.Services
         /// </summary>
         public TakaroCharacter CurrentCharacter(string gameId, string name)
         {
-            if (!_permanentDeath)
+            if (!_reportCharacters)
                 return null;
 
             _characterLives.TryGetValue(gameId, out int life);
@@ -514,8 +516,15 @@ namespace Takaro.Services
                 LogService.Instance.Warn($"Could not read the death penalty: {ex.Message}");
             }
 
-            if (_permanentDeath)
+            // A Takaro without Characters refuses every event that carries a character.
+            _reportCharacters = _permanentDeath && ConfigManager.Instance.ReportCharacters;
+            if (_reportCharacters)
                 LogService.Instance.Info("Permanent Death is on: reporting player characters");
+            else if (_permanentDeath)
+                LogService.Instance.Info(
+                    "Permanent Death is on, but ReportCharacters is off in Config.xml: "
+                        + "not reporting player characters"
+                );
 
             DbWriter.Instance.Enqueue(() =>
             {

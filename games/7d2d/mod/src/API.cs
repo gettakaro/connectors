@@ -284,7 +284,7 @@ namespace Takaro
                 victim,
                 DeathAttacker(data.SecondaryName, victimEntity),
                 deathPosition,
-                StateMirror.Instance.PermanentDeath
+                StateMirror.Instance.ReportsCharacters
             );
             StateMirror.Instance.EndCharacter(victim.GameId);
             return ModEvents.EModEventResult.Continue;

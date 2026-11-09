@@ -68,7 +68,7 @@ public static partial class ContractHarness
             "no character on an event without Permanent Death"
         );
 
-        StateMirror.Instance.PermanentDeath = true;
+        StateMirror.Instance.ReportsCharacters = true;
         try
         {
             TakaroPlayer player = Shared.TransformClientInfoToTakaroPlayerIdentity(client);
@@ -87,7 +87,7 @@ public static partial class ContractHarness
         }
         finally
         {
-            StateMirror.Instance.PermanentDeath = false;
+            StateMirror.Instance.ReportsCharacters = false;
         }
     }
 }

@@ -3880,10 +3880,10 @@ namespace Takaro.Services
 
         public bool IsGameReady => true;
 
-        public bool PermanentDeath { get; set; }
+        public bool ReportsCharacters { get; set; }
 
         public TakaroCharacter CurrentCharacter(string gameId, string name) =>
-            PermanentDeath
+            ReportsCharacters
                 ? new TakaroCharacter { Id = PlayerCharacter.Id(gameId, 0), Name = name }
                 : null;
 
