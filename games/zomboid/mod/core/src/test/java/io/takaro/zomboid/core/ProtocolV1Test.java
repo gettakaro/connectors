@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Protocol v1 against a fake Takaro: handshake, manifest, error shape, event stream, map image. */
 class ProtocolV1Test {
 
+    private static final String HASH = "ab".repeat(32);
     private static final MapDimension DIM = new MapDimension("knox-county", "Knox County",
             "x", "right", "y", "down", 0, 19968, 0, 16128,
             new MapImageInfo("rev-1", 10, 4992, 4032, "image/jpeg"));
@@ -372,6 +373,112 @@ class ProtocolV1Test {
         assertEquals("Action not implemented: getGameIcon", frame(0).get("error").getAsString());
     }
 
+    @Test
+    void itemIconsAreDeclaredOnlyWhenTheAdapterServesThem() {
+        client.onOpen(null);
+        assertFalse(names(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities")).contains("items.icons"));
+        sent.clear();
+        adapter.supportsItemIcons = true;
+        client.onOpen(null);
+        assertTrue(names(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities")).contains("items.icons"));
+    }
+
+    @Test
+    void listItemsReportsNoIconHashOnVersion0() throws Exception {
+        adapter.supportsItemIcons = true;
+        adapter.items = List.of(new GameItem("Mod.Sword", "Sword", "Weapon", HASH));
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        request("listItems", "l1", "{}");
+        assertFalse(awaitResponse("l1").getAsJsonArray("payload").get(0).getAsJsonObject().has("iconHash"));
+    }
+
+    @Test
+    void getItemIconsRefusesANumericHash() {
+        adapter.supportsItemIcons = true;
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getItemIcons", "i1", "{\"hashes\":[" + "1".repeat(64) + "]}");
+        assertEquals("invalid_args", response("i1").getAsJsonObject("error").get("code").getAsString());
+    }
+
+    @Test
+    void listItemsReportsIconHashOnlyForItemsWithArt() throws Exception {
+        adapter.supportsItemIcons = true;
+        adapter.items = List.of(new GameItem("Mod.Sword", "Sword", "Weapon", HASH), new GameItem("Base.Axe", "Axe", "Weapon"));
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("listItems", "l1", "{}");
+        JsonArray items = awaitResponse("l1").getAsJsonArray("payload");
+        assertEquals(HASH, items.get(0).getAsJsonObject().get("iconHash").getAsString());
+        assertFalse(items.get(1).getAsJsonObject().has("iconHash"));
+    }
+
+    @Test
+    void getItemIconsAnswersTheBase64PngsInOrder() throws Exception {
+        adapter.supportsItemIcons = true;
+        adapter.icons = List.of(new ItemIcon(HASH, new byte[] {1, 2, 3}));
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getItemIcons", "i1", "{\"hashes\":[\"" + HASH + "\"]}");
+        adapter.iconsServed.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        JsonArray payload = awaitResponse("i1").getAsJsonArray("payload");
+        assertEquals(HASH, payload.get(0).getAsJsonObject().get("hash").getAsString());
+        assertArrayEquals(new byte[] {1, 2, 3}, Base64.getDecoder().decode(payload.get(0).getAsJsonObject().get("data").getAsString()));
+    }
+
+    @Test
+    void getItemIconsRefusesMoreThanOneHundredHashes() {
+        adapter.supportsItemIcons = true;
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        JsonArray hashes = new JsonArray();
+        for (int i = 0; i < 101; i++) hashes.add(HASH);
+        JsonObject args = new JsonObject();
+        args.add("hashes", hashes);
+        request("getItemIcons", "i1", args.toString());
+        assertEquals("invalid_args", response("i1").getAsJsonObject("error").get("code").getAsString());
+    }
+
+    @Test
+    void getItemIconsAcceptsExactlyOneHundredHashes() throws Exception {
+        adapter.supportsItemIcons = true;
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        JsonArray hashes = new JsonArray();
+        for (int i = 0; i < 100; i++) hashes.add(HASH);
+        JsonObject args = new JsonObject();
+        args.add("hashes", hashes);
+        request("getItemIcons", "i1", args.toString());
+        assertEquals(0, awaitResponse("i1").getAsJsonArray("payload").size());
+    }
+
+    @Test
+    void getItemIconsRefusesAMalformedHash() {
+        adapter.supportsItemIcons = true;
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        request("getItemIcons", "i1", "{\"hashes\":[\"ABC\"]}");
+        assertEquals("invalid_args", response("i1").getAsJsonObject("error").get("code").getAsString());
+    }
+
+    @Test
+    void getItemIconsIsRefusedOnVersion0() {
+        adapter.supportsItemIcons = true;
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        request("getItemIcons", "i1", "{\"hashes\":[\"" + HASH + "\"]}");
+        assertEquals("Action not implemented: getItemIcons", frame(0).get("error").getAsString());
+    }
+
     // --- helpers ---
 
     private static JsonObject capability(JsonArray manifest, String name) {
@@ -434,6 +541,17 @@ class ProtocolV1Test {
         return JsonParser.parseString(sent.get(i)).getAsJsonObject();
     }
 
+    private JsonObject awaitResponse(String requestId) throws InterruptedException {
+        for (int i = 0; i < 500; i++) {
+            for (String raw : new ArrayList<>(sent)) {
+                JsonObject f = JsonParser.parseString(raw).getAsJsonObject();
+                if (f.has("requestId") && requestId.equals(f.get("requestId").getAsString())) return f;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("no response to " + requestId + " in " + sent);
+    }
+
     private JsonObject response(String requestId) {
         for (String raw : sent) {
             JsonObject f = JsonParser.parseString(raw).getAsJsonObject();
@@ -463,6 +581,13 @@ class ProtocolV1Test {
         List<GameLocation> locations = List.of();
         RuntimeException failGiveWith;
         String gameVersion = "42.20.4";
+        boolean supportsItemIcons;
+        List<GameItem> items = List.of();
+        List<ItemIcon> icons = List.of();
+        final java.util.concurrent.CountDownLatch iconsServed = new java.util.concurrent.CountDownLatch(1);
+
+        @Override public boolean supportsItemIcons() { return supportsItemIcons; }
+        @Override public List<ItemIcon> readItemIcons(List<String> hashes) { iconsServed.countDown(); return icons; }
 
         @Override public String getGameVersion() { return gameVersion; }
 
@@ -476,7 +601,7 @@ class ProtocolV1Test {
         @Override public List<PlayerInfo> getPlayers() { return List.of(); }
         @Override public PlayerLocation getPlayerLocation(String gameId) { return location; }
         @Override public List<InventoryItem> getPlayerInventory(String gameId) { return List.of(); }
-        @Override public List<GameItem> listItems() { return List.of(); }
+        @Override public List<GameItem> listItems() { return items; }
         @Override public List<GameEntity> listEntities() { return List.of(); }
         @Override public List<GameLocation> listLocations() { return locations; }
         @Override public void giveItem(String gameId, String itemCode, int amount, String quality) {

@@ -43,15 +43,16 @@ public final class Capabilities {
             "events.log");
 
     static final String GAME_PROFILE = "game.profile";
+    static final String ITEM_ICONS = "items.icons";
 
     private Capabilities() {
     }
 
     public static JsonArray manifest(List<MapDimension> dimensions) {
-        return manifest(dimensions, null);
+        return manifest(dimensions, null, false);
     }
 
-    public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion) {
+    public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion, boolean itemIcons) {
         JsonArray out = new JsonArray();
         for (String name : ACTIONS) {
             out.add(named(name));
@@ -62,6 +63,9 @@ public final class Capabilities {
         JsonObject profile = named(GAME_PROFILE);
         profile.add("parameters", GameProfile.parameters(gameVersion));
         out.add(profile);
+        if (itemIcons) {
+            out.add(named(ITEM_ICONS));
+        }
         if (dimensions != null && !dimensions.isEmpty()) {
             JsonObject map = named("map");
             JsonObject parameters = new JsonObject();

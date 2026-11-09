@@ -72,7 +72,7 @@ public final class TakaroAgent {
                 ConfigFiles.Resolved ready = loader.prepareForStart();
                 config.copyFrom(ready.config);
                 LocalAccounts.setScope(config.getIdentityToken());
-                connector.connect();
+                adapter.buildItemIconsThen(connector::connect);
                 if (CommandProbeRuntime.enabled()) {
                     CommandProbeRuntime.start(queue);
                 }

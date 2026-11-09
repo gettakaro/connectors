@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * Pure (game-class-free) transforms for the item catalogue and a player's
@@ -21,7 +22,11 @@ public final class Catalog {
     }
 
     /** One raw row read from {@code ScriptManager.getAllItems()}. */
-    public record ItemRow(String fullName, String displayName, String displayCategory) {
+    public record ItemRow(String fullName, String displayName, String displayCategory, String icon) {
+
+        public ItemRow(String fullName, String displayName, String displayCategory) {
+            this(fullName, displayName, displayCategory, null);
+        }
     }
 
     /** One raw row read from an {@code ItemContainer.getItems()} entry. */
@@ -32,9 +37,10 @@ public final class Catalog {
      * Build the Takaro {@code listItems} payload: {@code code}=fullName,
      * {@code name}=displayName (fallback to code), {@code description}=category.
      * Rows with a null/blank code are skipped, and duplicate codes are collapsed
-     * (first occurrence wins) so the catalogue has no dupes.
+     * (first occurrence wins) so the catalogue has no dupes. {@code iconHash} maps a
+     * row's icon name to the hash of its art, or null when it has none.
      */
-    public static List<GameItem> buildItems(List<ItemRow> rows) {
+    public static List<GameItem> buildItems(List<ItemRow> rows, Function<String, String> iconHash) {
         Map<String, GameItem> byCode = new LinkedHashMap<>();
         if (rows == null) {
             return new ArrayList<>();
@@ -55,7 +61,7 @@ public final class Catalog {
                 name = code;
             }
             String description = row.displayCategory() == null ? "" : row.displayCategory();
-            byCode.put(code, new GameItem(code, name, description));
+            byCode.put(code, new GameItem(code, name, description, iconHash.apply(row.icon())));
         }
         return new ArrayList<>(byCode.values());
     }

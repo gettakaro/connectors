@@ -68,6 +68,17 @@ public interface GameAdapter {
         throw new ProtocolException(ProtocolException.NOT_FOUND, "No map image for dimension " + dimension);
     }
 
+    // Item icons (protocol v1 only)
+
+    /** Whether this adapter serves item art, which declares the {@code items.icons} capability. */
+    default boolean supportsItemIcons() { return false; }
+
+    /**
+     * The icons for these hashes, in request order, within the {@code getItemIcons} response
+     * bound. A hash that cannot be served is left out. Called off the game thread.
+     */
+    default List<ItemIcon> readItemIcons(List<String> hashes) { return List.of(); }
+
     // Event wiring
     void setEventEmitter(EventEmitter emitter);
 }

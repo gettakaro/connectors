@@ -13,6 +13,7 @@ import java.net.URI;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.ArrayList;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -20,11 +21,15 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 public class TakaroWebSocketClient extends WebSocketClient implements EventEmitter {
 
     /** Largest getMapImage chunk the protocol allows (1 MiB). */
     static final int MAX_MAP_CHUNK = 1024 * 1024;
+    /** Largest {@code getItemIcons} request the protocol allows. */
+    static final int MAX_ICON_HASHES = 100;
+    private static final Pattern ICON_HASH = Pattern.compile("[0-9a-f]{64}");
     /** Debug lines longer than this are cut (a map chunk response is ~700 KB of base64). */
     private static final int MAX_DEBUG_LINE = 2000;
 
@@ -390,7 +395,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private void sendCapabilities() {
         List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
         JsonObject payload = new JsonObject();
-        payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
+        payload.add("capabilities", Capabilities.manifest(dims, gameVersion(), adapter.supportsItemIcons()));
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "capabilities");
         msg.addProperty("requestId", UUID.randomUUID().toString());
@@ -421,7 +426,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             payload.add("protocolVersions", versions);
             List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
             mapDimensions = dims.size();
-            payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
+            payload.add("capabilities", Capabilities.manifest(dims, gameVersion(), adapter.supportsItemIcons()));
         }
 
         JsonObject msg = new JsonObject();
@@ -594,6 +599,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             case "getMapImage":
                 if (protocolVersion >= 1) {
                     handleGetMapImage(requestId, args);
+                } else {
+                    sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
+                }
+                break;
+            case "getItemIcons":
+                if (protocolVersion >= 1 && adapter.supportsItemIcons()) {
+                    handleGetItemIcons(requestId, args);
                 } else {
                     sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
                 }
@@ -774,6 +786,47 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         sendResponse(requestId, payload, null);
     }
 
+    /** Reads files, so it leaves the socket thread; the game thread is never involved. */
+    private void handleGetItemIcons(String requestId, JsonObject args) {
+        List<String> hashes = requestedIconHashes(args);
+        if (hashes == null) {
+            sendError(requestId, ProtocolException.INVALID_ARGS,
+                    "getItemIcons takes 1 to " + MAX_ICON_HASHES + " hashes of 64 lowercase hex characters");
+            return;
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                JsonArray answer = new JsonArray();
+                for (ItemIcon icon : adapter.readItemIcons(hashes)) {
+                    JsonObject entry = new JsonObject();
+                    entry.addProperty("hash", icon.hash());
+                    entry.addProperty("data", Base64.getEncoder().encodeToString(icon.png()));
+                    answer.add(entry);
+                }
+                adapter.logInfo("getItemIcons: served " + answer.size() + " of " + hashes.size() + " requested icons");
+                sendResponse(requestId, answer, null);
+            } catch (RuntimeException e) {
+                adapter.logWarning("getItemIcons failed: " + e);
+                sendError(requestId, ProtocolException.GAME_ERROR, "Reading item icons failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /** The requested hashes, or null when the request breaks the protocol's limits. */
+    private static List<String> requestedIconHashes(JsonObject args) {
+        JsonElement hashes = args.get("hashes");
+        if (hashes == null || !hashes.isJsonArray()) return null;
+        JsonArray array = hashes.getAsJsonArray();
+        if (array.isEmpty() || array.size() > MAX_ICON_HASHES) return null;
+        List<String> out = new ArrayList<>(array.size());
+        for (JsonElement hash : array) {
+            if (!hash.isJsonPrimitive() || !hash.getAsJsonPrimitive().isString()
+                    || !ICON_HASH.matcher(hash.getAsString()).matches()) return null;
+            out.add(hash.getAsString());
+        }
+        return out;
+    }
+
     // --- Action handlers ---
 
     private void handleTestReachability(String requestId) {
@@ -865,6 +918,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             obj.addProperty("code", item.code());
             obj.addProperty("name", item.name());
             obj.addProperty("description", item.description());
+            if (protocolVersion >= 1 && adapter.supportsItemIcons() && item.iconHash() != null) {
+                obj.addProperty("iconHash", item.iconHash());
+            }
             arr.add(obj);
         }
         return arr;

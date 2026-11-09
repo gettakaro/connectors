@@ -15,6 +15,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+import zombie.ZomboidFileSystem;
 import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
@@ -504,13 +505,37 @@ public final class Pz {
             if (it == null) {
                 continue;
             }
-            rows.add(new Catalog.ItemRow(it.getFullName(), it.getDisplayName(), it.getDisplayCategory()));
+            rows.add(new Catalog.ItemRow(it.getFullName(), it.getDisplayName(), it.getDisplayCategory(), it.getIcon()));
         }
         return rows;
     }
 
     public static List<GameItem> listItems() {
-        return Catalog.buildItems(itemRows());
+        return listItems(icon -> null);
+    }
+
+    public static List<GameItem> listItems(java.util.function.Function<String, String> iconHash) {
+        return Catalog.buildItems(itemRows(), iconHash);
+    }
+
+    /**
+     * Where each item's art lives on disk, by icon name. The game's own file map decides, so
+     * a mod's art wins over vanilla and a later mod's over an earlier one, as in the client.
+     */
+    public static java.util.Map<String, String> itemIconFiles() {
+        java.util.Map<String, String> files = new java.util.HashMap<>();
+        java.util.Map<String, String> active = ZomboidFileSystem.instance.activeFileMap;
+        for (Catalog.ItemRow row : itemRows()) {
+            String icon = row.icon();
+            if (icon == null || icon.isEmpty()) {
+                continue;
+            }
+            String file = active.get(("media/textures/Item_" + icon + ".png").toLowerCase(java.util.Locale.ROOT));
+            if (file != null) {
+                files.put(icon, file);
+            }
+        }
+        return files;
     }
 
     // --- M2: player inventory ---
