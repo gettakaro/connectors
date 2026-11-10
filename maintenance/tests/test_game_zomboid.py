@@ -34,7 +34,7 @@ VERSION = "1.0.2-dev.abc1234"
 JAR_NAME = f"takaro-zomboid-agent-{TARGET}-{VERSION}.jar"
 GAME_JAR = "java/projectzomboid.jar"
 # The release builds only non-retired targets; the legacy TakaroConnector alias points here.
-RELEASE_TARGET = "linux-42.21.0"
+RELEASE_TARGET = "linux-42.22.2"
 RELEASE_JAR = f"takaro-zomboid-agent-{RELEASE_TARGET}-{VERSION}.jar"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

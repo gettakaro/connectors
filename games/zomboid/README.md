@@ -18,14 +18,14 @@ anything, and there is no Workshop item.
 ### 2. Download
 
 Download **`takaro-zomboid-agent-linux-<game build>-<version>.jar`** (for example
-`takaro-zomboid-agent-linux-42.21.0-<version>.jar`) from the latest release at
+`takaro-zomboid-agent-linux-42.22.2-<version>.jar`) from the latest release at
 https://takaro.io/connectors/zomboid (or from the latest `zomboid-vX.Y.Z` release at
 <https://github.com/gettakaro/connectors/releases>; do not use the `zomboid-dev` or `pr-…`
 pre-releases). `TakaroConnector-<version>.jar` beside it is the same file under its old name.
 It is one self-contained jar; there is nothing to unzip. To check it, fetch `SHA256SUMS` from the
 same release and run `sha256sum -c --ignore-missing SHA256SUMS` in the download folder.
 
-Supported server build: Project Zomboid 42.21.0, Steam build 25485538 (the `public` branch). The
+Supported server build: Project Zomboid 42.22.2, Steam build 26486687 (the `public` branch). The
 connector checks the server jar when it starts and refuses to hook another build unless you set
 `TAKARO_TARGET_POLICY=warn` on the server process.
 

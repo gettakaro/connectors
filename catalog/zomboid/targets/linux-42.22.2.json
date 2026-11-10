@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-42.22.2",
+  "game": "zomboid",
+  "platform": "linux",
+  "revision": "42.22.2",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-10",
+    "evidence": [
+      "takaro-maint verify --game zomboid --target linux-42.22.2 passed its contract checks on 2026-11-10: build, startup, identify, heartbeat, players, agent-load, pinned-install, hooks-bound, catalog, rcon, action, reconnect, stop"
+    ],
+    "notes": "Exact Steam pin of Build 42 42.22.2 (build 3d39148846, Steam build 26486687). The connector compiles and its unit tests pass against this jar; the hooked methods keep their signatures. Player-lifecycle events and player-scoped actions with a real client are tracked separately."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 380870,
+      "branch": "public",
+      "buildid": 26486687,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "1006": {
+          "manifest": "4559160656493359681",
+          "size": 111284048,
+          "files": 4
+        },
+        "380871": {
+          "manifest": "1755746619808321605",
+          "size": 6849662987,
+          "files": 40357
+        },
+        "380873": {
+          "manifest": "8697415611016350689",
+          "size": 219066950,
+          "files": 344
+        }
+      },
+      "files": {
+        "ProjectZomboid64": {
+          "sha256": "58e16d6155dc6e6ae5cbb1b0831fe130cae9ca8f77a6cfd0d40f62aa858e0bd4",
+          "size": 95976
+        },
+        "java/projectzomboid.jar": {
+          "sha256": "3c4a7c5f149d784758c6fb5f8fa85f3a21d572e38bc081400e89035f8120d287",
+          "size": 68815659
+        },
+        "jre64/release": {
+          "sha256": "c2f94748f59b3202fbd495159bcc4ec744f732d23d542dee321dc0f6d782eacd",
+          "size": 968
+        },
+        "start-server.sh": {
+          "sha256": "9bfcb6a6367e4a6e833680ce09a373ee8ac930f1bd6fb1d8085bbe20cb725957",
+          "size": 675
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": 25,
+    "container": {
+      "kind": "container-image",
+      "image": "renegademaster/zomboid-dedicated-server",
+      "tag": "2.5.0",
+      "digest": "sha256:5e3479ea2ef66a4f14686fd3abc3286cf31a82c0e37f737b4b5976ff37da9951",
+      "env": {
+        "GAME_VERSION": "public",
+        "PUBLIC_SERVER": "false",
+        "USE_STEAM": "true",
+        "STEAM_VAC": "false",
+        "PAUSE_ON_EMPTY": "true",
+        "TZ": "Etc/UTC"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/zomboid/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "eclipse-temurin",
+      "tag": "25.0.4_7-jdk-noble",
+      "digest": "sha256:2feab631bffce6236d8bb5261a4abe19a8d6f85bad1c01166f74686c983d011f"
+    },
+    "references": [
+      "java/projectzomboid.jar"
+    ],
+    "deps": {
+      "byte-buddy": {
+        "coordinate": "net.bytebuddy:byte-buddy:1.18.13",
+        "sha256": "aa0013fbcb7e8086f4775f3dcb69a6c6833f7fd9023fe027d2d0241834cc51d5",
+        "resolvedCoordinate": "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.18.13/byte-buddy-1.18.13.jar"
+      },
+      "java-websocket": {
+        "coordinate": "org.java-websocket:Java-WebSocket:1.6.0",
+        "sha256": "eae29213e4f16515639c28957200f011b3967fffcada1962cf0255d24919c22f",
+        "resolvedCoordinate": "https://repo1.maven.org/maven2/org/java-websocket/Java-WebSocket/1.6.0/Java-WebSocket-1.6.0.jar"
+      },
+      "gson": {
+        "coordinate": "com.google.code.gson:gson:2.14.0",
+        "sha256": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f",
+        "resolvedCoordinate": "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar"
+      },
+      "gradle": {
+        "coordinate": "gradle:distribution:9.5.1",
+        "sha256": "bafc141b619ad6350fd975fc903156dd5c151998cc8b058e8c1044ab5f7b031f",
+        "resolvedCoordinate": "https://services.gradle.org/distributions/gradle-9.5.1-bin.zip"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "agent",
+      "artifact": "takaro-zomboid-agent-linux-42.22.2-{version}.jar",
+      "installDir": "Takaro"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "agent-load",
+      "hooks-bound",
+      "action",
+      "reconnect",
+      "stop"
+    ]
+  },
+  "preserve": [
+    "Takaro/",
+    ".takaro/"
+  ],
+  "devServers": {
+    "gameId": "zomboid"
+  }
+}
