@@ -1,4 +1,5 @@
 #include "sym.h"
+#include "mem_ranges.h"
 
 #include <atomic>
 
@@ -639,11 +640,6 @@ std::vector<std::pair<std::string, bool>> Sym::SelfChecks() {
 // /proc/self/maps guard
 
 namespace {
-struct MapRange {
-    uintptr_t lo, hi;
-    bool r, w;
-    std::string path;
-};
 Mutex g_mapsLock;
 std::vector<MapRange> g_maps;
 uint64_t g_mapsAt = 0;
@@ -670,12 +666,7 @@ void PublishSnapshotLocked() {
 bool SnapshotHas(uintptr_t a, size_t len, bool needWrite) {
     const MapSnapshot* snap = g_snap.load(std::memory_order_acquire);
     if (!snap) return false;
-    const std::vector<MapRange>& v = snap->ranges;
-    auto it = std::upper_bound(v.begin(), v.end(), a,
-                               [](uintptr_t x, const MapRange& m) { return x < m.lo; });
-    if (it == v.begin()) return false;
-    --it;
-    return a >= it->lo && a + len <= it->hi && it->r && (!needWrite || it->w);
+    return RangesCover(snap->ranges, a, len, needWrite);
 }
 
 void ReloadMapsLocked() {
@@ -708,12 +699,7 @@ bool Check(const void* addr, size_t len, bool needWrite) {
     Guard g(g_mapsLock);
     for (int attempt = 0; attempt < 2; attempt++) {
         if (g_maps.empty() || (attempt == 1)) ReloadMapsLocked();
-        auto it = std::upper_bound(g_maps.begin(), g_maps.end(), a,
-                                   [](uintptr_t v, const MapRange& m) { return v < m.lo; });
-        if (it != g_maps.begin()) {
-            --it;
-            if (a >= it->lo && a + len <= it->hi && it->r && (!needWrite || it->w)) return true;
-        }
+        if (RangesCover(g_maps, a, len, needWrite)) return true;
         // A miss may just mean a stale cache; refresh once (rate-limited) and retry.
         if (attempt == 0 && NowMs() - g_mapsAt < 250) return false;
     }
