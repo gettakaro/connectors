@@ -104,7 +104,7 @@ After an ARK update, read Known issues first.
 
 ## What works, what doesn't
 
-Game actions and events checked on game 97.17 (Steam build 26515168), 2026-11-09; shop and modules on game 96.9. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Game actions, events, levels and Characters checked on game 97.17 (Steam build 26515168), 2026-11-09; shop and modules on game 96.9. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -113,6 +113,8 @@ Game actions and events checked on game 97.17 (Steam build 26515168), 2026-11-09
 | Player location | ✅ | Live position; offline players give the last position seen since the server started. |
 | Teleport | ✅ | Online players. |
 | Player inventory | ⚠️ | Carried and equipped items of an online player. Account cosmetics are left out. |
+| Player levels and skills | ✅ | Character level, experience and progress to the next level. The level rises when the player spends the point, as in the game. ARK has no separate skill levels. |
+| Characters | ✅ | Each survivor is its own character, with its own level. Create New Survivor starts a new one. |
 | Item list | ✅ | All items, with their in-game names. |
 | Entity list | ✅ | Creatures, with their in-game names. |
 | Locations | ✅ | The map's player spawn points, as "Spawn point 1" and so on. |
