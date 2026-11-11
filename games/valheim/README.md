@@ -162,7 +162,7 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Player location | ✅ | The position the server knows; never invented. |
 | Teleport | ✅ | |
 | Player inventory | ⚠️ | Only for players with the optional inventory mod; not checked on this build. |
-| Characters | ✅ | Each character on an account is tracked on its own; needs no mod. Requires a Takaro version with Characters support. |
+| Characters | ✅ | Each character on an account is tracked on its own; needs no mod. |
 | Player levels and skills | ⚠️ | One track per skill, only for players with the optional inventory mod. Valheim has no character level, and it keeps skills on the player's PC, so the values are client-reported and show as player-asserted. |
 | Item list | ✅ | English in-game names (`Raspberries`, `Crude Bow`). |
 | Entity list | ✅ | English in-game names (`Boar`, `Hen`). |
