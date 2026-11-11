@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -258,6 +259,43 @@ std::string KnownPlayers::Name(const std::string& id) const {
     std::lock_guard<std::mutex> lock(mu_);
     const auto it = names_.find(id);
     return it == names_.end() ? std::string() : it->second;
+}
+
+std::optional<double> ProgressBetween(double experience, double previous, double next) {
+    if (!std::isfinite(previous) || !std::isfinite(next) || next <= previous) return std::nullopt;
+    const double fraction = std::clamp((experience - previous) / (next - previous), 0.0, 1.0);
+    return std::round(fraction * 10000.0) / 10000.0;
+}
+
+std::optional<ProgressReading> MakeProgressReading(int level, double experience, double previous, double next) {
+    if (level < 1 || level > 100000 || !std::isfinite(experience) || experience < 0) return std::nullopt;
+    return ProgressReading{level, std::round(experience * 1000.0) / 1000.0, ProgressBetween(experience, previous, next)};
+}
+
+tj::Value ProgressionJson(bool knownPlayer, const std::optional<ProgressReading>& reading) {
+    if (!knownPlayer) return tj::Value::null();
+    tj::Value tracks = tj::Value::array();
+    if (!reading) return tracks;
+    tj::Value track = tj::obj({{"key", tj::str("character")}, {"name", tj::str("Level")},
+                               {"level", tj::num(reading->level)}, {"experience", tj::num(reading->experience)}});
+    if (reading->progress) track.set("progress", tj::num(*reading->progress));
+    tracks.push(std::move(track));
+    return tracks;
+}
+
+std::optional<Survivor> MakeSurvivor(uint64_t playerDataId, const std::string& name, const std::string& accountName) {
+    if (playerDataId == 0) return std::nullopt;
+    std::string shown = name.empty() ? accountName : name;
+    if (shown.empty()) shown = "Survivor";
+    return Survivor{std::to_string(playerDataId), shown.substr(0, 255)};
+}
+
+tj::Value SurvivorJson(const Survivor& survivor) {
+    return tj::obj({{"id", tj::str(survivor.id)}, {"name", tj::str(survivor.name)}});
+}
+
+bool IsSurvivorSwitch(const std::optional<Survivor>& known, const Survivor& seen) {
+    return known && known->id != seen.id;
 }
 
 bool IsRealPosition(double x, double y, double z) {

@@ -3,6 +3,7 @@
 // catalogue search, and that bans and known players survive a restart.
 #include "../native/src/logic.h"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 
@@ -14,10 +15,60 @@ static int failures = 0;
 
 static tj::Value Args(const char* text) { return *tj::parse(text); }
 
+static void test_progression() {
+    CHECK(!ProgressBetween(100, 200, 200));
+    CHECK(!ProgressBetween(100, 300, 200));
+    CHECK(!ProgressBetween(100, std::nan(""), 200));
+    CHECK(*ProgressBetween(150, 100, 200) == 0.5);
+    CHECK(*ProgressBetween(500, 100, 200) == 1.0);  // XP past the threshold until the point is spent
+    CHECK(*ProgressBetween(50, 100, 200) == 0.0);
+
+    CHECK(!MakeProgressReading(0, 10, 0, 20));
+    CHECK(!MakeProgressReading(100001, 10, 0, 20));
+    CHECK(!MakeProgressReading(5, -1, 0, 20));
+    CHECK(!MakeProgressReading(5, std::nan(""), 0, 20));
+    CHECK(!MakeProgressReading(5, INFINITY, 0, 20));
+    const auto capped = MakeProgressReading(105, 1000, 900, 900);
+    CHECK(capped && capped->level == 105 && !capped->progress);
+
+    CHECK(ProgressionJson(false, std::nullopt).is_null());
+    const tj::Value none = ProgressionJson(true, std::nullopt);
+    CHECK(none.is_array() && none.as_array().empty());
+
+    const tj::Value tracks = ProgressionJson(true, MakeProgressReading(12, 150, 100, 200));
+    CHECK(tracks.is_array() && tracks.as_array().size() == 1);
+    const tj::Value& track = tracks.as_array()[0];
+    CHECK(track.get("key")->as_string() == "character");
+    CHECK(track.get("level")->as_number() == 12);
+    CHECK(track.get("experience")->as_number() == 150);
+    CHECK(track.get("progress")->as_number() == 0.5);
+    const tj::Value atCap = ProgressionJson(true, capped);
+    CHECK(atCap.as_array()[0].get("progress") == nullptr);
+}
+
 static void test_position() {
     CHECK(!IsRealPosition(0, 0, 0));
     CHECK(IsRealPosition(-104786.5, 225978.5, -14316.1));
     CHECK(IsRealPosition(0, 0, 1));
+}
+
+static void test_survivor() {
+    CHECK(!MakeSurvivor(0, "tester", "Limon"));
+    const auto tester = MakeSurvivor(298275735, "tester", "Limon");
+    CHECK(tester && tester->id == "298275735" && tester->name == "tester");
+    CHECK(MakeSurvivor(1, "", "Limon")->name == "Limon");
+    CHECK(MakeSurvivor(1, "", "")->name == "Survivor");
+    CHECK(MakeSurvivor(1, std::string(300, 'x'), "")->name.size() == 255);
+
+    const tj::Value json = SurvivorJson(*tester);
+    CHECK(json.get("id")->as_string() == "298275735");
+    CHECK(json.get("name")->as_string() == "tester");
+
+    const auto second = MakeSurvivor(524693371, "second", "Limon");
+    CHECK(!IsSurvivorSwitch(std::nullopt, *tester));
+    CHECK(!IsSurvivorSwitch(tester, *tester));
+    CHECK(!IsSurvivorSwitch(tester, *MakeSurvivor(298275735, "renamed", "Limon")));
+    CHECK(IsSurvivorSwitch(tester, *second));
 }
 
 static void test_iso() {
@@ -149,6 +200,8 @@ static void test_corrupt_files(const fs::path& dir) {
 int main() {
     const fs::path dir = fs::temp_directory_path() / ("logic-test-" + std::to_string(::getpid()));
     test_iso();
+    test_progression();
+    test_survivor();
     test_position();
     test_console();
     test_log_filter();

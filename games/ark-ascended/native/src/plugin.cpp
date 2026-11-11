@@ -38,6 +38,7 @@ namespace {
 constexpr wchar_t kCallbackId[] = L"TakaroAsa";
 constexpr auto kTickBudget = std::chrono::milliseconds(2);
 constexpr auto kBanSweep = std::chrono::seconds(30);
+constexpr auto kSurvivorSweep = std::chrono::seconds(2);
 constexpr auto kExitDelay = std::chrono::seconds(4);
 constexpr size_t kMaxConsoleOutput = 32768;
 constexpr char kGameName[] = "ARK: Survival Ascended";
@@ -55,6 +56,10 @@ struct Roster {
     int ping = -1;
     double x = 0, y = 0, z = 0;
     bool hasPosition = false, online = false;
+    // The last readings stay while the player has no body, so a death shows up at respawn and not as an error.
+    std::optional<takaro::ProgressReading> progress;
+    std::optional<tj::Value> inventory;
+    std::optional<takaro::Survivor> survivor;
 };
 
 struct Icon {
@@ -78,7 +83,7 @@ std::unique_ptr<Icon> g_icon;
 std::vector<takaro::CatalogRow> g_items, g_entities;
 tj::Value g_itemsJson, g_entitiesJson, g_locationsJson;
 
-std::chrono::steady_clock::time_point g_nextBanSweep{}, g_exitAt{};
+std::chrono::steady_clock::time_point g_nextBanSweep{}, g_nextSurvivorSweep{}, g_exitAt{};
 bool g_exitPending = false;
 
 std::thread g_tail;
@@ -207,7 +212,56 @@ tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     p.set("epicOnlineServicesId", tj::str(eos));
     if (!r.ip.empty()) p.set("ip", tj::str(r.ip));
     if (r.ping >= 0) p.set("ping", tj::num(r.ping));
+    if (r.survivor) p.set("character", takaro::SurvivorJson(*r.survivor));
     return p;
+}
+
+// Null while the player has no player data. MyData is inline, so it needs no check of its own.
+FPrimalPlayerDataStruct* PlayerData(AShooterPlayerController* pc) {
+    auto* state = static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
+    if (state == nullptr || state->MyPlayerDataField() == nullptr) return nullptr;
+    return state->MyPlayerDataField()->MyDataField();
+}
+
+// False from the moment the game swaps the survivor until the sweep has told Takaro. Until then the old Character is
+// active, so a reading of the new survivor must not reach Takaro.
+bool SurvivorAnnounced(AShooterPlayerController* pc, const Roster& r) {
+    FPrimalPlayerDataStruct* data = PlayerData(pc);
+    return !r.survivor || data == nullptr || r.survivor->id == std::to_string(data->PlayerDataIDField());
+}
+
+// Works without a body, so also on the respawn screen. Only the login and the sweep call this: events go out after
+// action responses, so a switch found while answering getPlayers would reach Takaro behind the new survivor's data.
+void ReadSurvivor(const std::string& eos, AShooterPlayerController* pc, Roster& r) {
+    FPrimalPlayerDataStruct* data = PlayerData(pc);
+    if (data == nullptr) return;
+    auto* config = GetNativePointerField<void*>(data, "FPrimalPlayerDataStruct.MyPlayerCharacterConfig");
+    const std::string name = Trim(Utf8(*GetNativePointerField<FString*>(config, "FPrimalPlayerCharacterConfigStruct.PlayerCharacterName")));
+    const auto seen = takaro::MakeSurvivor(data->PlayerDataIDField(), name, r.name);
+    if (!seen) return;
+    if (!takaro::IsSurvivorSwitch(r.survivor, *seen)) {
+        r.survivor = seen;
+        return;
+    }
+    // The game swaps a survivor without a relog, but Takaro only changes a player's active Character on a connect.
+    LogLine("new survivor " + seen->id + " eos=" + eos);
+    if (r.online) g_client->Emit("player-disconnected", tj::obj({{"player", PlayerJson(eos, r)}}));
+    r.survivor = seen;
+    r.progress.reset();
+    r.inventory.reset();
+    if (r.online) g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(eos, r)}}));
+}
+
+// Refresh runs on every getPlayers, so getPlayerProgression answers from here without touching the game.
+void ReadProgress(const std::string& eos, AShooterCharacter* character, Roster& r) {
+    UPrimalCharacterStatusComponent* status = character->MyCharacterStatusComponentField();
+    if (status == nullptr) return;
+    const auto reading = takaro::MakeProgressReading(status->GetCharacterLevel(), status->ExperiencePointsField(),
+                                                     status->GetExperienceRequiredForPreviousLevelUp(),
+                                                     status->GetExperienceRequiredForNextLevelUp());
+    if (!reading) return;
+    if (!r.progress || r.progress->level != reading->level) LogLine("level " + std::to_string(reading->level) + " eos=" + eos);
+    r.progress = reading;
 }
 
 Roster& Refresh(const std::string& eos, AShooterPlayerController* pc) {
@@ -218,12 +272,13 @@ Roster& Refresh(const std::string& eos, AShooterPlayerController* pc) {
     if (!ip.empty()) r.ip = ip;
     if (auto* state = pc->PlayerStateField().Get()) r.ping = static_cast<int>(std::lround(state->ExactPingField()));
     if (g_known) g_known->Remember(eos, r.name);
-    if (pc->GetPlayerCharacter() != nullptr) {
+    if (auto* character = pc->GetPlayerCharacter(); character != nullptr) {
         const FVector v = AsaApi::IApiUtils::GetPosition(pc);
         if (takaro::IsRealPosition(v.X, v.Y, v.Z)) {
             r.x = v.X; r.y = v.Y; r.z = v.Z;
             r.hasPosition = true;
         }
+        if (SurvivorAnnounced(pc, r)) ReadProgress(eos, character, r);
     }
     return r;
 }
@@ -250,6 +305,13 @@ takaro::Outcome GetPlayer(const tj::Value& args) {
     Roster offline;
     if (g_known) offline.name = g_known->Name(id);
     return takaro::Outcome::Ok(PlayerJson(id, offline));
+}
+
+takaro::Outcome GetProgression(const tj::Value& args) {
+    const std::string id = takaro::PlayerIdOf(args);
+    const auto it = g_players.find(id);
+    if (it != g_players.end()) return takaro::Outcome::Ok(takaro::ProgressionJson(true, it->second.progress));
+    return takaro::Outcome::Ok(takaro::ProgressionJson(g_known && !id.empty() && !g_known->Name(id).empty(), std::nullopt));
 }
 
 takaro::Outcome GetLocation(const tj::Value& args) {
@@ -443,7 +505,11 @@ takaro::Outcome Inventory(const tj::Value& args) {
     if (pc == nullptr) return takaro::Outcome::Fail("not_found", "player is not online");
     auto* character = pc->GetPlayerCharacter();
     UPrimalInventoryComponent* inventory = character != nullptr ? character->MyInventoryComponentField() : nullptr;
-    if (inventory == nullptr) return takaro::Outcome::Fail("game_error", "the player has no inventory right now");
+    const auto it = g_players.find(id);
+    if (inventory == nullptr || (it != g_players.end() && !SurvivorAnnounced(pc, it->second))) {
+        if (it != g_players.end() && it->second.inventory) return takaro::Outcome::Ok(*it->second.inventory);
+        return takaro::Outcome::Fail("game_error", "the player has no inventory right now");
+    }
     tj::Value out = tj::Value::array();
     std::set<UPrimalItem*> seen;
     const auto add = [&](UPrimalItem* item) {
@@ -465,6 +531,7 @@ takaro::Outcome Inventory(const tj::Value& args) {
     };
     for (UPrimalItem* item : inventory->InventoryItemsField()) add(item);
     for (UPrimalItem* item : inventory->EquippedItemsField()) add(item);
+    g_players[id].inventory = out;
     return takaro::Outcome::Ok(std::move(out));
 }
 
@@ -521,6 +588,7 @@ takaro::Outcome Run(const takaro::GameCall& call) {
     if (call.action == "getPlayers") return GetPlayers();
     if (call.action == "getPlayer") return GetPlayer(call.args);
     if (call.action == "getPlayerLocation") return GetLocation(call.args);
+    if (call.action == "getPlayerProgression") return GetProgression(call.args);
     if (call.action == "sendMessage") return SendMessage(call.args);
     if (call.action == "executeConsoleCommand") return Console(call.args);
     if (call.action == "kickPlayer") return Kick(call.args);
@@ -626,6 +694,18 @@ struct TickCost {
     }
 };
 
+void SweepSurvivors() {
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_nextSurvivorSweep) return;
+    g_nextSurvivorSweep = now + kSurvivorSweep;
+    for (auto& weak : AsaApi::GetApiUtils().GetWorld()->PlayerControllerListField()) {
+        auto* pc = static_cast<AShooterPlayerController*>(weak.Get());
+        if (pc == nullptr) continue;
+        const auto it = g_players.find(EosId(pc));
+        if (it != g_players.end() && it->second.online) ReadSurvivor(it->first, pc, it->second);
+    }
+}
+
 void OnTick(float) {
     if (!g_client) return;
     TickCost cost;
@@ -645,6 +725,7 @@ void OnTick(float) {
         return;
     }
     SweepBans();
+    SweepSurvivors();
     const auto stop = std::chrono::steady_clock::now() + kTickBudget;
     takaro::GameCall call;
     while (std::chrono::steady_clock::now() < stop && g_client->NextCall(call)) {
@@ -679,6 +760,7 @@ bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, 
         // A banned player reaches this hook before the game turns them away; they never really joined.
         if (!eos.empty() && !IsBanned(eos)) {
             Roster& r = Refresh(eos, pc);
+            ReadSurvivor(eos, pc, r);
             if (!r.online) {
                 r.online = true;
                 g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(eos, r)}}));
@@ -790,6 +872,9 @@ std::vector<tj::Value> Manifest() {
                              "events.player-connected", "events.player-disconnected", "events.chat-message",
                              "events.player-death", "events.entity-killed", "events.log"})
         out.push_back(tj::obj({{"name", tj::str(name)}}));
+    out.push_back(tj::obj({{"name", tj::str("players.progression")}, {"parameters", tj::obj({{"source", tj::str("server")}})}}));
+    // Survivors live in the server's save. A death does not end one, so `ends` stays out.
+    out.push_back(tj::obj({{"name", tj::str("players.characters")}, {"parameters", tj::obj({{"held", tj::str("server")}})}}));
     tj::Value profile = tj::obj({{"name", tj::str(kGameName)}});
     if (!g_gameVersion.empty()) profile.set("version", tj::str(g_gameVersion));
     if (g_icon) profile.set("icon", tj::obj({{"revision", tj::str(g_icon->revision)}, {"size", tj::num(static_cast<double>(g_icon->size))}}));

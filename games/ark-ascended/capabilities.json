@@ -38,6 +38,12 @@
       "reason": "carried and equipped items of an online player; engrams, hidden items, skins and account cosmetics are left out",
       "liveVerified": false
     },
+    "getPlayerProgression": {
+      "status": "live-supported",
+      "responseShape": "IProgressionTrack[] | null",
+      "reason": "one `character` track from the survivor's status component, cached on each getPlayers; a player without a body keeps the last reading",
+      "liveVerified": false
+    },
     "giveItem": {
       "status": "live-supported",
       "responseShape": "null",
