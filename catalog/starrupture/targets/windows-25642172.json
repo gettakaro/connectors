@@ -70,7 +70,7 @@
       },
       "msvc-sysroot": {
         "coordinate": "microsoft:msvc-crt-14.44.17.14+winsdk:10.0.26100",
-        "sha256": "1c93dbe4516d5062c4d7c28558dc941daab202eae70a73382be0383c7d3746bd"
+        "sha256": "694def6174b9f54faaf6a656cedb8a424b2b3fecfc2fb4e9e19d4a1bd1e47a1e"
       },
       "modloader": {
         "coordinate": "AlienXAXS:StarRupture-ModLoader:v1.22.1",
