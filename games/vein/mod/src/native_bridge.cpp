@@ -231,6 +231,13 @@ uint64_t requestCount = 0, protocolErrorCount = 0;
 std::string lastRequestAction;
 std::atomic<uint64_t> overloads{0};
 bool identified = false;
+// Requests Takaro sent on the current epoch before its identifyResponse reached us (bridge thread
+// only). Takaro only sends requests to a connection whose identify it accepted, and right after a
+// reconnect its reachability check can overtake the identifyResponse. Refusing such a request
+// makes Takaro mark the server offline, so it is held and run once identified.
+std::vector<NativeTransport::Notice> earlyRequests;
+size_t earlyRequestBytes = 0;
+constexpr size_t kMaxEarlyRequests = 16, kMaxEarlyRequestBytes = 1024 * 1024;
 // Protocol Version Takaro chose for the current connection (0 until a version 1 identifyResponse).
 std::atomic<int> protocolVersion{0};
 // Highest version 1 eventAck `upTo` for our stream, picked up by the bridge loop's confirmation.
@@ -464,10 +471,12 @@ void HandleFrame(const NativeTransport::Notice& n) {
                 for (const char* k : {"status", "statusCode", "httpStatus"})
                     if (e.contains(k) && e[k].is_number_integer()) { why += " (HTTP " + std::to_string(e[k].get<int>()) + ")"; break; }
             BannerRefused(why);
+            earlyRequests.clear(); earlyRequestBytes = 0;
             NativeTransport::RequestClose(n.epoch, 1013, "identity rejected");
             return;
         }
         identified = true;
+        NativeTransport::MarkIdentified(n.epoch);
         protocolVersion = p.contains("protocolVersion") && p["protocolVersion"] == 1 ? 1 : 0;
         PluginLog("native: identified with Takaro (epoch %llu, protocol version %d)", (unsigned long long)n.epoch,
                   protocolVersion.load());
@@ -475,6 +484,12 @@ void HandleFrame(const NativeTransport::Notice& n) {
             consoleLive = true; consoleProblem.clear();
             ConsoleLine("connected to Takaro as \"%s\"; the server now shows as reachable in the dashboard",
                         serverName.c_str());
+        }
+        if (!earlyRequests.empty()) {
+            auto early = std::move(earlyRequests);
+            earlyRequests.clear(); earlyRequestBytes = 0;
+            PluginLog("native: running %zu request(s) that arrived before identifyResponse", early.size());
+            for (const auto& r : early) if (r.epoch == n.epoch) HandleFrame(r);
         }
     } else if (type == "error") {
         ++protocolErrorCount;
@@ -525,6 +540,13 @@ void HandleFrame(const NativeTransport::Notice& n) {
         if (id.size() > 128) {
             lastError = "requestId exceeds 128 bytes";
             NativeTransport::RequestClose(n.epoch, 1013, "requestId too long");
+            return;
+        }
+        if (!identified && !action.empty() && earlyRequests.size() < kMaxEarlyRequests &&
+            earlyRequestBytes + n.text.size() <= kMaxEarlyRequestBytes) {
+            --requestCount; // counted again when it runs
+            earlyRequestBytes += n.text.size();
+            earlyRequests.push_back(n);
             return;
         }
         if (!identified || action.empty()) { SendError(id, n.epoch, "invalid request"); return; }
@@ -976,6 +998,7 @@ void BridgeLoop() {
                 flushConfirm();
             if (n.type == NativeTransport::NoticeType::Open) {
                 currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0;
+                earlyRequests.clear(); earlyRequestBytes = 0;
                 highestSentSeq = 0; unackedSince.reset();
                 sentEpochByOutboxId.clear();
                 Json p = {{"identityToken", identity}};
@@ -997,9 +1020,13 @@ void BridgeLoop() {
                 PluginLog("native: Takaro connection closed (epoch %llu%s%s)", (unsigned long long)n.epoch,
                           lastError.empty() ? "" : ", last error: ", lastError.c_str());
                 identified = false; liveEpoch = false; protocolVersion = 0;
+                earlyRequests.clear(); earlyRequestBytes = 0;
                 if (consoleLive && !stopping) { consoleLive = false; ConsoleLine("lost the connection to Takaro; reconnecting"); }
                 if (gateMode) for (auto& e : outbox) e.sentEpoch = 0;
                 else sentEpochByOutboxId.clear();
+            } else if (n.type == NativeTransport::NoticeType::Retry) {
+                PluginLog("native: reconnecting to Takaro in %llu ms (%s)", (unsigned long long)n.eventSeq,
+                          n.text.c_str());
             } else if (n.type == NativeTransport::NoticeType::Frame && n.epoch == currentEpoch && liveEpoch) {
                 try { HandleFrame(n); } catch (const std::exception& ex) { lastError = ex.what(); }
                 if (ackedThrough > confirmThrough) { confirmThrough = ackedThrough; confirmEpoch = n.epoch; }

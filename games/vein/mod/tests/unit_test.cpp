@@ -12,12 +12,14 @@
 #include "instance_guard.h"
 #include "ca_bundle.h"
 #include "chat_probe.h"
+#include "reconnect_policy.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <cerrno>
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 #include <cstdlib>
@@ -1409,6 +1411,61 @@ static void TestChatProbeStub() {
     ChatProbe::TestEnable(false, true);
 }
 
+// gettakaro/connectors#858: fast first retry after a stable session, jittered backoff only on a
+// failure streak, capped, and the streak starts over after a stable session.
+static void TestReconnectPolicy() {
+    using namespace ReconnectPolicy;
+    const uint32_t lo = 0, hi = 0xffffffffu, mid = 0x9e3779b9u;
+    // A stable session redials within 0.2-0.8 s, never a fixed wait.
+    {
+        Backoff b(2000, 60000);
+        unsigned minSeen = ~0u, maxSeen = 0;
+        for (uint32_t r = 0; r < 5000; r += 7) {
+            unsigned d = b.NextDelayMs(true, r * 2654435761u);
+            minSeen = std::min(minSeen, d); maxSeen = std::max(maxSeen, d);
+            CHECK(d >= 200 && d <= 800, "fast retry %u outside 200..800", d);
+            CHECK(b.Streak() == 0, "stable drop keeps streak 0");
+        }
+        CHECK(maxSeen - minSeen >= 500, "fast retry is jittered (%u..%u)", minSeen, maxSeen);
+        CHECK(b.NextDelayMs(true, lo) == 200 && b.NextDelayMs(true, 600) == 800, "fast bounds");
+    }
+    // Consecutive failures: equal jitter in [nominal/2, nominal], nominal doubling from base.
+    {
+        Backoff b(2000, 60000);
+        const unsigned nominal[] = {2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000, 60000};
+        for (unsigned i = 0; i < sizeof nominal / sizeof *nominal; ++i) {
+            Backoff low = b, high = b;
+            // random % (half + 1): 0 gives the lower bound, half gives the upper bound.
+            unsigned dLo = low.NextDelayMs(false, lo), dHi = high.NextDelayMs(false, nominal[i] / 2);
+            CHECK(dLo == nominal[i] - nominal[i] / 2, "failure %u low %u", i + 1, dLo);
+            CHECK(dHi == nominal[i], "failure %u high %u", i + 1, dHi);
+            unsigned d = b.NextDelayMs(false, mid);
+            CHECK(d >= nominal[i] / 2 && d <= nominal[i] && d <= 60000, "failure %u delay %u", i + 1, d);
+            CHECK(b.Streak() == i + 1, "streak %u", b.Streak());
+        }
+        for (int i = 0; i < 100; ++i) CHECK(b.NextDelayMs(false, hi) <= 60000, "cap holds");
+        // The streak survives until a session is stable; then it starts over fast.
+        unsigned d = b.NextDelayMs(true, mid);
+        CHECK(d >= 200 && d <= 800 && b.Streak() == 0, "stable session resets streak (%u)", d);
+        d = b.NextDelayMs(false, hi);
+        CHECK(d >= 1000 && d <= 2000 && b.Streak() == 1, "first failure after reset %u", d);
+        b.Reset();
+        CHECK(b.Streak() == 0, "Reset clears streak");
+    }
+    // Operator overrides of the old keys still apply to the failure backoff, not the fast retry.
+    {
+        Backoff b(30000, 45000);
+        unsigned d = b.NextDelayMs(true, mid);
+        CHECK(d >= 200 && d <= 800, "fast retry ignores base override (%u)", d);
+        d = b.NextDelayMs(false, lo);
+        CHECK(d == 15000, "base override %u", d);
+        d = b.NextDelayMs(false, 22500);
+        CHECK(d == 45000, "max override caps %u", d);
+        Backoff inverted(5000, 1000);
+        CHECK(inverted.NextDelayMs(false, 2500) == 5000, "max below base is raised to base");
+    }
+}
+
 int main() {
     // Code under test reads settings through ConfigFile::Current(), which creates its file.
     char cfgDir[] = "/tmp/takaro-unit-XXXXXX";
@@ -1430,6 +1487,7 @@ int main() {
     TestChatProbeMatch();
     TestChatProbeDecision();
     TestChatProbeStub();
+    TestReconnectPolicy();
     TestCharacterSelectParser();
     TestJoinLineParser();
     TestLoginRefusedParser();

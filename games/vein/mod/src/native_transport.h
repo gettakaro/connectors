@@ -26,7 +26,8 @@ struct QueueResult {
     Ticket ticket;
     explicit operator bool() const { return status == QueueStatus::Accepted; }
 };
-enum class NoticeType { Open, Closed, Frame, Written, Confirmed, Error };
+// Retry: the next dial is scheduled; eventSeq holds the delay in ms and text the reason.
+enum class NoticeType { Open, Closed, Frame, Written, Confirmed, Error, Retry };
 struct Notice {
     NoticeType type;
     uint64_t epoch = 0;
@@ -40,6 +41,8 @@ struct Config {
     std::string url;
     std::string caFile;
     std::string gameHttpUrl = "http://127.0.0.1:8080";
+    // Failure backoff (see reconnect_policy.h). A drop after a stable, identified session always
+    // redials within ReconnectPolicy::kFastMinMs + kFastJitterMs, whatever these say.
     unsigned reconnectBaseMs = 2000;
     unsigned reconnectMaxMs = 60000;
     bool connect = true; // false: hold off (no registration token) until Retarget enables it
@@ -62,6 +65,9 @@ QueueResult Queue(Send send);
 // Remove events evicted from the durable outbox. The service thread also checks
 // this floor immediately before a frame write.
 size_t PruneEventsBefore(uint64_t minOutboxId, uint64_t expectedEpoch);
+// Takaro accepted identify on this epoch. Once it then stays up for ReconnectPolicy::kStableMs,
+// a drop redials fast and the failure streak starts over.
+void MarkIdentified(uint64_t expectedEpoch);
 // Wakes the LWS service thread. It owns the socket and emits a 1013 close.
 bool RequestClose(uint64_t expectedEpoch, uint16_t code, std::string reason);
 // Nonblocking; false means caller still owns the message and may retry or reject it.
