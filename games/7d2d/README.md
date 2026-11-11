@@ -165,6 +165,10 @@ server. Deleting the folder also removes the extra DLLs (`0Harmony.dll`, `MonoMo
 `takaro.db` in the world's save folder are never touched, so the token and the server's identity
 stay. Never swap `Takaro.dll` under a running server; it can crash the server.
 
+Upgrading from 0.9.0 or older: those versions also sent the game's Epic id for Steam and Xbox
+players, newer ones do not. Players Takaro already knows keep their profile, so this change needs
+no action.
+
 ## What works, what doesn't
 
 Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ works with a limit, ❌ not supported.
@@ -172,7 +176,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | Reconnects by itself within about a minute after an outage or a server restart; events from the outage are delivered afterwards. |
-| Player list | ✅ | Name, Steam id (or Xbox id), Epic (EOS) id, platform id, IP and ping. |
+| Player list | ✅ | Name, Steam id (or Xbox id), platform id, IP and ping. The Epic (EOS) id is sent only for players who join through the Epic store: Takaro keeps one Epic id per player and the game's Epic id differs per game. |
 | Player location | ✅ | Updated about every 30 seconds. |
 | Teleport | ⚠️ | The height is snapped to the ground, so the player lands on solid ground, not at the exact height asked for. |
 | Player inventory | ✅ | |

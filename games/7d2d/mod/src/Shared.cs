@@ -293,9 +293,11 @@ namespace Takaro
         }
 
         /// <summary>
-        /// Sends every identifier the game knows: the dedicated steamId /
-        /// epicOnlineServicesId / xboxLiveId fields (what Takaro's built-in 7D2D
-        /// integration stored) plus platformId. Empty values stay off the wire.
+        /// Sends the player's platform identity: steamId or xboxLiveId (what Takaro's
+        /// built-in 7D2D integration stored) plus platformId. epicOnlineServicesId goes
+        /// out only for a player with neither: Takaro keeps one EOS id per player and
+        /// the game's EOS id is per game, so sending it for a Steam or Xbox player
+        /// overwrites the EOS id another game stored. Empty values stay off the wire.
         /// </summary>
         public static TakaroPlayer WithIdentifiers(
             TakaroPlayer player,
@@ -306,7 +308,10 @@ namespace Takaro
         {
             player.SteamId = NullIfEmpty(steamId);
             player.XboxLiveId = NullIfEmpty(xboxLiveId);
-            player.EpicOnlineServicesId = NullIfEmpty(epicOnlineServicesId);
+            player.EpicOnlineServicesId =
+                player.SteamId == null && player.XboxLiveId == null
+                    ? NullIfEmpty(epicOnlineServicesId)
+                    : null;
             player.PlatformId = PlatformIdFromIdentifiers(
                 steamId,
                 xboxLiveId,

@@ -203,10 +203,13 @@ mod/src/
 - Uses EOS CrossplatformId as primary gameId (`EOS_` prefix stripped)
 - Supports Steam (`Steam_`), Xbox (`XBL_`) platform IDs
 - Every player object on the wire (player list, single player, ban list, connect/disconnect,
-  chat, death, kill) carries `steamId` / `xboxLiveId` (whichever applies),
-  `epicOnlineServicesId` and `platformId`. Takaro matches profiles on the first three and
-  never derives `steamId` from `platformId`, so sending only `platformId` duplicated players
-  that Takaro's built-in 7D2D integration had created
+  chat, death, kill) carries `steamId` / `xboxLiveId` (whichever applies) and `platformId`.
+  Takaro matches profiles on those ids and never derives `steamId` from `platformId`, so
+  sending only `platformId` duplicated players that Takaro's built-in 7D2D integration had
+  created
+- `epicOnlineServicesId` is sent only for a player with no Steam or Xbox id (Epic store).
+  Takaro keeps one EOS id per player and the game's EOS id is per game, so sending it for a
+  Steam or Xbox player overwrote the EOS id another game had stored on the same player
 
 ### Connection & Authentication
 - WebSocket endpoint from `Config.xml` (default `wss://connect.takaro.io/`)

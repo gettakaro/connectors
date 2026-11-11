@@ -13,7 +13,8 @@
     "note": "Hand-transcribed from the legacy source and tests; the legacy integration has no machine-readable export."
   },
   "acceptedDifferences": [
-    "platformId is sent by the mod for every player (steam:, xbox:, eos:); the legacy integration sent none."
+    "platformId is sent by the mod for every player (steam:, xbox:, eos:); the legacy integration sent none.",
+    "epicOnlineServicesId is left out for Steam and Xbox players (modDrops): Takaro keeps one EOS id per player and the game's EOS id is per game, so sending it overwrote the EOS id another game stored. Profiles the legacy integration created still match on steamId or xboxLiveId."
   ],
   "identities": [
     {
@@ -29,7 +30,8 @@
         "steamId": "76561198028175941",
         "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
       },
-      "modOnly": { "platformId": "steam:76561198028175941" }
+      "modOnly": { "platformId": "steam:76561198028175941" },
+      "modDrops": ["epicOnlineServicesId"]
     },
     {
       "name": "xbox",
@@ -44,7 +46,8 @@
         "xboxLiveId": "9D1784ABCDEF1234567890",
         "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
       },
-      "modOnly": { "platformId": "xbox:9D1784ABCDEF1234567890" }
+      "modOnly": { "platformId": "xbox:9D1784ABCDEF1234567890" },
+      "modDrops": ["epicOnlineServicesId"]
     },
     {
       "name": "eos-only",
@@ -91,8 +94,7 @@
         "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
         "expected": {
           "gameId": "0002b5d970954287afdcb5dc35af0424",
-          "steamId": "76561198028175941",
-          "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+          "steamId": "76561198028175941"
         }
       },
       {
@@ -107,8 +109,7 @@
         "crossplatformId": "EOS_0002b5d970954287afdcb5dc35af0424",
         "expected": {
           "gameId": "0002b5d970954287afdcb5dc35af0424",
-          "xboxLiveId": "9D1784ABCDEF1234567890",
-          "epicOnlineServicesId": "0002b5d970954287afdcb5dc35af0424"
+          "xboxLiveId": "9D1784ABCDEF1234567890"
         }
       }
     ]
