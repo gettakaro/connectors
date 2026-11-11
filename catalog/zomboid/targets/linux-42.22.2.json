@@ -9,9 +9,11 @@
     "status": "candidate",
     "since": "2026-11-10",
     "evidence": [
-      "takaro-maint verify --game zomboid --target linux-42.22.2 passed its contract checks on 2026-11-10: build, startup, identify, heartbeat, players, agent-load, pinned-install, hooks-bound, catalog, rcon, action, reconnect, stop"
+      "takaro-maint verify --game zomboid --target linux-42.22.2 passed its contract checks on 2026-11-10: build, startup, identify, heartbeat, players, agent-load, pinned-install, hooks-bound, catalog, rcon, action, reconnect, stop",
+      "Real Windows client 42.22.2 (3d39148846) through Takaro on 2026-11-11: events player-connected, chat-message, command-executed (@balance), entity-killed (axe vs zombie), player-death and player-disconnected; actions testReachability, getPlayers, sendMessage (global and whisper), executeConsoleCommand, giveItem, teleportPlayer, kickPlayer with a rejoin, banPlayer with a refused rejoin, listBans, unbanPlayer with a rejoin, and shutdown with a restart and client reconnect, each with client evidence",
+      "Modules and Discord on 2026-11-11: @balance and module teleports in the client; player chat and join/leave notices posted to Discord; a discord-message relay showed in the client chat; module chat, death and cron hooks posted to Discord; Takaro's own messages were not relayed back"
     ],
-    "notes": "Exact Steam pin of Build 42 42.22.2 (build 3d39148846, Steam build 26486687). The connector compiles and its unit tests pass against this jar; the hooked methods keep their signatures. Player-lifecycle events and player-scoped actions with a real client are tracked separately."
+    "notes": "Exact Steam pin of Build 42 42.22.2 (build 3d39148846, Steam build 26486687). The hooked methods keep their signatures and no connector change was needed; proven end to end with a real client on this build."
   },
   "inputs": {
     "server": {

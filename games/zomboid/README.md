@@ -137,7 +137,7 @@ stays inactive.
 
 ## What works, what doesn't
 
-Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-10-01. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -157,14 +157,14 @@ Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-10-01. ✅ works, ⚠️ w
 | Ban list | ✅ | With expiry, including bans made outside Takaro. |
 | Give an item | ✅ | Appears in the inventory without a relog. |
 | Shop | ⚠️ | Not checked. |
-| Shut down the server | ⚠️ | Saves and quits on request; not checked on this build. |
+| Shut down the server | ✅ | Saves and quits on request; the game can take about two minutes to exit after saving, then restarts and re-identifies. |
 | Player joined / left | ✅ | Left also arrives on a kick. |
 | Chat messages | ✅ | With the player and channel. |
 | Player death | ✅ | With the position. |
-| Entity killed | ⚠️ | Zombie kills with the weapon (none for bare hands), at most about 20 per second; not checked on this build. |
+| Entity killed | ✅ | Zombie kills with the weapon (none for bare hands), at most about 20 per second. |
 | Server log lines | ⚠️ | Off by default; set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`). |
-| Discord chat bridge | ⚠️ | Not checked. |
-| Modules | ⚠️ | Not checked. |
+| Discord chat bridge | ✅ | Player chat, joins and leaves reach Discord, and Discord messages show in game chat. Takaro's own messages come back as chat without a player, so use a bridge that skips those. |
+| Modules | ✅ | Chat commands such as `@balance`, module teleports, and module hooks and cron jobs that post to Discord. |
 | Game name, version and icon | ⚠️ | Not checked on takaro.io yet. |
 | Restarts and outages | ✅ | Re-identifies on its own after a server restart. |
 
