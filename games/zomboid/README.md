@@ -147,7 +147,7 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Teleport | ⚠️ | The move is immediate, but the new position can take about 15 seconds to show in Takaro. |
 | Player inventory | ✅ | Matches what the player carries, including item condition. |
 | Player levels and skills | ✅ | Every skill as its own track with level, experience and progress, on the player profile and in level history; level changes trigger hooks. Project Zomboid has no overall character level. |
-| Characters | ✅ | Every survivor is its own character in Takaro, so levels and history stay with the survivor. A death ends the character, and the next survivor starts fresh without a false level change. Requires a Takaro version with Characters support. |
+| Characters | ✅ | Every survivor is its own character in Takaro, so levels and history stay with the survivor. A death ends the character, and the next survivor starts fresh without a false level change. |
 | Item list | ✅ | |
 | Entity list | ✅ | Zombies and vehicles, vehicles under their in-game names. |
 | Locations | ⚠️ | Build 42 has no named places, so only player-claimed safehouses are listed. |
@@ -159,14 +159,14 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Ban list | ✅ | With expiry, including bans made outside Takaro. |
 | Give an item | ✅ | Appears in the inventory without a relog. |
 | Shop | ✅ | Pay, claim with delivery to the inventory, and cancel with a refund. |
-| Shut down the server | ✅ | Saves and quits on request. |
+| Shut down the server | ✅ | Saves and quits on request; the game can take about two minutes to exit after saving, then restarts and re-identifies. |
 | Player joined / left | ✅ | Left also arrives on a kick. |
 | Chat messages | ✅ | With the player and channel. |
 | Player death | ✅ | With the position. |
 | Entity killed | ✅ | Zombie kills with the weapon (none for bare hands), at most about 20 per second. |
 | Server log lines | ⚠️ | Off by default; set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`). |
-| Discord chat bridge | ⚠️ | Not checked. |
-| Modules | ✅ | Commands, hooks and replies, including teleports and economy. |
+| Discord chat bridge | ✅ | Player chat, joins and leaves reach Discord, and Discord messages show in game chat. Takaro's own messages come back as chat without a player, so use a bridge that skips those. |
+| Modules | ✅ | Chat commands such as `@balance`, module teleports, and module hooks and cron jobs that post to Discord. |
 | Game name, version and icon | ⚠️ | Not checked on takaro.io yet. |
 | Restarts and outages | ✅ | Re-identifies on its own after a server restart. |
 
