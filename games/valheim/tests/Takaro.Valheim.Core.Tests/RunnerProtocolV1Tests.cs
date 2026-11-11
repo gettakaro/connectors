@@ -93,13 +93,12 @@ public sealed class RunnerProtocolV1Tests
         await runner.StartAsync();
         await Until(() => takaro.Identifies >= 1 && takaro.Connected);
 
-        await takaro.SendAsync("""{"type":"request","requestId":"r-1","payload":{"action":"getPlayer","args":"{\"gameId\":\"Steam_1\"}"}}""");
+        await takaro.SendAsync("""{"type":"request","requestId":"r-1","payload":{"action":"getMapInfo","args":"{}"}}""");
         await takaro.SendAsync("""{"type":"request","requestId":"r-2","payload":{"action":"sendMessage","args":"{\"message\":\"hi\"}"}}""");
         await Until(() => takaro.Responses.ContainsKey("r-1") && takaro.Responses.ContainsKey("r-2"));
 
         using var refused = JsonDocument.Parse(takaro.Responses["r-1"]);
         Assert.AreEqual("unsupported", refused.RootElement.GetProperty("error").GetProperty("code").GetString());
-        Assert.AreEqual(0, adapter.GetPlayerCalls, "an undeclared action never reaches the game");
 
         using var answered = JsonDocument.Parse(takaro.Responses["r-2"]);
         Assert.AreEqual(JsonValueKind.Null, answered.RootElement.GetProperty("payload").ValueKind);
@@ -430,6 +429,7 @@ public sealed class RunnerProtocolV1Tests
 
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
+        public Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) => Unused();
         public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default)
         {

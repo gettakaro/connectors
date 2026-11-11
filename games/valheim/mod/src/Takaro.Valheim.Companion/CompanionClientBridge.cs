@@ -7,7 +7,7 @@ namespace Takaro.Valheim.Companion;
 
 internal sealed class CompanionClientBridge : IDisposable
 {
-    private const CompanionCapability SupportedCapabilities = CompanionCapability.Inventory;
+    private const CompanionCapability SupportedCapabilities = CompanionProtocol.KnownCapabilities;
     private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan InventoryRefreshInterval = TimeSpan.FromSeconds(20);
 
@@ -18,6 +18,7 @@ internal sealed class CompanionClientBridge : IDisposable
         SupportedCapabilities);
     private readonly Stopwatch monotonicClock = Stopwatch.StartNew();
     private readonly CompanionInventoryReader inventoryReader = new();
+    private readonly CompanionSkillsReader skillsReader = new();
     private readonly CompanionSendLimiter killVerdictLimiter = new(capacity: 4, refillPerSecond: 2);
     private CompanionCommandProbe? commandProbe;
     private ZNet? observedNetwork;
@@ -27,6 +28,7 @@ internal sealed class CompanionClientBridge : IDisposable
     private long activeServerUid;
     private long activeWorldUid;
     private TimeSpan nextInventoryPollAt;
+    private TimeSpan nextSkillsPollAt;
     private bool registrationAttempted;
     private bool registrationSucceeded;
     private bool hasActiveContext;
@@ -109,6 +111,7 @@ internal sealed class CompanionClientBridge : IDisposable
         }
 
         PollInventory(routedRpc, network, serverPeer);
+        PollSkills(routedRpc, network, serverPeer);
     }
 
     internal void AttachCommandProbe(CompanionCommandProbe probe) => commandProbe = probe;
@@ -340,6 +343,7 @@ internal sealed class CompanionClientBridge : IDisposable
         {
             state.Reset();
             inventoryReader.Reset();
+            skillsReader.Reset();
             var serverRange = CompanionEnvelopeCodec.TryDecodePayload<CompanionHello>(envelope, out var hello, out _) && hello is not null
                 ? CompanionVersionPolicy.DescribeRange(hello.MinimumVersion, hello.MaximumVersion)
                 : "unknown";
@@ -351,10 +355,12 @@ internal sealed class CompanionClientBridge : IDisposable
         {
             state.Reset();
             inventoryReader.Reset();
+            skillsReader.Reset();
             return;
         }
 
         inventoryReader.Reset();
+        skillsReader.Reset();
         nextInventoryPollAt = monotonicClock.Elapsed;
 
         log($"Takaro Valheim Inventory Companion negotiated protocol {prepared.Envelope.ProtocolVersion} with the connected server; reporting this character's inventory to it.");
@@ -400,6 +406,38 @@ internal sealed class CompanionClientBridge : IDisposable
         }
 
         inventoryReader.MarkSent(snapshot, now);
+    }
+
+    private void PollSkills(
+        ZRoutedRpc routedRpc,
+        ZNet network,
+        ZNetPeer serverPeer)
+    {
+        var now = monotonicClock.Elapsed;
+        if (!state.HasCapability(CompanionCapability.Skills)
+            || now < nextSkillsPollAt)
+        {
+            return;
+        }
+
+        nextSkillsPollAt = SaturatingAdd(now, InventoryPollInterval);
+        if (!skillsReader.TryReadChangedOrRefresh(
+                Player.m_localPlayer,
+                now,
+                InventoryRefreshInterval,
+                out var report)
+            || report is null
+            || !state.TryCreateReport(
+                CompanionMessageTypes.SkillsSnapshot,
+                report,
+                out var envelope)
+            || envelope is null
+            || !TrySendEnvelope(routedRpc, network, serverPeer, envelope))
+        {
+            return;
+        }
+
+        skillsReader.MarkSent(report, now);
     }
 
     private bool TrySendJson(
@@ -449,6 +487,7 @@ internal sealed class CompanionClientBridge : IDisposable
         commandProbe?.OnSessionReset("connection changed");
         state.ResetConnection();
         inventoryReader.Reset();
+        skillsReader.Reset();
         nextInventoryPollAt = TimeSpan.Zero;
     }
 

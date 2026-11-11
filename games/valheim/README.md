@@ -2,7 +2,8 @@
 
 A BepInEx plugin that runs inside a Valheim dedicated server and connects it to Takaro. Players
 do not install anything: they join with plain, unmodified Valheim. Only reading a player's
-inventory needs an optional mod on that player's game (see "Optional: inventory mod" in step 3).
+inventory and skills needs an optional mod on that player's game (see "Optional: inventory mod"
+in step 3).
 
 ## Install
 
@@ -46,9 +47,9 @@ copy the whole folder as-is:
     README.txt
 ```
 
-**Optional: inventory mod for players.** Everything except player inventory works without it.
-A player who wants Takaro to see their inventory installs it on their own game; nobody else
-needs it, and players without it play normally on the same server.
+**Optional: inventory mod for players.** Everything except player inventory and skills works
+without it. A player who wants Takaro to see their inventory and skills installs it on their own
+game; nobody else needs it, and players without it play normally on the same server.
 
 1. On the player's PC, install **BepInExPack Valheim 5.4.2351** into the Valheim game folder
    (`steamapps/common/Valheim`) and start the game once.
@@ -161,6 +162,8 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Player location | ✅ | The position the server knows; never invented. |
 | Teleport | ✅ | |
 | Player inventory | ⚠️ | Only for players with the optional inventory mod; not checked on this build. |
+| Characters | ✅ | Each character on an account is tracked on its own; needs no mod. |
+| Player levels and skills | ⚠️ | One track per skill, only for players with the optional inventory mod. Valheim has no character level, and it keeps skills on the player's PC, so the values are client-reported and show as player-asserted. |
 | Item list | ✅ | English in-game names (`Raspberries`, `Crude Bow`). |
 | Entity list | ✅ | English in-game names (`Boar`, `Hen`). |
 | Locations | ⚠️ | Sacrificial Stones, boss altars, Haldor, Hildir and the Bog Witch, after Resync Locations. Not checked on takaro.io yet. |

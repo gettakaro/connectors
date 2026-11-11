@@ -45,12 +45,13 @@ public static class ProtocolHandshake
 
     /// <summary>
     /// The live-supported actions of capabilities.json and their capability names.
-    /// getPlayer is unsupported and the version 0 map is schema-fallback, so a version 1 Takaro
-    /// never asks for them; testReachability is always allowed.
+    /// The version 0 map is schema-fallback, so a version 1 Takaro never asks for it;
+    /// testReachability is always allowed.
     /// </summary>
     public static IReadOnlyDictionary<string, string> ActionCapabilities { get; } = new Dictionary<string, string>
     {
         [TakaroActionNames.GetPlayers] = "players.list",
+        [TakaroActionNames.GetPlayer] = "players.get",
         [TakaroActionNames.GetPlayerLocation] = "players.location",
         [TakaroActionNames.GetPlayerInventory] = "players.inventory",
         [TakaroActionNames.TeleportPlayer] = "players.teleport",
@@ -76,6 +77,27 @@ public static class ProtocolHandshake
         [TakaroActionNames.ListLocations] = "locations.list",
     };
 
+    /// <summary>
+    /// Skills live in the character file on the game client, so the readings come from the
+    /// optional client mod and a player could spoof them. Takaro needs to know that.
+    /// </summary>
+    public static JsonObject CreateProgressionCapability() => new()
+    {
+        ["name"] = "players.progression",
+        ["parameters"] = new JsonObject { ["source"] = "client-reported" }
+    };
+
+    /// <summary>
+    /// A player picks a character on their own PC and can switch at every join, so the characters
+    /// are client-held. A death never ends one: even on the harshest world modifiers the
+    /// character lives on, so <c>ends</c> is not declared.
+    /// </summary>
+    public static JsonObject CreateCharactersCapability() => new()
+    {
+        ["name"] = "players.characters",
+        ["parameters"] = new JsonObject { ["held"] = "client" }
+    };
+
     public static JsonArray BuildCapabilityManifest(GameProfile? profile = null, bool includeMap = false)
     {
         var manifest = new JsonArray();
@@ -83,6 +105,9 @@ public static class ProtocolHandshake
         {
             manifest.Add(new JsonObject { ["name"] = capability });
         }
+
+        manifest.Add(CreateProgressionCapability());
+        manifest.Add(CreateCharactersCapability());
 
         foreach (var eventType in GameEventTypes.All)
         {
@@ -105,6 +130,7 @@ public static class ProtocolHandshake
     /// <summary>Whether a version 1 connection may run the action; Takaro refuses the rest itself.</summary>
     public static bool IsDeclared(string action, GameProfile? profile = null, bool mapDeclared = false) =>
         action == TakaroActionNames.TestReachability
+        || action == TakaroActionNames.GetPlayerProgression
         || ActionCapabilities.ContainsKey(action)
         || VersionOneActionCapabilities.ContainsKey(action)
         || (action == TakaroActionNames.GetGameIcon && profile?.IconRevision is not null)
