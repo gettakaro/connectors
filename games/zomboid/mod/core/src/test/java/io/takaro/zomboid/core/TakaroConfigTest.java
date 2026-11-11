@@ -13,9 +13,9 @@ class TakaroConfigTest {
         assertNull(config.getIdentityToken());
         assertNull(config.getRegistrationToken());
         assertTrue(config.isReconnectEnabled());
-        assertEquals(5000, config.getReconnectDelay());
-        assertEquals(300000, config.getMaxReconnectDelay());
-        assertEquals(1.5, config.getBackoffMultiplier());
+        assertEquals(2000, config.getReconnectDelay());
+        assertEquals(60000, config.getMaxReconnectDelay());
+        assertEquals(2.0, config.getBackoffMultiplier());
         assertFalse(config.isDebugEnabled());
     }
 

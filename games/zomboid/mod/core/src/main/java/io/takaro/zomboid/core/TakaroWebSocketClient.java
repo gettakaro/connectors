@@ -39,7 +39,14 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         t.setDaemon(true);
         return t;
     });
-    private volatile long currentReconnectDelay;
+    /**
+     * Seconds without a pong to Java-WebSocket's ping before the link counts as dead (it pings
+     * every this many seconds and closes after 1.5x without a pong), so a half-open socket is
+     * noticed within 15-25 s and then takes the fast reconnect. Takaro sends no app-level ping.
+     */
+    static final int CONNECTION_LOST_TIMEOUT_SECONDS = 10;
+
+    private final ReconnectPolicy reconnectPolicy;
     private volatile boolean shouldReconnect = true;
     // Set once a config change or shutdown replaced this client: it must not reconnect,
     // identify or hand events to the game any more, whatever its socket thread still does.
@@ -55,7 +62,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         this.adapter = adapter;
         this.config = config;
         this.outbox = outbox;
-        this.currentReconnectDelay = config.getReconnectDelay();
+        this.reconnectPolicy = new ReconnectPolicy(config);
+        setConnectionLostTimeout(CONNECTION_LOST_TIMEOUT_SECONDS);
     }
 
     /** The protocol version negotiated on the current connection (0 until identified). */
@@ -108,7 +116,6 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                     break;
                 case "authenticated":
                     adapter.logInfo("Authentication confirmed");
-                    currentReconnectDelay = config.getReconnectDelay();
                     break;
                 case "request":
                     handleRequest(json);
@@ -493,7 +500,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             return;
         }
 
-        currentReconnectDelay = config.getReconnectDelay();
+        reconnectPolicy.onIdentified();
 
         // Older Takaro sends no protocolVersion: that is protocol 0.
         protocolVersion = config.isProtocolV1Enabled() ? Math.max(0, optInt(payload, "protocolVersion", 0)) : 0;
@@ -1062,7 +1069,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void scheduleReconnect() {
-        adapter.logInfo("Reconnecting in " + (currentReconnectDelay / 1000) + "s...");
+        ReconnectPolicy.Delay delay = reconnectPolicy.nextDelay();
+        adapter.logInfo("Reconnecting in " + delay.describe() + "...");
         try {
             scheduler.schedule(() -> {
                 if (!shouldReconnect || retired) return;
@@ -1071,14 +1079,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            }, currentReconnectDelay, TimeUnit.MILLISECONDS);
+            }, delay.millis(), TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException e) {
-            return; // retired or shut down between the close and this call
+            // retired or shut down between the close and this call
         }
-
-        currentReconnectDelay = Math.min(
-                (long) (currentReconnectDelay * config.getBackoffMultiplier()),
-                config.getMaxReconnectDelay()
-        );
     }
 }
