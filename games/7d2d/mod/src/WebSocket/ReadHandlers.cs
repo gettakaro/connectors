@@ -220,6 +220,22 @@ namespace Takaro.WebSocket
             Send(WebSocketMessage.CreateResponse(requestId, icon));
         }
 
+        public static void GetItemIcons(string requestId, TakaroGetItemIconsArgs args)
+        {
+            string invalid = ItemIconCatalog.ValidateRequest(args?.Hashes);
+            if (invalid != null)
+            {
+                SendError(requestId, invalid, ProtocolErrorCodes.InvalidArgs);
+                return;
+            }
+
+            List<ItemIconEntry> icons = ItemIconCatalog.Current.Serve(args.Hashes);
+            LogService.Instance.Info(
+                $"getItemIcons: {args.Hashes.Count} requested, {icons.Count} served"
+            );
+            Send(WebSocketMessage.CreateResponse(requestId, icons.ToArray()));
+        }
+
         /// <summary>
         /// The v1 tile frame of this server, or null when it has no map: the
         /// server neither renders tiles nor has a tile cache. Read at identify

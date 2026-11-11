@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using HarmonyLib;
 using Takaro.Config;
 using Takaro.Persistence;
@@ -127,6 +129,10 @@ namespace Takaro
             // wait for the writes: on V3.3.0 they took longer than 30 s at
             // startup, and a timeout here left the server offline for good.
             StateMirror.Instance.SeedOnGameStart();
+            List<string> iconDirectories = ItemIconCatalog.IconDirectories(
+                GameIO.GetGameDir(string.Empty),
+                ModManager.GetLoadedMods().Select(mod => mod.Path)
+            );
             DbWriter.Instance.WhenDrained(succeeded =>
             {
                 if (_gameShuttingDown)
@@ -135,9 +141,30 @@ namespace Takaro
                     LogService.Instance.Error(
                         "A state mirror write failed during startup; connecting anyway"
                     );
+                BuildItemIconCatalog(iconDirectories);
                 StateMirror.Instance.MarkGameReady();
                 WebSocketTransport.Instance.Initialize();
             });
+        }
+
+        /// <summary>
+        /// Runs on a pool thread and before the WebSocket connects, so the first
+        /// listItems already carries the hashes and the game thread never reads a file.
+        /// </summary>
+        private static void BuildItemIconCatalog(List<string> directories)
+        {
+            try
+            {
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                ItemIconCatalog.Current = ItemIconCatalog.Build(directories);
+                LogService.Instance.Info(
+                    $"Item icons: {ItemIconCatalog.Current.IconCount} PNGs hashed in {stopwatch.ElapsedMilliseconds} ms"
+                );
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Warn($"Could not read the item icons: {ex.Message}");
+            }
         }
 
         private static void GameUpdate(ref ModEvents.SGameUpdateData data)

@@ -178,6 +178,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 | Player inventory | ✅ | |
 | Player levels and skills | ⚠️ | Character level with experience, plus every attribute, perk and crafting skill as its own track. The game client owns these values and reports them to the server, so Takaro marks them client-reported. |
 | Item list | ✅ | Player-facing names; internal entries without a name are left out but can still be given by code. A server set up with an older version keeps those old rows. |
+| Item icons | ⚠️ | Real icons from the server's files and installed mods reach Takaro with no setup. Items the game tints when it draws them keep Takaro's own icon. |
 | Entity list | ✅ | With in-game names. |
 | Locations | ⚠️ | The connector collects the points of interest; not checked in Takaro yet. |
 | World map | ✅ | Needs `EnableMapRendering` (see Configure). North up, players at their position; unexplored areas stay empty. |

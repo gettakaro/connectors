@@ -55,6 +55,9 @@ namespace Takaro
 
         [JsonProperty("quality")]
         public string Quality { get; set; }
+
+        [JsonProperty("iconHash", NullValueHandling = NullValueHandling.Ignore)]
+        public string IconHash { get; set; }
     }
 
     public class TakaroEntity

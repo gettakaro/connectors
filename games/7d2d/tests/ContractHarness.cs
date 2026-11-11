@@ -3997,6 +3997,11 @@ namespace Takaro.Services
             Messages.Add(message);
         }
 
+        public void Info(string message)
+        {
+            Messages.Add(message);
+        }
+
         public void Warn(string message)
         {
             Messages.Add(message);

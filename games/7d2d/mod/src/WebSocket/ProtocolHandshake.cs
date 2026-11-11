@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Takaro.Services;
@@ -73,6 +74,8 @@ namespace Takaro.WebSocket
 
         public const string ProgressionCapability = "players.progression";
 
+        public const string GetItemIconsAction = "getItemIcons";
+
         // The client owns a player's progression: it earns the XP and sends the server its
         // level, perks and crafting skills, and the server keeps what it is told.
         public const string ProgressionSource = "client-reported";
@@ -94,6 +97,7 @@ namespace Takaro.WebSocket
             { "teleportPlayer", "players.teleport" },
             { "listItems", "items.list" },
             { "giveItem", "items.give" },
+            { GetItemIconsAction, "items.icons" },
             { "listEntities", "entities.list" },
             { "listLocations", "locations.list" },
             { "sendMessage", "chat.send" },
@@ -155,6 +159,12 @@ namespace Takaro.WebSocket
             return manifest;
         }
 
+        /// <summary>A server holding no item art does not claim items.icons.</summary>
+        public static IEnumerable<string> DeclaredActions(bool hasItemIcons) =>
+            RequestRouter.SupportedActions.Where(action =>
+                hasItemIcons || action != GetItemIconsAction
+            );
+
         public static Dictionary<string, object> BuildIdentifyPayload(
             string registrationToken,
             string identityToken
@@ -168,7 +178,7 @@ namespace Takaro.WebSocket
                 {
                     "capabilities",
                     BuildCapabilityManifest(
-                        RequestRouter.SupportedActions,
+                        DeclaredActions(ItemIconCatalog.Current.IconCount > 0),
                         ReadHandlers.CurrentMapCapability(),
                         ReadHandlers.CurrentCharactersCapability()
                     )

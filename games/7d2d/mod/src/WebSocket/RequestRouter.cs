@@ -46,6 +46,11 @@ namespace Takaro.WebSocket
         public string GameId { get; set; }
     }
 
+    public class TakaroGetItemIconsArgs
+    {
+        public List<string> Hashes { get; set; }
+    }
+
     public class TakaroGiveItemArgs
     {
         public TakaroPlayerReference Player { get; set; }
@@ -170,6 +175,7 @@ namespace Takaro.WebSocket
             "teleportPlayer",
             "shutdown",
             "getGameIcon",
+            ProtocolHandshake.GetItemIconsAction,
         };
 
         public static void Route(string message)
@@ -389,6 +395,12 @@ namespace Takaro.WebSocket
                         break;
                     case "getGameIcon":
                         ReadHandlers.GetGameIcon(requestId);
+                        break;
+                    case ProtocolHandshake.GetItemIconsAction:
+                        ReadHandlers.GetItemIcons(
+                            requestId,
+                            WebSocketArgs<TakaroGetItemIconsArgs>.Parse(args)
+                        );
                         break;
                     default:
                         LogService.Instance.Warn($"Unknown message type: {action}");

@@ -446,6 +446,19 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn(r"src\WebSocket\ProtocolHandshake.cs", project)
         self.assertIn("/app/mod/src/WebSocket/ProtocolHandshake.cs", harness)
 
+    def test_item_icons_are_ready_before_the_socket_connects(self):
+        api = self.source("src/API.cs")
+        self.assertLess(
+            api.index("BuildItemIconCatalog(iconDirectories);"),
+            api.index("WebSocketTransport.Instance.Initialize();"),
+        )
+
+    def test_listed_items_carry_the_hash_of_their_icon(self):
+        mirror = self.source("src/Services/StateMirror.cs")
+        self.assertIn("IconName = ServableIconName(item),", mirror)
+        self.assertIn("item.GetIconTint() == UnityEngine.Color.white", mirror)
+        self.assertIn("IconHash = icons.HashFor(record.IconName),", mirror)
+
 
 if __name__ == "__main__":
     unittest.main()
