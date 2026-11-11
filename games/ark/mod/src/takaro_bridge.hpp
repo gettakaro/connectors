@@ -9,6 +9,7 @@
 // None of them is the game thread; the game thread only touches gate::Server.
 #include "gate_state.hpp"
 #include "json.hpp"
+#include "reconnect_policy.hpp"
 #include "takaro_adapter.hpp"
 #include "takaro_store.hpp"
 #include "ws_client.hpp"
@@ -46,8 +47,13 @@ struct Config {
   std::chrono::milliseconds ping_interval{5000};
   std::chrono::milliseconds idle_timeout{20000};
   unsigned max_missed_pongs = 2;
+  // Reconnect policy (reconnect_policy.hpp): fast retry after a stable session,
+  // jittered exponential backoff on consecutive failures.
+  std::chrono::milliseconds reconnect_fast{250};
+  std::chrono::milliseconds reconnect_fast_jitter{750};
   std::chrono::milliseconds reconnect_base{2000};
   std::chrono::milliseconds reconnect_max{60000};
+  std::chrono::milliseconds connection_stable_after{10000};
   std::chrono::milliseconds pump_interval{250};
   std::chrono::milliseconds reconcile_interval{1000};
   size_t workers = 4;
@@ -273,12 +279,17 @@ class Bridge {
   std::atomic<bool> identified_{false};
   std::atomic<int> protocol_version_{0};
   std::atomic<uint64_t> connections_{0};
-  unsigned attempts_ = 0;
+  ReconnectPolicy policy_{ReconnectPolicy::Settings{config_.reconnect_fast, config_.reconnect_fast_jitter,
+                                                     config_.reconnect_base, config_.reconnect_max,
+                                                     config_.connection_stable_after}};
   uint64_t send_id_ = 0;
   uint64_t confirmed_id_ = 0;
   uint64_t ping_id_ = 0;
   std::deque<Ping> pings_;
   std::deque<InFlight> in_flight_;
+  // Requests Takaro sent on this connection before its identifyResponse arrived.
+  // Run once identify is accepted (with the negotiated protocol version), dropped on disconnect.
+  std::vector<Request> before_identify_;
   std::atomic<uint64_t> scan_{0};
   std::atomic<uint64_t> persisted_{0};
   std::chrono::steady_clock::time_point last_activity_{};
@@ -366,17 +377,13 @@ class Bridge {
     ++epoch_;
     pings_.clear();
     in_flight_.clear();
+    before_identify_.clear();
     scan_ = persisted_.load();  // unconfirmed events are replayed (at-least-once)
     {
       std::lock_guard<std::mutex> lock(out_mutex_);
       outbound_.clear();
     }
     set_error(why);
-  }
-
-  std::chrono::milliseconds backoff() const {
-    auto delay = config_.reconnect_base * (1LL << std::min(attempts_, 10u));
-    return std::min<std::chrono::milliseconds>(delay, config_.reconnect_max);
   }
 
   void io_loop() {
@@ -411,9 +418,9 @@ class Bridge {
         options.ca_file = config_.ca_file;
         log("takaro-ws-connecting " + url->host);
         if (!conn_.open(*url, options, error)) {
-          const auto delay = backoff();
-          ++attempts_;
-          log("takaro-ws-connect-failed " + error + " retry-ms=" + std::to_string(delay.count()));
+          const auto delay = policy_.failed();
+          log("takaro-ws-connect-failed " + error + " retry-ms=" + std::to_string(delay.count()) +
+              " streak=" + std::to_string(policy_.streak()));
           set_error(error);
           next_attempt = std::chrono::steady_clock::now() + delay;
           continue;
@@ -422,6 +429,7 @@ class Bridge {
         ++epoch_;
         pings_.clear();
         in_flight_.clear();
+        before_identify_.clear();
         scan_ = persisted_.load();
         last_activity_ = std::chrono::steady_clock::now();
         next_ping_ = last_activity_ + config_.ping_interval;
@@ -433,10 +441,9 @@ class Bridge {
       if (r < 0 && errno != EINTR) { disconnect("poll failed"); continue; }
       if (fds[1].revents & POLLIN) { uint64_t v; (void)!read(wake_fd_, &v, sizeof(v)); }
       if (!step()) {
-        const auto delay = backoff();
-        ++attempts_;
+        const auto delay = policy_.dropped(std::chrono::steady_clock::now());
         next_attempt = std::chrono::steady_clock::now() + delay;
-        log("takaro-ws-reconnect-in-ms " + std::to_string(delay.count()));
+        log("takaro-ws-reconnect-in-ms " + std::to_string(delay.count()) + " streak=" + std::to_string(policy_.streak()));
       }
     }
     if (conn_.is_open()) {
@@ -609,8 +616,18 @@ class Bridge {
       if (const auto* v = payload.get("protocolVersion"); v && v->is_number() && v->as_number() == 1) version = 1;
       protocol_version_ = version;
       adapter_.set_protocol_version(version);
-      attempts_ = 0;
+      policy_.identified(std::chrono::steady_clock::now());
       identified_ = true;
+      if (!before_identify_.empty()) {
+        log("takaro-requests-before-identify " + std::to_string(before_identify_.size()) + " now handled");
+        {
+          std::lock_guard<std::mutex> lock(requests_mutex_);
+          for (auto& r : before_identify_)
+            if (requests_.size() < 64) requests_.push_back(std::move(r));
+        }
+        before_identify_.clear();
+        requests_cv_.notify_all();
+      }
       next_pump_ = std::chrono::steady_clock::now();
       log("takaro-identified gameServerId=" + id + " protocolVersion=" + std::to_string(version));
       return;
@@ -639,6 +656,10 @@ class Bridge {
       if (const auto* action = payload.get("action"); action && action->is_string()) request.action = action->as_string();
       if (payload.has_key("args")) {
         for (const auto& [k, v] : payload.as_object()) if (k == "args") request.args = v;
+      }
+      if (!identified_.load()) {
+        if (before_identify_.size() < 64) before_identify_.push_back(std::move(request));
+        return;
       }
       {
         std::lock_guard<std::mutex> lock(requests_mutex_);

@@ -212,7 +212,10 @@ class Connection {
   Connection() = default;
   Connection(const Connection&) = delete;
   Connection& operator=(const Connection&) = delete;
-  ~Connection() { close_now(); }
+  ~Connection() {
+    close_now();
+    if (ctx_) SSL_CTX_free(ctx_);
+  }
 
   // Blocking (bounded by options.timeout) connect + TLS + upgrade. On failure the
   // connection is closed and `error` names the stage without any secret.
@@ -306,7 +309,6 @@ class Connection {
 
   void close_now() {
     if (ssl_) { SSL_free(ssl_); ssl_ = nullptr; }
-    if (ctx_) { SSL_CTX_free(ctx_); ctx_ = nullptr; }
     if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
     open_ = false;
     eof_ = false;
@@ -322,7 +324,9 @@ class Connection {
  private:
   Options options_;
   int fd_ = -1;
+  // Kept across reconnects: parsing the CA bundle costs hundreds of ms per connect.
   SSL_CTX* ctx_ = nullptr;
+  std::string ctx_ca_;
   SSL* ssl_ = nullptr;
   bool open_ = false;
   bool eof_ = false;
@@ -407,19 +411,25 @@ class Connection {
   bool start_tls(const Url& url, std::chrono::steady_clock::time_point deadline, std::string& error) {
     OPENSSL_init_ssl(OPENSSL_INIT_NO_LOAD_CONFIG | OPENSSL_INIT_LOAD_SSL_STRINGS |
                      OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
-    ctx_ = SSL_CTX_new(TLS_client_method());
-    if (!ctx_) { error = "tls: context " + ssl_error_text(); return false; }
-    SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
-    SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
     std::string ca = options_.ca_file;
     if (ca.empty()) {
       for (const char* candidate : kCaCandidates)
         if (readable(candidate)) { ca = candidate; break; }
     }
     if (ca.empty() || !readable(ca)) { error = "tls: no readable CA bundle (set TAKARO_CA_FILE)"; return false; }
-    if (SSL_CTX_load_verify_locations(ctx_, ca.c_str(), nullptr) != 1) {
-      error = "tls: CA bundle unusable " + ssl_error_text();
-      return false;
+    if (!ctx_ || ctx_ca_ != ca) {
+      if (ctx_) { SSL_CTX_free(ctx_); ctx_ = nullptr; }
+      SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+      if (!ctx) { error = "tls: context " + ssl_error_text(); return false; }
+      SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+      SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
+      if (SSL_CTX_load_verify_locations(ctx, ca.c_str(), nullptr) != 1) {
+        SSL_CTX_free(ctx);
+        error = "tls: CA bundle unusable " + ssl_error_text();
+        return false;
+      }
+      ctx_ = ctx;
+      ctx_ca_ = ca;
     }
     ssl_ = SSL_new(ctx_);
     if (!ssl_) { error = "tls: session " + ssl_error_text(); return false; }
