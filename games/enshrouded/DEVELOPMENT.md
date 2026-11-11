@@ -31,7 +31,10 @@ in-process (`PluginCall`). Threads:
 - **transport** (`transport_winhttp.cpp`): WinHTTP in **async** mode, the only mode that passed the G0 probe under
   GE-Proton10-30 (sync receives cannot be cancelled and sync sends wedge under Takaro's protocol pings). Per
   connection ("epoch") one supervisor, one send thread (one send outstanding, buffer alive until WRITE_COMPLETE) and
-  one receive thread. Reconnect backoff 2 s doubling to 60 s, reset on identify. Application heartbeat: Takaro
+  one receive thread. Reconnect (`ReconnectPolicy` in `transport.cpp`): losing a connection that was identified
+  and stayed up 10 s is retried after 250-750 ms (random), so Takaro sees the server back within about 2 s;
+  only consecutive failures back off, 2 s doubling to 60 s, each delay a random point in its upper half; an
+  established connection resets the streak. Application heartbeat: Takaro
   answers `{"type":"ping"}` with `{"type":"pong"}` in order; a ping every 5 s (plus one 1 s after an event burst),
   and 20 s without any message closes the link (WinHTTP's receive timeout does not apply to WebSockets under Wine).
   TLS: system trust, or only the root in `TAKARO_CA_FILE`/`caFile` (pinned root, hostname and dates checked);
@@ -371,7 +374,7 @@ instead of creating an empty tree and a directory named `dbghelp.dll`.
 |---|---|---|
 | `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN` | game container (plugin) | native connector; or `identityToken` / `registrationToken` in `takaro\plugin.json`. Without a registration token the connection stays off, the console shows a banner and `/health` says why; an empty file identity is generated (see Configuration) |
 | `TAKARO_SERVER_NAME`, `TAKARO_WS_URL`, `TAKARO_CA_FILE` | game container (plugin) | or `name`, `url`, `caFile` in `plugin.json`; defaults: see Configuration, `wss://connect.takaro.io/`, system trust. Relative `caFile` resolves against the server dir |
-| `TAKARO_RECONNECT_BASE_MS`, `TAKARO_RECONNECT_MAX_MS` | game container (plugin) | reconnect backoff, default 2000 / 60000 |
+| `TAKARO_RECONNECT_BASE_MS`, `TAKARO_RECONNECT_MAX_MS` | game container (plugin) | backoff for consecutive connect failures, default 2000 / 60000; the first retry after an established connection drops is always 250-750 ms |
 | `TAKARO_ACTION_TIMEOUT_MS`, `TAKARO_ACTION_WORKERS`, `TAKARO_POLL_INTERVAL_MS` | game container (plugin) | default 30000 / 4 / 250 |
 | `TAKARO_STATE_DIR`, `TAKARO_ONLINE_FILE`, `TAKARO_CURSOR_FILE` | game container (plugin) | connector state (default `takaro\connector-state`), online-player file, sidecar cursor to import once |
 | `TAKARO_NATIVE_DISABLE=1`, `TAKARO_LEGACY_HTTP=1` | game container (plugin) | turn the native connection off; serve the action routes over HTTP for the legacy sidecar |

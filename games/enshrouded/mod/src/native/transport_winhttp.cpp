@@ -254,7 +254,17 @@ static void CALLBACK StatusCallback(HINTERNET h, DWORD_PTR ctx, DWORD status, LP
     }
 }
 
-WinHttpTransport::WinHttpTransport(Options o) : o_(std::move(o)), hb_(o_.heartbeat) { url_ = o_.url; }
+static ReconnectPolicy::Params PolicyParams(const WinHttpTransport::Options& o) {
+    ReconnectPolicy::Params p;
+    p.baseMs = o.reconnectBaseMs;
+    p.maxMs = o.reconnectMaxMs;
+    return p;
+}
+
+WinHttpTransport::WinHttpTransport(Options o)
+    : o_(std::move(o)), policy_(PolicyParams(o_), 0), hb_(o_.heartbeat) {
+    url_ = o_.url;
+}
 
 WinHttpTransport::~WinHttpTransport() { Stop(); }
 
@@ -304,7 +314,7 @@ void WinHttpTransport::RequestClose(uint64_t epoch, const std::string& reason) {
 
 void WinHttpTransport::MarkIdentified(uint64_t epoch) {
     std::lock_guard<std::mutex> g(mu_);
-    if (cur_ && cur_->id == epoch) attempts_ = 0;
+    if (cur_ && cur_->id == epoch) policy_.OnIdentified(Now());
 }
 
 void WinHttpTransport::Retarget(const std::string& url, bool connect) {
@@ -314,7 +324,7 @@ void WinHttpTransport::Retarget(const std::string& url, bool connect) {
         connect_ = connect;
         generation_++;
         retargeted_ = true;
-        attempts_ = 0;
+        policy_.Reset();
         if (cur_ && !cur_->dead) {
             cur_->dead = true;
             cur_->why = "connection settings changed";
@@ -345,7 +355,7 @@ std::string WinHttpTransport::StatsJson() {
         .Raw("epoch", std::to_string(epoch_))
         .N("connects", (double)connects_)
         .N("connectFailures", (double)connectFailures_)
-        .N("backoffAttempts", attempts_)
+        .N("backoffAttempts", policy_.Streak())
         .N("reconnectInMs", !open_ && nextAttemptAtMs_ > now ? (double)(nextAttemptAtMs_ - now) : 0)
         .N("connectedForMs", open_ ? (double)(now - openedAtMs_) : 0)
         .Raw("queued", ObjBuilder()
@@ -402,16 +412,19 @@ void WinHttpTransport::Supervisor() {
         if (stopping_) break;
         RunEpoch();
         if (stopping_) break;
-        unsigned delay;
+        unsigned delay, streak;
+        bool established = false;
         {
             std::lock_guard<std::mutex> g(mu_);
             if (retargeted_) continue;  // new settings: connect again at once
-            uint64_t d = (uint64_t)o_.reconnectBaseMs << std::min(attempts_, 20u);
-            delay = (unsigned)std::min<uint64_t>(d, o_.reconnectMaxMs);
-            attempts_++;
+            delay = policy_.NextDelayMs(Now(), &established);
+            streak = policy_.Streak();
             nextAttemptAtMs_ = Now() + delay;
         }
-        PluginLog("native: reconnecting to Takaro in %ums", delay);
+        if (established)
+            PluginLog("native: reconnecting to Takaro in %ums (established connection lost)", delay);
+        else
+            PluginLog("native: reconnecting to Takaro in %ums (failure %u in a row)", delay, streak);
         std::unique_lock<std::mutex> l(mu_);
         supCv_.wait_for(l, std::chrono::milliseconds(delay), [&] { return stopping_.load() || retargeted_; });
         nextAttemptAtMs_ = 0;

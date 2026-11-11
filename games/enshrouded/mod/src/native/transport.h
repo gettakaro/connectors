@@ -44,7 +44,8 @@ public:
     virtual void Stop() = 0;
     virtual QueueStatus Queue(OutFrame frame) = 0;
     virtual void RequestClose(uint64_t epoch, const std::string& reason) = 0;
-    // Identify succeeded on this epoch: reset the reconnect backoff.
+    // Identify succeeded on this epoch: once it has stayed up for ReconnectPolicy's stable window,
+    // its loss is retried fast and ends any failure streak.
     virtual void MarkIdentified(uint64_t epoch) = 0;
     // New connection settings: drop the current connection and, when `connect`, open a new one to
     // `url` at once (no backoff); otherwise stay idle until the next Retarget.
@@ -84,6 +85,37 @@ private:
 // event outbox id written before it, and its pong confirms exactly that. A lost pong only delays
 // confirmation (a later pong pops an older entry); it can never confirm an event written after the ping.
 // Not thread-safe; the owner locks.
+// When to reconnect after a connection ends (gettakaro/connectors#858). A connection that was identified
+// and then stayed up for stableMs is "established": losing it is retried after fastMinMs + [0, fastJitterMs]
+// (well under 2 s, jittered so a Takaro deploy does not bring every server back at the same instant) and the
+// failure streak resets. Any other end (connect failed, closed before identify, dropped within stableMs) adds
+// to the streak: base * 2^(streak-1), capped at maxMs, with equal jitter (a random point in [d/2, d]).
+// Not thread-safe; the owner locks.
+class ReconnectPolicy {
+public:
+    struct Params {
+        unsigned baseMs = 2000, maxMs = 60000;      // TAKARO_RECONNECT_BASE_MS / _MAX_MS
+        unsigned fastMinMs = 250, fastJitterMs = 500;
+        int64_t stableMs = 10000;                    // like 7D2D's CONNECTION_STABLE_SECONDS
+    };
+    ReconnectPolicy() : ReconnectPolicy(Params{}, 0) {}
+    // seed 0 = seed from the clock and the object address
+    ReconnectPolicy(Params p, uint64_t seed);
+    void OnIdentified(int64_t nowMs);  // identify accepted on the current connection
+    void Reset();                      // new settings: the streak no longer applies
+    // Call once per ended connection or failed attempt. Returns the delay before the next attempt and
+    // whether the ended connection counted as established.
+    unsigned NextDelayMs(int64_t nowMs, bool* established = nullptr);
+    unsigned Streak() const { return streak_; }
+
+private:
+    unsigned Rand(unsigned maxInclusive);
+    Params p_;
+    uint64_t rng_;
+    unsigned streak_ = 0;
+    int64_t identifiedAtMs_ = -1;
+};
+
 class Heartbeat {
 public:
     struct Params {
