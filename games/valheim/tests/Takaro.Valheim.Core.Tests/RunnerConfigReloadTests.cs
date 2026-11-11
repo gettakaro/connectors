@@ -47,7 +47,7 @@ public sealed class RunnerConfigReloadTests
     {
         using var takaro = new FakeTakaro();
         var logs = new Log();
-        // A 30 s first backoff: only skipping it can connect within the wait below.
+        // A first backoff of at least 7.5 s: only skipping it can connect within the wait below.
         using var runner = Runner(takaro, "bad", "id-1", logs, backoffUnit: TimeSpan.FromSeconds(15));
         await runner.StartAsync();
 

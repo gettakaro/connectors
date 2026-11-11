@@ -35,7 +35,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan IdentifyTimeout = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan MaximumBackoff = TimeSpan.FromSeconds(60);
+    private readonly Random jitter = new();
+    // When Takaro accepted this connection's identify; null until it does.
+    private DateTimeOffset? identifiedAt;
     private DateTimeOffset connectedAt = DateTimeOffset.MaxValue;
     private static readonly string PingFrame = """{"type":"ping"}""";
     private DateTimeOffset oldestUnansweredPingAt = DateTimeOffset.MaxValue;
@@ -63,7 +65,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
         this.config = config;
         this.profile = profile;
         this.worldMap = worldMap;
-        this.backoffUnit = backoffUnit ?? TimeSpan.FromSeconds(1);
+        this.backoffUnit = backoffUnit ?? ReconnectPolicy.DefaultBackoffUnit;
         this.configPath = configPath;
         this.adapter = adapter;
         this.mainThreadActions = mainThreadActions ?? InlineMainThreadActionScheduler.Instance;
@@ -286,7 +288,8 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
     private async Task RunAsync(CancellationToken shutdownToken)
     {
-        var attempt = 0;
+        // Attempts that failed since the last stable connection (ReconnectPolicy).
+        var failureStreak = 0;
         var rejections = 0;
         var tokenBannerVersion = -1;
         while (!shutdownToken.IsCancellationRequested)
@@ -329,6 +332,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
                 using var client = new ClientWebSocket();
                 identified = false;
+                identifiedAt = null;
                 protocolVersion = 0;
                 lock (heartbeatLock)
                 {
@@ -354,9 +358,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
                 // A connect into a black-holed route can hang for minutes on Mono; give up after
                 // 15 s and let the backoff loop try again.
-                if (attempt > 0)
+                if (failureStreak > 0)
                 {
-                    log($"Takaro Valheim WebSocket reconnect attempt {attempt}.");
+                    log($"Takaro Valheim WebSocket reconnect attempt {failureStreak}.");
                 }
 
                 await WithTimeout(
@@ -369,7 +373,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 log("Takaro Valheim WebSocket connected.");
                 await SendAsync(client, TakaroProtocol.CreateIdentify(current, profile, worldMap is not null), cancellationToken);
                 log("Takaro Valheim identify sent.");
-                attempt = 0;
 
                 using var lifecycleShutdown = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var lifecycleLoop = Task.Run(() => PollPlayerLifecycleAsync(client, lifecycleShutdown.Token), cancellationToken);
@@ -388,6 +391,9 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     {
                     }
                 }
+
+                // Takaro closed the socket cleanly; still a drop, so the same policy applies.
+                await WaitForRetryAsync(RetryDelayAfterDrop(ref failureStreak, "closed by Takaro"), cancellationToken);
             }
             catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
             {
@@ -396,13 +402,14 @@ public sealed class TakaroWebSocketRunner : IDisposable
             catch (Exception) when (SettingsChangedSince(version))
             {
                 // A new token or URL: connect again at once, with a fresh backoff.
-                attempt = 0;
+                failureStreak = 0;
                 rejections = 0;
             }
             catch (IdentifyRejectedException rejected)
             {
                 rejections++;
-                var delay = Backoff(rejections);
+                // A rejection is a config problem, not a network cut: start two steps up.
+                var delay = ReconnectPolicy.NextDelay(rejections + 2, backoffUnit, NextJitter());
                 if (rejected.Message.IndexOf("409", StringComparison.Ordinal) >= 0)
                 {
                     Banner(
@@ -421,9 +428,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             }
             catch (Exception ex)
             {
-                attempt++;
-                log($"Takaro Valheim WebSocket reconnect after error: {ex.Message}");
-                await WaitForRetryAsync(Backoff(attempt), cancellationToken);
+                await WaitForRetryAsync(RetryDelayAfterDrop(ref failureStreak, ex.Message), cancellationToken);
             }
             finally
             {
@@ -442,7 +447,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
             if (SettingsChangedSince(version))
             {
-                attempt = 0;
+                failureStreak = 0;
                 rejections = 0;
             }
         }
@@ -456,10 +461,26 @@ public sealed class TakaroWebSocketRunner : IDisposable
         }
     }
 
-    private TimeSpan Backoff(int attempt) =>
-        TimeSpan.FromMilliseconds(Math.Min(
-            Math.Max(MaximumBackoff.TotalMilliseconds, backoffUnit.TotalMilliseconds),
-            backoffUnit.TotalMilliseconds * Math.Pow(2, Math.Min(attempt, 16))));
+    // A drop of an identified, stable connection retries within a second; anything else extends
+    // the failure streak and backs off. Runs before the finally block clears identified.
+    private TimeSpan RetryDelayAfterDrop(ref int failureStreak, string reason)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var wasIdentified = identifiedAt;
+        failureStreak = ReconnectPolicy.WasStable(wasIdentified, now) ? 0 : failureStreak + 1;
+        var delay = ReconnectPolicy.NextDelay(failureStreak, backoffUnit, NextJitter());
+        var uptime = wasIdentified is { } at ? $"identified {(now - at).TotalSeconds:0.0} s" : "never identified";
+        log($"Takaro Valheim WebSocket dropped ({reason}; {uptime}); reconnecting in {delay.TotalSeconds:0.00} s (failure streak {failureStreak}).");
+        return delay;
+    }
+
+    private double NextJitter()
+    {
+        lock (jitter)
+        {
+            return jitter.NextDouble();
+        }
+    }
 
     // The wait ends early when the settings change, so a corrected token connects at once.
     private static async Task WaitForRetryAsync(TimeSpan delay, CancellationToken attemptToken)
@@ -625,6 +646,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
             {
                 if (LogIdentifyResponse(message, out var rejection))
                 {
+                    identifiedAt ??= DateTimeOffset.UtcNow;
                     identified = true;
                     var waiting = pendingEvents.Count;
                     if (waiting > 0)
