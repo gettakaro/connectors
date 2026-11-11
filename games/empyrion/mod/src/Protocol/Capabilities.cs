@@ -18,6 +18,7 @@ namespace TakaroEmpyrion.Protocol
             { "getPlayer", "players.get" },
             { "getPlayerLocation", "players.location" },
             { "getPlayerInventory", "players.inventory" },
+            { "getPlayerProgression", "players.progression" },
             { "teleportPlayer", "players.teleport" },
             { "listItems", "items.list" },
             { "giveItem", "items.give" },
@@ -32,16 +33,31 @@ namespace TakaroEmpyrion.Protocol
             { "shutdown", "server.shutdown" },
         };
 
+        /// <summary>
+        /// Parameters of a Capability. Experience lives on the player's client and reaches the server from there, so
+        /// a modified client could report any value.
+        /// </summary>
+        static readonly IDictionary<string, JObject> Parameters = new Dictionary<string, JObject>
+        {
+            { "players.progression", new JObject { ["source"] = "client-reported" } },
+        };
+
         public static readonly string[] EventTypes = { "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "log" };
 
-        public static JArray Build(IEnumerable<string> actions, JObject mapCapability)
+        public static JArray Build(IEnumerable<string> actions, JObject mapCapability, GameProfile profile = null)
         {
             var manifest = new JArray();
             var seen = new HashSet<string>();
             foreach (string action in actions)
-                if (ForAction.TryGetValue(action, out string cap) && seen.Add(cap)) manifest.Add(new JObject { ["name"] = cap });
+                if (ForAction.TryGetValue(action, out string cap) && seen.Add(cap))
+                {
+                    var entry = new JObject { ["name"] = cap };
+                    if (Parameters.TryGetValue(cap, out JObject parameters)) entry["parameters"] = parameters.DeepClone();
+                    manifest.Add(entry);
+                }
             foreach (string type in EventTypes) manifest.Add(new JObject { ["name"] = "events." + type });
             if (mapCapability != null) manifest.Add(mapCapability);
+            if (profile != null) manifest.Add(profile.ToCapability());
             return manifest;
         }
     }

@@ -38,6 +38,12 @@
       "reason": "Request_Player_GetInventory toolbelt + bag",
       "liveVerified": false
     },
+    "getPlayerProgression": {
+      "status": "live-supported",
+      "responseShape": "ProgressionTrack[]|null",
+      "reason": "PlayerInfo.exp; level from the game's own rule; last reading kept for offline players",
+      "liveVerified": false
+    },
     "giveItem": {
       "status": "live-supported",
       "responseShape": "null",
@@ -120,6 +126,12 @@
       "status": "live-supported",
       "responseShape": "{mimeType,data}",
       "reason": "protocol v1: one Dimension per generated planet, tiles rendered from terrain.raw + biomes.dat",
+      "liveVerified": false
+    },
+    "getGameIcon": {
+      "status": "live-supported",
+      "responseShape": "{revision,data}",
+      "reason": "protocol v1: the shipped icon, declared in game.profile",
       "liveVerified": false
     }
   },

@@ -41,6 +41,8 @@ public static partial class ContractTests
         Run("reconnect delays", ReconnectDelays);
         Run("reconnect wire", ReconnectWire);
         Run("reconnect slow uplink", ReconnectSlowUplink);
+        Run("progression", ProgressionTests);
+        Run("game profile", GameProfileTests);
         Console.WriteLine("\n" + _pass + " passed, " + _fail + " failed");
         Console.Out.Flush();
         // Background protocol threads are still alive; exit hard so Mono's teardown cannot mask the result.
@@ -169,7 +171,7 @@ public static partial class ContractTests
         Check(same, "capabilities.json == Coverage registry",
             string.Join(", ", fromCode.Where(kv => !fromJson.TryGetValue(kv.Key, out string s) || s != kv.Value).Select(kv => kv.Key)));
         Check(Actions.Supported.All(a => fromCode.ContainsKey(a)), "every handled action has a coverage entry");
-        Check(Coverage.All.Count(e => e.Kind == "action") == 19 && Coverage.All.Count(e => e.Kind == "event") == 6, "19 actions + 6 events classified");
+        Check(Coverage.All.Count(e => e.Kind == "action") == 21 && Coverage.All.Count(e => e.Kind == "event") == 6, "21 actions + 6 events classified");
     }
 
     // ------------------------------------------------------------------ wire (fake Takaro + fake game)
@@ -206,6 +208,7 @@ public static partial class ContractTests
         public readonly List<KeyValuePair<CmdId, object>> Requests = new List<KeyValuePair<CmdId, object>>();
         public readonly Dictionary<int, PlayerInfo> Players = new Dictionary<int, PlayerInfo>();
         public Inventory Inv;
+        public int SilentPlayerInfo;
         public void Console_Write(string txt) { }
         public ulong Game_GetTickTime() { return 0; }
         public bool Game_Request(CmdId reqId, ushort seqNr, object data)
@@ -217,6 +220,7 @@ public static partial class ContractTests
                 case CmdId.Request_Player_List: Bridge.OnGameEvent(CmdId.Event_Player_List, seqNr, new IdList { list = Players.Keys.ToList() }); break;
                 case CmdId.Request_Player_Info:
                     int id = ((Id)data).id;
+                    if (SilentPlayerInfo > 0) { SilentPlayerInfo--; return false; }
                     if (Players.TryGetValue(id, out PlayerInfo pi)) Bridge.OnGameEvent(CmdId.Event_Player_Info, seqNr, pi);
                     else Bridge.OnGameEvent(CmdId.Event_Error, seqNr, new ErrorInfo(ErrorType.PlayerIdNotFound));
                     break;
@@ -264,6 +268,148 @@ public static partial class ContractTests
             if (match(o)) return o;
         }
         return null;
+    }
+
+    static void ProgressionTests()
+    {
+        Check(Progression.NativeLevel(0) == 1f, "0 experience is level 1");
+        Check(Progression.NativeLevel(-5) == 1f && Progression.Progress(-5, 1) == 0d, "negative client-reported experience stays level 1");
+        Check((int)Progression.NativeLevel(799) == 1 && (int)Progression.NativeLevel(801) == 2, "level 2 starts at 800 experience");
+        // Live save row: the game logged its level-up to 2 at 814 experience.
+        Check((int)Progression.NativeLevel(814) == 2, "game's own level-up row: 814 experience is level 2");
+        Check((int)Progression.NativeLevel(460799) == 24 && (int)Progression.NativeLevel(460801) == 25, "level 25 starts at 460800 experience");
+        Check(Progression.NativeLevel(500000) == 25f && Progression.NativeLevel(int.MaxValue) == 25f, "level stops at 25");
+
+        Check(Progression.LevelStart(1) == 0 && Progression.LevelStart(2) == 800 && Progression.LevelStart(3) == 3200 && Progression.LevelStart(25) == 460800, "level starts");
+        // Live Stats panel at 1464 experience: "Level 2, XP: 664 / 2400 27%".
+        Check(Progression.Progress(1464, 2) == 0.2767, "progress matches the Stats panel, not the fractional level");
+
+        var log = new ConsoleLog();
+        var bridge = new GameBridge(log);
+        var game = new FakeGame { Bridge = bridge };
+        game.Players[101] = new PlayerInfo { entityId = 101, steamId = "76561198000000001", playerName = "Tester", playfield = "Akua", pos = new PVector3(1, 2, 3), exp = 3200 };
+        bridge.Attach(game);
+        var ticker = new Thread(() => { while (true) { bridge.Tick(); Thread.Sleep(2); } }) { IsBackground = true };
+        ticker.Start();
+        var players = new PlayerRegistry(null);
+        var actions = new Actions(bridge, new FakeV2(), players, new Catalog(), null, new Config { ServerName = "Dev", IdentityToken = "id" }, log, new BanReasons(null), _ => { });
+        Func<string, JToken> ask = id => actions.Run("getPlayerProgression", Args.Parse(new JValue("{\"gameId\":\"" + id + "\"}"))).Result;
+
+        Check(ask("76561198000000001").Type == JTokenType.Null, "unknown player -> null, not an error");
+        players.Upsert("76561198000000001", 101, "Tester");
+        JToken known = ask("76561198000000001");
+        Check(known is JArray noTracks && noTracks.Count == 0, "known player before the first reading -> []");
+
+        int before;
+        lock (game.Requests) before = game.Requests.Count;
+        actions.OnlinePlayers().Wait();
+        int afterRefresh;
+        lock (game.Requests) afterRefresh = game.Requests.Count;
+        JArray tracks = (JArray)ask("76561198000000001");
+        int afterAsk;
+        lock (game.Requests) afterAsk = game.Requests.Count;
+        Check(afterRefresh > before && afterAsk == afterRefresh, "the answer comes from the last reading, no game request");
+        JToken t = tracks.Single();
+        Check((string)t["key"] == "character" && (string)t["name"] == "Level" && t["level"].Type == JTokenType.Integer && (int)t["level"] == 3
+              && (int)t["experience"] == 3200 && (double)t["progress"] == 0d, "track: 3200 experience is exactly level 3", t.ToString());
+        game.Players[101].exp = 3900;
+        actions.OnlinePlayers().Wait();
+        JToken gain = ask("76561198000000001")[0];
+        Check((int)gain["level"] == 3 && (double)gain["progress"] > 0d && (double)gain["progress"] < 1d, "experience-only gain moves progress, not level");
+        game.Players[101].exp = 900;
+        actions.OnlinePlayers().Wait();
+        Check((int)ask("76561198000000001")[0]["level"] == 2, "level follows experience down");
+        game.Players[101].exp = 1000000;
+        actions.OnlinePlayers().Wait();
+        JToken cap = ask("76561198000000001")[0];
+        Check((int)cap["level"] == 25 && (double)cap["progress"] == 1d, "capped level is full");
+
+        game.Players.Clear();
+        actions.OnlinePlayers().Wait();
+        Check(players.BySteam("76561198000000001").Online == false && (int)ask("76561198000000001")[0]["level"] == 25, "offline player keeps the last reading");
+
+        string path = Path.GetTempFileName();
+        try
+        {
+            var saved = new PlayerRegistry(path);
+            PlayerRecord r = saved.Upsert("76561198000000001", 101, "Tester");
+            r.Experience = 814; r.HasExperience = true;
+            saved.SaveSoon(force: true);
+            PlayerRecord loaded = new PlayerRegistry(path).BySteam("76561198000000001");
+            Check(loaded.HasExperience && loaded.Experience == 814, "the reading survives a server restart");
+        }
+        finally { File.Delete(path); }
+
+        // A joining client can stay silent on the first read; the join must survive it.
+        actions.JoinRetryGapMs = 1;
+        game.Players[101] = new PlayerInfo { entityId = 101, steamId = "76561198000000001", playerName = "Tester", playfield = "Akua", pos = new PVector3(1, 2, 3), exp = 900 };
+        var emitted = new BlockingCollection<KeyValuePair<string, JObject>>();
+        var events = new Events(actions, players, new Catalog(), log, (type, data) => emitted.Add(new KeyValuePair<string, JObject>(type, data)));
+        game.SilentPlayerInfo = 2;
+        events.OnLegacyEvent(CmdId.Event_Player_Connected, new Id(101));
+        Check(emitted.TryTake(out KeyValuePair<string, JObject> join, 4000) && join.Key == "player-connected" && (string)join.Value["player"]["gameId"] == "76561198000000001" && game.SilentPlayerInfo == 0,
+            "player-connected survives a client that stays silent on the first reads");
+
+        game.SilentPlayerInfo = 99;
+        events.OnLegacyEvent(CmdId.Event_Player_Connected, new Id(101));
+        Check(!emitted.TryTake(out KeyValuePair<string, JObject> _, 300), "a join that never answers emits nothing, never a guessed identity");
+        game.SilentPlayerInfo = 0;
+
+        int asked;
+        lock (game.Requests) asked = game.Requests.Count;
+        events.OnLegacyEvent(CmdId.Event_Player_Connected, new Id(555));
+        Check(!emitted.TryTake(out KeyValuePair<string, JObject> _, 300), "a player the game reports gone emits nothing");
+        lock (game.Requests) Check(game.Requests.Count == asked + 1, "a game error is not retried");
+
+        JArray manifest = Capabilities.Build(Actions.Declared, null);
+        JToken progression = manifest.FirstOrDefault(c => (string)c["name"] == "players.progression");
+        Check(progression != null && (string)progression["parameters"]["source"] == "client-reported", "manifest declares players.progression as client-reported");
+        Check(manifest.Count(c => c["parameters"] != null) == 1, "no other capability gains parameters");
+    }
+
+    static void GameProfileTests()
+    {
+        Check(GameProfile.ParseBuildNumber("5188 \r\nv1.19.6\r\n") == "1.19.6 b5188", "BuildNumber.txt becomes the game version");
+        Check(GameProfile.ParseBuildNumber("5188") == null && GameProfile.ParseBuildNumber("") == null, "an incomplete BuildNumber.txt gives no version");
+
+        byte[] icon = GameProfile.LoadEmbeddedIcon();
+        Check(icon != null && icon.Length <= 128 * 1024 && icon[1] == (byte)'P' && icon[2] == (byte)'N' && icon[3] == (byte)'G', "the icon is embedded, a PNG, within Takaro's limit");
+        var profile = new GameProfile("1.2.3", "1.19.6 b5188", icon);
+
+        var identify = new JObject();
+        profile.AddToIdentify(identify);
+        Check((string)identify["game"] == "empyrion", "identify names the game");
+        Check((string)identify["connector"]["name"] == "takaro-empyrion" && (string)identify["connector"]["version"] == "1.2.3", "identify names the connector");
+
+        JObject parameters = (JObject)Capabilities.Build(Actions.Declared, null, profile).First(c => (string)c["name"] == "game.profile")["parameters"];
+        Check((string)parameters["name"] == "Empyrion - Galactic Survival" && (string)parameters["version"] == "1.19.6 b5188", "game.profile carries name and version");
+        JObject answer = profile.IconAnswer();
+        Check((string)answer["revision"] == (string)parameters["icon"]["revision"], "getGameIcon answers the declared revision");
+        Check(Convert.FromBase64String((string)answer["data"]).Length == (int)parameters["icon"]["size"], "getGameIcon answers the declared size");
+
+        var noVersion = new JObject();
+        new GameProfile("1.2", null, null).AddToIdentify(noVersion);
+        Check(noVersion["connector"] == null && (string)noVersion["game"] == "empyrion", "a connector version that is not semver is left out");
+
+        string root = Path.Combine(Path.GetTempPath(), "takaro-profile-" + Guid.NewGuid().ToString("N"));
+        string mod = Path.Combine(root, "Content", "Mods", "TakaroEmpyrion");
+        Directory.CreateDirectory(mod);
+        Check(GameProfile.ReadGameVersion(mod) == null, "a server without BuildNumber.txt gives no version");
+        File.WriteAllText(Path.Combine(root, "BuildNumber.txt"), "5188 \r\nv1.19.6\r\n");
+        Check(GameProfile.ReadGameVersion(mod) == "1.19.6 b5188", "the version is read from the server root above the mod folder");
+        Directory.Delete(root, true);
+
+        var actions = new Actions(new GameBridge(new ConsoleLog()), new FakeV2(), new PlayerRegistry(null), new Catalog(), null, new Config(), new ConsoleLog(), new BanReasons(null), _ => { });
+        bool refused = false;
+        try { actions.Run("getGameIcon", Args.Parse(new JObject())).GetAwaiter().GetResult(); }
+        catch (UnknownActionException) { refused = true; }
+        Check(refused, "getGameIcon without a profile is unsupported");
+        actions.Profile = profile;
+        JToken served = actions.Run("getGameIcon", Args.Parse(new JObject())).GetAwaiter().GetResult();
+        Check((string)served["revision"] == (string)parameters["icon"]["revision"], "getGameIcon is served through the action handler");
+
+        JObject bare = new GameProfile("1.2.3", new string('x', 33), null).ToCapability();
+        Check(bare["parameters"]["version"] == null && bare["parameters"]["icon"] == null, "an unusable version or icon is left out");
     }
 
     static void Wire()
@@ -344,6 +490,14 @@ public static partial class ContractTests
         Check(r != null && (string)r["type"] == "response" && given != null && given.id == 101 && given.itemStack.id == 4300 && given.itemStack.count == 5, "giveItem resolves code + entity, explicit null quality");
         r = ask("giveItem", "{\"gameId\":\"76561198000000001\",\"item\":\"Nope\",\"amount\":1}");
         Check(r != null && (string)r["type"] == "error", "giveItem unknown item is an error, not a success");
+        int addsBefore;
+        lock (game.Requests) addsBefore = game.Requests.Count(k => k.Key == CmdId.Request_Player_AddItem);
+        r = ask("giveItem", "{\"gameId\":\"76561198000000001\",\"item\":\"IronOre\",\"amount\":2000000000}");
+        int addsAfter;
+        lock (game.Requests) addsAfter = game.Requests.Count(k => k.Key == CmdId.Request_Player_AddItem);
+        Check(r != null && (string)r["type"] == "error" && addsAfter == addsBefore, "giveItem above the client's stack limit is refused before reaching the game");
+        r = ask("giveItem", "{\"gameId\":\"76561198000000001\",\"item\":\"IronOre\",\"amount\":1000000}");
+        Check(r != null && (string)r["type"] == "response", "giveItem at the cap is delivered");
 
         r = ask("teleportPlayer", "{\"player\":{\"gameId\":\"76561198000000001\"},\"x\":10,\"y\":20,\"z\":30,\"dimension\":null}");
         IdPositionRotation tp;

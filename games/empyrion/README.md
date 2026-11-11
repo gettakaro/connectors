@@ -92,6 +92,7 @@ Checked on Empyrion v1.19.6 build 5188 (Steam build 25490402), 2026-11-03. ✅ w
 | Player location | ✅ | Live position, with the planet or playfield as the map layer. |
 | Teleport | ✅ | Within the player's playfield, or to another planet or playfield. |
 | Player inventory | ✅ | Toolbelt and backpack, with stack sizes. |
+| Player levels and skills | ✅ | Character level and experience, read from the player's game client. Empyrion has no separate skills. |
 | Item list | ✅ | All items and blocks, with their in-game names. |
 | Entity list | ✅ | Creatures, with their in-game names. |
 | Locations | ❌ | Empyrion has no list of named places. |
@@ -111,5 +112,6 @@ Checked on Empyrion v1.19.6 build 5188 (Steam build 25490402), 2026-11-03. ✅ w
 | Server log lines | ⚠️ | Playfield load and unload lines are sent; Takaro does not store them, but module hooks can react to them. |
 | Discord chat bridge | ✅ | Both ways; use `chatBridgeNoEcho` to avoid echoes. |
 | Modules | ✅ | Chat commands, teleports, scheduled jobs and hooks work. |
+| Game name, version and icon | ✅ | The icon can take up to about two hours to appear on a fresh install. |
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).

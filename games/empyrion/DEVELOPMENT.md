@@ -105,6 +105,14 @@ The mod writes `Logs/takaro.log` (and `Logs/playfield-<pid>.log` per playfield s
   is sent as `steamId` plus `platformId steam:<id>`. Epic Games Store players carry a numeric id the game
   makes itself (outside the SteamID64 range, not an EOS or Epic account id); it is sent only as
   `platformId epic:<id>`, never as `steamId` or `epicOnlineServicesId`. Kick, ban and unban take either form.
+- **Game Profile.** Identify carries `game` and `connector` (`takaro-empyrion` with the release version); the
+  v1 manifest adds `game.profile`. Its `version` comes from `BuildNumber.txt` in the server root, for example
+  `1.19.6 b5188`, and is left out when that file cannot be read. `icon` is `assets/icon-256.png` (Steam library
+  art of app 383120, 256 x 256 PNG, at most 128 KiB), embedded in the DLL; `getGameIcon` serves it, under a
+  revision taken from its sha256.
+- **giveItem limit.** The client keeps each stack count twice, once encoded in an int, and bans the player for a
+  year (`ClientCheat 'Item-Count'`) when the copies disagree. That happens above 40517088 in one stack, so giveItem
+  refuses amounts above 1000000.
 - **Maps.** On protocol v1 the mod declares one Dimension per planet whose terrain the server has cached
   (`terrain.raw`, 16-bit little endian, plus `biomes.dat`) and renders tiles from those files. Takaro takes
   at most 16 Dimensions.
