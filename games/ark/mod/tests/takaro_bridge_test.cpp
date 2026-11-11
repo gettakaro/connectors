@@ -1038,6 +1038,31 @@ void test_reconnect_policy() {
   bridge.stop();
 }
 
+// Takaro may send a request on a new connection before its identifyResponse: it is answered
+// once identify is accepted (not dropped), with the negotiated protocol version.
+void test_request_before_identify() {
+  FakeTakaro takaro;
+  takaro.auto_identify = false;
+  gate::Server gate("boot-early");
+  FakeGame game(gate);
+  takaro::Bridge bridge(config_for(takaro, temp_dir()), gate, [](const std::string&) {});
+  bridge.start();
+  CHECK(takaro.wait_for([](const json::Value& m) { return is_type(m, "identify"); }));
+  const size_t before = takaro.count();
+  takaro.send(R"({"type":"request","requestId":"early-1","payload":{"action":"testReachability","args":"{}"}})");
+  std::this_thread::sleep_for(300ms);
+  bool answered_early = false;
+  for (const auto& m : takaro.messages())
+    if (is_type(m, "response") && m.get("requestId")->as_string() == "early-1") answered_early = true;
+  CHECK(!answered_early);
+  takaro.send(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-early"}})");
+  auto response = takaro.wait_for([](const json::Value& m) {
+    return is_type(m, "response") && m.get("requestId") && m.get("requestId")->as_string() == "early-1";
+  }, 3000ms, before);
+  CHECK(response && response->get("payload")->get("connectable"));
+  bridge.stop();
+}
+
 int main() {
   test_redaction_and_codec();
   test_identify_and_wire();
@@ -1051,6 +1076,7 @@ int main() {
   test_identify_waits_for_game();
   test_server_chat_name();
   test_reconnect_policy();
+  test_request_before_identify();
   if (failures) { std::cerr << failures << " check(s) failed\n"; return 1; }
   std::cout << "takaro_bridge_test passed\n";
   return 0;

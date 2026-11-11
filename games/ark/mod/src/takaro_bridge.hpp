@@ -287,6 +287,9 @@ class Bridge {
   uint64_t ping_id_ = 0;
   std::deque<Ping> pings_;
   std::deque<InFlight> in_flight_;
+  // Requests Takaro sent on this connection before its identifyResponse arrived.
+  // Run once identify is accepted (with the negotiated protocol version), dropped on disconnect.
+  std::vector<Request> before_identify_;
   std::atomic<uint64_t> scan_{0};
   std::atomic<uint64_t> persisted_{0};
   std::chrono::steady_clock::time_point last_activity_{};
@@ -374,6 +377,7 @@ class Bridge {
     ++epoch_;
     pings_.clear();
     in_flight_.clear();
+    before_identify_.clear();
     scan_ = persisted_.load();  // unconfirmed events are replayed (at-least-once)
     {
       std::lock_guard<std::mutex> lock(out_mutex_);
@@ -425,6 +429,7 @@ class Bridge {
         ++epoch_;
         pings_.clear();
         in_flight_.clear();
+        before_identify_.clear();
         scan_ = persisted_.load();
         last_activity_ = std::chrono::steady_clock::now();
         next_ping_ = last_activity_ + config_.ping_interval;
@@ -613,6 +618,16 @@ class Bridge {
       adapter_.set_protocol_version(version);
       policy_.identified(std::chrono::steady_clock::now());
       identified_ = true;
+      if (!before_identify_.empty()) {
+        log("takaro-requests-before-identify " + std::to_string(before_identify_.size()) + " now handled");
+        {
+          std::lock_guard<std::mutex> lock(requests_mutex_);
+          for (auto& r : before_identify_)
+            if (requests_.size() < 64) requests_.push_back(std::move(r));
+        }
+        before_identify_.clear();
+        requests_cv_.notify_all();
+      }
       next_pump_ = std::chrono::steady_clock::now();
       log("takaro-identified gameServerId=" + id + " protocolVersion=" + std::to_string(version));
       return;
@@ -641,6 +656,10 @@ class Bridge {
       if (const auto* action = payload.get("action"); action && action->is_string()) request.action = action->as_string();
       if (payload.has_key("args")) {
         for (const auto& [k, v] : payload.as_object()) if (k == "args") request.args = v;
+      }
+      if (!identified_.load()) {
+        if (before_identify_.size() < 64) before_identify_.push_back(std::move(request));
+        return;
       }
       {
         std::lock_guard<std::mutex> lock(requests_mutex_);
