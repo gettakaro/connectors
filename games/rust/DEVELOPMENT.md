@@ -24,7 +24,13 @@ Everything lives in one file: `mod/TakaroConnector.cs`.
   `listBans`, `shutdown`.
 - 6 game events: `player-connected`, `player-disconnected`, `chat-message`, `player-death`,
   `entity-killed`, `log`.
-- WebSocket with automatic reconnection and exponential backoff (5 s initial, 1.5x, 5 min cap).
+- WebSocket reconnection (`ReconnectPolicy`, region `takaro:reconnect`): a connection that was
+  identified and stayed up for 10 s is retried 0.05-0.35 s after it drops, so it is identified
+  again within about 2 s. Only consecutive failures back off: 1-2 s, 2-4 s, 4-8 s, ... with jitter,
+  capped at 60 s, and the streak resets after the next stable connection. The plugin pings Takaro
+  every 10 s; 30 s without any inbound frame closes the socket as dead (a blackholed link never
+  sends a reset), and connect plus identify must finish within 20 s. Unacked v1 events are resent
+  after every reconnect. `tests/protocol` covers the policy.
 - Hot-reload support via Carbon (no server restart needed).
 
 ## Target and build
@@ -216,7 +222,7 @@ the framework's `Config` object, because it needs the file's text to watch it:
   put back, not replaced.
 - **Precedence**: a non-empty environment variable wins over the file field, per field, and is never
   written to the file. An empty one counts as unset.
-- **While running**: a 1 s main-thread tick re-reads the file every 5 s and compares the whole text.
+- **While running**: a 0.1 s main-thread tick re-reads the file every 5 s and compares the whole text.
   A change to the URL, the registration token or the identity drops the socket and connects at once
   (backoff reset, auth-close `_shouldReconnect = false` cleared). `Debug` applies without a
   reconnect, and so does `ServerChatName`. A missing, empty or unparseable file keeps the current

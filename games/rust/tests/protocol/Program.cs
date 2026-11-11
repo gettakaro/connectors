@@ -28,6 +28,7 @@ internal static class Program
         Responses();
         Events();
         Profile();
+        Reconnect();
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
         return _failures == 0 ? 0 : 1;
     }
@@ -247,5 +248,62 @@ internal static class Program
         Check((string)v0["type"] == "gameEvent" && (string)v0["payload"]["type"] == "chat-message"
             && v0["payload"]["streamId"] == null && v0["payload"]["seq"] == null && (string)v0["payload"]["data"]["msg"] == "one",
             "v0 frame: no streamId or seq");
+    }
+
+    private static void Reconnect()
+    {
+        // Fast first retry: 0.5-1.5 s, jittered, never a fixed wait.
+        Check(Connector.ReconnectPolicy.DelayMs(0, 0.0) == 50, "reconnect: first retry floor is 0.05 s");
+        Check(Connector.ReconnectPolicy.DelayMs(0, 0.999999) <= 350, "reconnect: first retry is at most 0.35 s");
+        Check(Connector.ReconnectPolicy.DelayMs(0, 0.2) != Connector.ReconnectPolicy.DelayMs(0, 0.8), "reconnect: first retry is jittered");
+
+        // Streak backoff: each failure doubles the window, jitter inside it, cap 60 s.
+        long previousCeiling = 0;
+        for (var n = 1; n <= 40; n++)
+        {
+            var lo = Connector.ReconnectPolicy.DelayMs(n, 0.0);
+            var hi = Connector.ReconnectPolicy.DelayMs(n, 0.999999);
+            Check(hi <= 60000 && lo <= 60000, "reconnect: never above 60 s (failure " + n + ")");
+            Check(lo < hi, "reconnect: jitter spread at failure " + n);
+            Check(hi >= previousCeiling || hi >= 59000, "reconnect: does not shrink at failure " + n);
+            previousCeiling = hi;
+        }
+        Check(Connector.ReconnectPolicy.DelayMs(1, 0.0) == 1000 && Connector.ReconnectPolicy.DelayMs(1, 0.999999) <= 2000,
+            "reconnect: second attempt waits 1-2 s");
+        Check(Connector.ReconnectPolicy.DelayMs(3, 0.0) == 4000, "reconnect: fourth attempt waits at least 4 s");
+        Check(Connector.ReconnectPolicy.DelayMs(6, 0.999999) >= 59000, "reconnect: reaches the 60 s cap by the seventh attempt");
+        Check(Connector.ReconnectPolicy.DelayMs(int.MaxValue, 0.5) <= 60000, "reconnect: huge streak stays capped");
+
+        // The stateful policy: stable session -> fast; failures in a row -> back off; stable again -> reset.
+        var policy = new Connector.ReconnectPolicy();
+        var first = policy.OnConnectionEnded(TimeSpan.FromMinutes(5), 0.5);
+        Check(first >= 50 && first <= 350 && policy.Failures == 1, "policy: drop after a stable session retries within 0.35 s");
+        var second = policy.OnConnectionEnded(null, 0.5);
+        Check(second >= 1000 && second <= 2000 && policy.Failures == 2, "policy: a failed retry backs off");
+        var third = policy.OnConnectionEnded(null, 0.5);
+        Check(third > second, "policy: consecutive failures grow the delay");
+        var shortLived = policy.OnConnectionEnded(TimeSpan.FromSeconds(Connector.ReconnectPolicy.StableSeconds - 1), 0.5);
+        Check(shortLived > third, "policy: identified but not stable does not reset the streak");
+        for (var i = 0; i < 20; i++) policy.OnConnectionEnded(null, 0.999999);
+        Check(policy.OnConnectionEnded(null, 0.999999) <= 60000, "policy: long outage capped at 60 s");
+        var recovered = policy.OnConnectionEnded(TimeSpan.FromSeconds(Connector.ReconnectPolicy.StableSeconds), 0.5);
+        Check(recovered <= 350, "policy: a stable connection resets the streak");
+        policy.Reset();
+        Check(policy.Failures == 0 && policy.OnConnectionEnded(null, 0.0) == 50, "policy: Reset (config change) starts fast");
+
+        // Dead-link detection.
+        var t0 = DateTime.UtcNow.Ticks;
+        var sec = TimeSpan.TicksPerSecond;
+        Check(Connector.ReconnectPolicy.PingIntervalSeconds * 2 < Connector.ReconnectPolicy.InboundTimeoutSeconds,
+            "liveness: at least two pings fit in the inbound timeout");
+        Check(Connector.ReconnectPolicy.InboundTimeoutSeconds <= 45, "liveness: a dead link is noticed within 45 s");
+        Check(!Connector.ReconnectPolicy.InboundStale(t0, t0 + Connector.ReconnectPolicy.InboundTimeoutSeconds * sec),
+            "liveness: not stale at the timeout");
+        Check(Connector.ReconnectPolicy.InboundStale(t0, t0 + (Connector.ReconnectPolicy.InboundTimeoutSeconds + 1) * sec),
+            "liveness: stale past the timeout");
+        Check(!Connector.ReconnectPolicy.PingDue(t0, t0 + (Connector.ReconnectPolicy.PingIntervalSeconds - 1) * sec)
+            && Connector.ReconnectPolicy.PingDue(t0, t0 + Connector.ReconnectPolicy.PingIntervalSeconds * sec), "liveness: ping interval");
+        Check(Connector.ReconnectPolicy.HandshakeOverdue(t0, t0 + (Connector.ReconnectPolicy.HandshakeTimeoutSeconds + 1) * sec)
+            && !Connector.ReconnectPolicy.HandshakeOverdue(t0, t0 + sec), "liveness: handshake deadline");
     }
 }

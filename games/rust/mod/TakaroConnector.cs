@@ -902,8 +902,90 @@ namespace Oxide.Plugins
         }
         // takaro:protocol-end
 
+        // takaro:reconnect-begin
+        //
+        // When to reconnect and when a socket is dead. A connection that was identified and
+        // stayed up for StableSeconds starts its next attempt 0.05-0.35 s after dropping; the
+        // TLS and identify round trip adds about a second, so it is identified again within
+        // about 2 s and a mid-path TCP reset rarely overlaps one of Takaro's reachability polls.
+        // Only consecutive failures back off (1-2 s, 2-4 s, 4-8 s, ... with jitter, never past
+        // 60 s), and the streak resets once a connection has been stable again. A socket with
+        // no inbound frame for InboundTimeoutSeconds (Takaro answers every ping) is treated as
+        // dead, so a silently dropped link follows the same path. Free of Unity types so
+        // tests/protocol runs it.
+        internal sealed class ReconnectPolicy
+        {
+            internal const long FastMinMs = 50;
+            internal const long FastSpreadMs = 300;
+            internal const long BackoffBaseMs = 1000;
+            internal const long MaxDelayMs = 60000;
+            internal const int StableSeconds = 10;
+            internal const int PingIntervalSeconds = 10;
+            internal const int InboundTimeoutSeconds = 30;
+            // Connect plus identify; a peer that accepts and then says nothing is replaced.
+            internal const int HandshakeTimeoutSeconds = 20;
+
+            private readonly object _lock = new object();
+            private int _failures;
+
+            /// <summary>Attempts made since the last stable connection.</summary>
+            internal int Failures { get { lock (_lock) return _failures; } }
+
+            /// <summary>
+            /// The wait before the next attempt after `failures` attempts in a row did not
+            /// reach a stable connection; random01 is in [0, 1).
+            /// </summary>
+            internal static long DelayMs(int failures, double random01)
+            {
+                if (random01 < 0) random01 = 0;
+                if (random01 >= 1) random01 = 0.999999;
+                if (failures <= 0) return FastMinMs + (long)(FastSpreadMs * random01);
+                var ceiling = failures >= 16 ? MaxDelayMs : Math.Min(MaxDelayMs, BackoffBaseMs << failures);
+                return Math.Min(MaxDelayMs, ceiling / 2 + (long)(ceiling / 2 * random01));
+            }
+
+            /// <summary>
+            /// A connection ended or never came up. identifiedFor is how long it had been
+            /// identified (null if never). Returns the delay before the next attempt.
+            /// </summary>
+            internal long OnConnectionEnded(TimeSpan? identifiedFor, double random01)
+            {
+                lock (_lock)
+                {
+                    if (identifiedFor.HasValue && identifiedFor.Value.TotalSeconds >= StableSeconds)
+                        _failures = 0;
+                    var delay = DelayMs(_failures, random01);
+                    _failures++;
+                    return delay;
+                }
+            }
+
+            internal void Reset()
+            {
+                lock (_lock) _failures = 0;
+            }
+
+            internal static bool InboundStale(long lastInboundTicks, long nowTicks)
+            {
+                return nowTicks - lastInboundTicks > InboundTimeoutSeconds * TimeSpan.TicksPerSecond;
+            }
+
+            internal static bool PingDue(long lastPingTicks, long nowTicks)
+            {
+                return nowTicks - lastPingTicks >= PingIntervalSeconds * TimeSpan.TicksPerSecond;
+            }
+
+            internal static bool HandshakeOverdue(long startedTicks, long nowTicks)
+            {
+                return nowTicks - startedTicks > HandshakeTimeoutSeconds * TimeSpan.TicksPerSecond;
+            }
+        }
+        // takaro:reconnect-end
+
         private const string ConfigFileName = "TakaroConnector.json";
         private const int ConfigCheckEverySeconds = 5;
+        // The tick also starts due reconnects, so it runs often enough for a sub-second retry.
+        private const int TicksPerSecond = 10;
 
         private volatile ConnectorSettings _settings = new ConnectorSettings();
         private string _configPath;
@@ -916,20 +998,25 @@ namespace Oxide.Plugins
 
         private bool _debug { get { return _settings.Debug; } }
 
-        private const long InitialReconnectDelay = 5000;
-        private const long MaxReconnectDelay = 300000;
-        private const double BackoffMultiplier = 1.5;
-
         // --- WebSocket State ---
         //
-        // Connections are started on the main thread only (Init, the 1 s tick). Every
+        // Connections are started on the main thread only (Init, the 0.1 s tick). Every
         // connection carries the generation it was started under; a socket task, close or
         // reconnect request from an older generation is stale and changes nothing.
 
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
         private volatile bool _shouldReconnect = true;
-        private long _currentReconnectDelay = InitialReconnectDelay;
+        private readonly ReconnectPolicy _reconnect = new ReconnectPolicy();
+        private readonly System.Random _jitter = new System.Random();
+        // Per connection, in UTC ticks: when it started, when identify was accepted (0 until
+        // then), the last inbound frame and the last ping sent.
+        private long _connectStartedTicks;
+        private long _identifiedAtTicks;
+        private long _lastInboundTicks;
+        private long _lastPingTicks;
+        // The generation already closed as dead, so the tick closes it only once.
+        private int _deadClosedGeneration = -1;
         private volatile bool _connected;
         private int _generation;
         private int _identifySentGeneration = -1;
@@ -1005,7 +1092,7 @@ namespace Oxide.Plugins
 
             _configPath = Path.GetFullPath(Path.Combine(Interface.Oxide.ConfigDirectory, ConfigFileName));
             LoadSettings();
-            _tickTimer = timer.Every(1f, Tick);
+            _tickTimer = timer.Every(1f / TicksPerSecond, Tick);
 
             var settings = _settings;
             LogInfo($"Config: {_configPath} (registration token {TokenSource(settings)})");
@@ -1140,15 +1227,18 @@ namespace Oxide.Plugins
             }
         }
 
-        // Runs on the main thread every second: re-reads the config every few seconds and
-        // starts any reconnect a closed socket asked for.
+        // Runs on the main thread a few times a second: re-reads the config every few seconds,
+        // pings Takaro, closes a dead socket and starts any reconnect a closed socket asked for.
         private void Tick()
         {
-            if (++_tickCount % ConfigCheckEverySeconds == 0)
+            if (++_tickCount % (ConfigCheckEverySeconds * TicksPerSecond) == 0)
             {
                 try { CheckConfig(); }
                 catch (Exception ex) { LogWarning($"Error checking {_configPath}: {ex.Message}"); }
             }
+
+            try { CheckLiveness(); }
+            catch (Exception ex) { LogWarning($"Error checking the connection: {ex.Message}"); }
 
             var request = Interlocked.Exchange(ref _pendingReconnect, null);
             if (request == null || request.Generation != _generation) return;
@@ -1158,7 +1248,10 @@ namespace Oxide.Plugins
                 return;
             }
             if (_shouldReconnect && !string.IsNullOrEmpty(_settings.RegistrationToken))
+            {
+                LogDebug($"Reconnect due {(DateTime.UtcNow.Ticks - request.DueTicks) / TimeSpan.TicksPerMillisecond} ms ago; connecting to {_settings.WsUrl}");
                 StartConnection();
+            }
         }
 
         // Compares the whole text: a timestamp can miss a same-length edit. A file that is
@@ -1203,7 +1296,7 @@ namespace Oxide.Plugins
             _cts?.Cancel();
             try { _ws?.Dispose(); } catch { }
             _ws = null;
-            _currentReconnectDelay = InitialReconnectDelay;
+            _reconnect.Reset();
             _shouldReconnect = true;
 
             if (string.IsNullOrEmpty(_settings.RegistrationToken))
@@ -1265,6 +1358,11 @@ namespace Oxide.Plugins
             var token = cts.Token;
             var ws = new ClientWebSocket();
             _ws = ws;
+            var now = DateTime.UtcNow.Ticks;
+            Volatile.Write(ref _connectStartedTicks, now);
+            Volatile.Write(ref _identifiedAtTicks, 0);
+            Volatile.Write(ref _lastInboundTicks, now);
+            Volatile.Write(ref _lastPingTicks, now);
 
             Task.Run(async () =>
             {
@@ -1318,6 +1416,8 @@ namespace Oxide.Plugins
                 do
                 {
                     result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    if (IsCurrent(generation))
+                        Volatile.Write(ref _lastInboundTicks, DateTime.UtcNow.Ticks);
                     sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 } while (!result.EndOfMessage);
 
@@ -1474,19 +1574,65 @@ namespace Oxide.Plugins
         {
             if (!_shouldReconnect) return;
 
-            var delaySec = _currentReconnectDelay / 1000.0f;
-            LogInfo($"Reconnecting in {delaySec:F0}s...");
+            var now = DateTime.UtcNow.Ticks;
+            var identifiedAt = Volatile.Read(ref _identifiedAtTicks);
+            TimeSpan? identifiedFor = identifiedAt > 0 ? TimeSpan.FromTicks(now - identifiedAt) : (TimeSpan?)null;
+            double random01;
+            lock (_jitter) random01 = _jitter.NextDouble();
+            var delayMs = _reconnect.OnConnectionEnded(identifiedFor, random01);
+            var attempt = _reconnect.Failures;
+
+            if (attempt == 1 && identifiedFor.HasValue)
+                LogInfo($"Connection lost after {identifiedFor.Value.TotalSeconds:F0}s identified; reconnecting in {delayMs / 1000.0:F1}s");
+            else
+                LogInfo($"Reconnecting in {delayMs / 1000.0:F1}s (attempt {attempt})");
 
             Interlocked.Exchange(ref _pendingReconnect, new ReconnectRequest
             {
                 Generation = generation,
-                DueTicks = DateTime.UtcNow.Ticks + _currentReconnectDelay * TimeSpan.TicksPerMillisecond,
+                DueTicks = now + delayMs * TimeSpan.TicksPerMillisecond,
             });
+        }
 
-            _currentReconnectDelay = Math.Min(
-                (long)(_currentReconnectDelay * BackoffMultiplier),
-                MaxReconnectDelay
-            );
+        // Main thread. Takaro answers every ping, so silence past the inbound timeout means the
+        // link is dead even though the socket still reads Open (a blackholed path never sends a
+        // reset). Closing it runs the normal reconnect, and unacked v1 events are resent there.
+        private void CheckLiveness()
+        {
+            var ws = _ws;
+            if (ws == null) return;
+            var generation = Volatile.Read(ref _generation);
+            if (Volatile.Read(ref _deadClosedGeneration) == generation) return;
+            var now = DateTime.UtcNow.Ticks;
+
+            string why = null;
+            if (!_connected)
+            {
+                if (ReconnectPolicy.HandshakeOverdue(Volatile.Read(ref _connectStartedTicks), now))
+                    why = $"Takaro did not accept identify within {ReconnectPolicy.HandshakeTimeoutSeconds}s";
+            }
+            else
+            {
+                var lastInbound = Volatile.Read(ref _lastInboundTicks);
+                if (ReconnectPolicy.InboundStale(lastInbound, now))
+                    why = $"No inbound traffic for {TimeSpan.FromTicks(now - lastInbound).TotalSeconds:F0}s";
+                else if (ReconnectPolicy.PingDue(Volatile.Read(ref _lastPingTicks), now))
+                {
+                    Volatile.Write(ref _lastPingTicks, now);
+                    var ping = new JObject
+                    {
+                        ["type"] = "ping",
+                        ["payload"] = new JObject { ["timestamp"] = DateTime.UtcNow.ToString("o") }
+                    };
+                    WsSendOn(ws, ping.ToString(Formatting.None));
+                }
+            }
+            if (why == null) return;
+
+            Volatile.Write(ref _deadClosedGeneration, generation);
+            LogWarning($"{why}; treating the connection as dead and reconnecting");
+            _cts?.Cancel();
+            try { ws.Abort(); } catch { }
         }
 
         // --- Send Helpers ---
@@ -1591,7 +1737,9 @@ namespace Oxide.Plugins
                 return;
             }
 
-            _currentReconnectDelay = InitialReconnectDelay;
+            // The backoff streak resets only once this connection has stayed up (ScheduleReconnect).
+            if (IsCurrent(generation))
+                Volatile.Write(ref _identifiedAtTicks, DateTime.UtcNow.Ticks);
             if (reply.GameServerId != null)
                 LogInfo($"Identified successfully, server ID: {reply.GameServerId} (protocol {reply.ProtocolVersion})");
             else
