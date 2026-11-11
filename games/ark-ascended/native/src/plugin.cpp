@@ -21,6 +21,7 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -272,10 +273,19 @@ EosConnect Connect() {
     const auto connectAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.EOSConnect"));
     const auto ownerAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.SubsystemEOS"));
     if (identityAt <= 0 || connectAt <= 0 || ownerAt <= 0) { LogLine("steam: EOS subsystem fields unknown"); return nullptr; }
+    auto hex = [](const void* v) { char b[24]; snprintf(b, sizeof b, "%p", v); return std::string(b); };
+    LogLine("steam: search tick=" + hex(seen) + " identityAt=" + std::to_string(identityAt) + " connectAt=" + std::to_string(connectAt) +
+            " ownerAt=" + std::to_string(ownerAt));
     for (ptrdiff_t back = 0; back <= 0x400; back += 8) {
         char* base = seen - back;
         void *identity = nullptr, *owner = nullptr, *connect = nullptr;
         if (!SafeRead(base + identityAt, &identity) || identity == nullptr) continue;
+        if (back <= 0x80) {
+            void *o = nullptr, *c = nullptr;
+            const bool ro = SafeRead(static_cast<char*>(identity) + ownerAt, &o), rc = SafeRead(static_cast<char*>(identity) + connectAt, &c);
+            LogLine("steam: back=" + std::to_string(back) + " identity=" + hex(identity) + " owner=" + (ro ? hex(o) : "unreadable") +
+                    " connect=" + (rc ? hex(c) : "unreadable"));
+        }
         if (!SafeRead(static_cast<char*>(identity) + ownerAt, &owner) || owner != base) continue;
         if (!SafeRead(static_cast<char*>(identity) + connectAt, &connect) || connect == nullptr) continue;
         g_connect = connect;
