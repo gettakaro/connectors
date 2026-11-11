@@ -20,8 +20,10 @@ from takaro_maint.exit_codes import ConflictError, UsageError
 from takaro_maint.games import adapter_for
 
 GAME = "tf2"
-BUILD = 25995664
+BUILD = 26334371
 TARGETS = (f"linux-{BUILD}", f"windows-{BUILD}")
+PREVIOUS = 25995664
+PREVIOUS_TARGETS = (f"linux-{PREVIOUS}", f"windows-{PREVIOUS}")
 APP = 232250
 VERSION = "0.1.0-dev.abc1234"
 SM = "addons/sourcemod"
@@ -71,6 +73,14 @@ def test_the_steam_pin_is_exact_and_anonymous(target: str, platform: str, binary
     assert record(target)["default"] is True
 
 
+@pytest.mark.parametrize("target", PREVIOUS_TARGETS)
+def test_the_previous_build_stays_declared_but_not_default(target: str) -> None:
+    document = record(target)
+
+    assert document["inputs"]["server"]["buildid"] == PREVIOUS
+    assert document["default"] is False
+
+
 def test_the_build_pins_the_compiler_and_extensions_by_hash() -> None:
     linux = record(TARGETS[0])["build"]["deps"]
     windows = record(TARGETS[1])["build"]["deps"]
@@ -111,9 +121,9 @@ def test_resolve_names_the_artifact_and_build_inputs(run: Any, target: str) -> N
 
 
 def test_the_version_command_output_is_the_runtime_identity() -> None:
-    parsed = adapter_for(GAME).parse_runtime_identity("Exe version 11138802 (tf)")
+    parsed = adapter_for(GAME).parse_runtime_identity("Exe version 11191711 (tf)")
 
-    assert parsed == {"gameVersion": "11138802", "loader": "sourcemod", "loaderVersion": None}
+    assert parsed == {"gameVersion": "11191711", "loader": "sourcemod", "loaderVersion": None}
 
 
 # -- deploy ---------------------------------------------------------------------------------
