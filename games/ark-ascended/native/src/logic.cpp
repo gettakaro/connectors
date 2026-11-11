@@ -146,6 +146,28 @@ std::string ItemCodeOf(const tj::Value& args) {
     return quoteStart ? code : "Blueprint'" + path + "'";
 }
 
+std::string ItemCodeByName(const tj::Value& args, const std::vector<CatalogRow>& rows, size_t& matches) {
+    matches = 0;
+    std::string wanted;
+    const tj::Value* item = args.get("item");
+    const tj::Value* nested = item != nullptr && item->is_object() ? item->get("name") : nullptr;
+    for (const tj::Value* v : {item, args.get("name"), args.get("itemName"), nested}) {
+        if (v != nullptr && v->is_string() && !Trimmed(v->as_string()).empty()) { wanted = Trimmed(v->as_string()); break; }
+    }
+    if (wanted.empty()) return {};
+    const auto lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    const std::string key = lower(wanted);
+    std::string code;
+    for (const CatalogRow& row : rows) {
+        if (lower(row.name) != key) continue;
+        if (++matches == 1) code = row.code;
+    }
+    return matches == 1 ? code : std::string();
+}
+
 bool IsCosmeticCode(const std::string& code) {
     return code.find("/PrimalItemCostume_") != std::string::npos;
 }

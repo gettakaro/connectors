@@ -704,8 +704,13 @@ takaro::Outcome Inventory(const tj::Value& args) {
 takaro::Outcome GiveItem(const tj::Value& args) {
     const std::string id = takaro::PlayerIdOf(args);
     if (id.empty()) return takaro::Outcome::Fail("invalid_args", "gameId is required");
-    const std::string code = takaro::ItemCodeOf(args);
-    if (code.empty()) return takaro::Outcome::Fail("invalid_args", "item must be a /Game item class path");
+    std::string code = takaro::ItemCodeOf(args);
+    if (code.empty()) {
+        size_t matches = 0;
+        code = takaro::ItemCodeByName(args, g_items, matches);
+        if (matches > 1) return takaro::Outcome::Fail("invalid_args", "more than one item has this name; give the item code from listItems");
+        if (code.empty()) return takaro::Outcome::Fail("invalid_args", "item must be an item code or name from listItems");
+    }
     double amount = 1, quality = 0;
     const tj::Value* amountRaw = args.get("amount");
     if (amountRaw == nullptr) amountRaw = args.get("quantity");

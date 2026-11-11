@@ -115,6 +115,16 @@ static void test_log_filter() {
 
 static void test_item_code() {
     const char* quoted = "Blueprint'/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_Wood.PrimalItemResource_Wood'";
+    {
+        const std::vector<CatalogRow> rows{{"Blueprint'/Game/S/Stone.Stone'", "Stone"}, {"Blueprint'/Game/W/Wood.Wood'", "Wood"},
+                                           {"Blueprint'/Game/H/H1.H1'", "Hide"}, {"Blueprint'/Game/H/H2.H2'", "hide"}};
+        size_t n = 0;
+        CHECK(ItemCodeByName(Args("{\"name\":\"stone\"}"), rows, n) == "Blueprint'/Game/S/Stone.Stone'" && n == 1);
+        CHECK(ItemCodeByName(Args("{\"item\":\" Wood \"}"), rows, n) == "Blueprint'/Game/W/Wood.Wood'" && n == 1);
+        CHECK(ItemCodeByName(Args("{\"name\":\"Hide\"}"), rows, n).empty() && n == 2);
+        CHECK(ItemCodeByName(Args("{\"name\":\"Metal\"}"), rows, n).empty() && n == 0);
+        CHECK(ItemCodeByName(Args("{}"), rows, n).empty() && n == 0);
+    }
     CHECK(ItemCodeOf(Args("{\"item\":\"/Game/A/B.B\"}")) == "Blueprint'/Game/A/B.B'");
     CHECK(ItemCodeOf(tj::obj({{"item", tj::str(quoted)}})) == quoted);
     CHECK(ItemCodeOf(Args("{\"itemCode\":\"/Game/A/B.B\"}")) == "Blueprint'/Game/A/B.B'");
