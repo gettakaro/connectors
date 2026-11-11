@@ -1,13 +1,16 @@
 package io.takaro.minecraft.core;
 
 import io.takaro.minecraft.core.config.ConfigFile;
+import io.takaro.minecraft.core.icons.ItemIconCatalog;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
+import io.takaro.minecraft.core.model.GameItem;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 import io.takaro.minecraft.core.target.TargetGuard;
 import io.takaro.minecraft.core.target.TargetInfo;
 
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executors;
@@ -32,9 +35,10 @@ public class TakaroConnector {
     private TakaroWebSocketClient wsClient;
     private ScheduledExecutorService watcher;
     private boolean stopped;
-    // Both outlive a reconnect: the event stream must keep its id and sequence, and the map its caches.
+    // These outlive a reconnect: the event stream must keep its id and sequence, and the map and icons their caches.
     private final EventOutbox outbox = new EventOutbox();
     private WorldMap worldMap;
+    private ItemIconCatalog itemIcons;
     private boolean mapUnavailableLogged;
 
     public TakaroConnector(GameAdapter adapter, TakaroConfig config) {
@@ -121,6 +125,24 @@ public class TakaroConnector {
             worldMap.warm();
         }
         return worldMap;
+    }
+
+    /** The item icons when this platform has mods to read them from, hashed once per process. */
+    private ItemIconCatalog itemIconsLocked() {
+        if (itemIcons == null) {
+            List<Path> roots = adapter.itemIconRoots();
+            if (roots.isEmpty()) return null;
+            ItemIconCatalog catalog = new ItemIconCatalog(roots, adapter::logInfo, adapter::logWarning);
+            itemIcons = catalog;
+            adapter.runOnMainThread(() -> {
+                try {
+                    catalog.buildInBackground(adapter.listItems().stream().map(GameItem::code).toList());
+                } catch (RuntimeException e) {
+                    catalog.abandon(e);
+                }
+            });
+        }
+        return itemIcons;
     }
 
     /** One watcher tick: re-read the file and apply what changed. */
@@ -213,7 +235,7 @@ public class TakaroConnector {
             // still identifying with the old settings.
             TakaroConfig settings = new TakaroConfig();
             settings.copyFrom(config);
-            wsClient = new TakaroWebSocketClient(new URI(url), adapter, settings, configPath(), outbox, mapLocked());
+            wsClient = new TakaroWebSocketClient(new URI(url), adapter, settings, configPath(), outbox, mapLocked(), itemIconsLocked());
             adapter.setEventEmitter(wsClient);
             wsClient.connect();
         } catch (Exception e) {

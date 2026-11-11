@@ -5,6 +5,7 @@ import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
 
+import java.nio.file.Path;
 import java.util.List;
 
 public interface GameAdapter {
@@ -55,4 +56,10 @@ public interface GameAdapter {
 
     /** The map colour of each block, as a vanilla filled map draws it. Null: no map. */
     default RegionRenderer.BlockColors mapColors() { return null; }
+
+    /**
+     * The root folder of every mod on this server, each holding its {@code assets/}, in an order
+     * that does not change between restarts. Called off the main thread. Empty: no item icons.
+     */
+    default List<Path> itemIconRoots() { return List.of(); }
 }

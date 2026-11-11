@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.takaro.minecraft.core.icons.ItemIconCatalog;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.*;
 import io.takaro.minecraft.core.target.RuntimeIdentity;
@@ -18,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 public class TakaroWebSocketClient extends WebSocketClient implements EventEmitter {
 
@@ -34,6 +36,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private final String configPath;
     private final EventOutbox outbox;
     private final WorldMap worldMap;
+    private final ItemIconCatalog itemIcons;
     // The protocol Takaro chose in the last identifyResponse; 0 until then and on every reconnect.
     private volatile int protocol;
 
@@ -54,6 +57,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             "log", "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed"};
     // Takaro gives a connector 10 s per request; leave room for the round trip.
     static final long MAP_TILE_WAIT_MILLIS = 6000;
+    // An Item sync replaces the reported hashes, so an early answer would drop icons Takaro has.
+    static final long ITEM_ICONS_WAIT_MILLIS = 6000;
+    private static final Pattern ITEM_ICON_HASH = Pattern.compile("[0-9a-f]{64}");
 
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config) {
         this(serverUri, adapter, config, "the Takaro config file");
@@ -65,12 +71,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
                                  EventOutbox outbox, WorldMap worldMap) {
+        this(serverUri, adapter, config, configPath, outbox, worldMap, null);
+    }
+
+    public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
+                                 EventOutbox outbox, WorldMap worldMap, ItemIconCatalog itemIcons) {
         super(serverUri);
         this.adapter = adapter;
         this.config = config;
         this.configPath = configPath;
         this.outbox = outbox;
         this.worldMap = worldMap;
+        this.itemIcons = itemIcons;
         this.currentReconnectDelay = config.getReconnectDelay();
     }
 
@@ -402,6 +414,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             map.add("parameters", parameters);
             caps.add(map);
         }
+        if (itemIcons != null) {
+            caps.add(capability("items.icons"));
+        }
         return caps;
     }
 
@@ -542,6 +557,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             handleGetMapTile(requestId, args);
             return;
         }
+        if (action.equals("getItemIcons") && isV1()) {
+            handleGetItemIcons(requestId, args);
+            return;
+        }
 
         switch (action) {
             case "testReachability":
@@ -563,7 +582,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 handleOnMainThread(requestId, () -> { handleGiveItem(args); return null; });
                 break;
             case "listItems":
-                handleOnMainThread(requestId, () -> handleListItems());
+                whenItemIconsReady(() -> handleOnMainThread(requestId, this::handleListItems));
                 break;
             case "listEntities":
                 handleOnMainThread(requestId, () -> handleListEntities());
@@ -632,6 +651,60 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 sendError(requestId, "game_error", "map tile failed: " + e.getMessage());
             }
         });
+    }
+
+    private void whenItemIconsReady(Runnable task) {
+        if (itemIcons == null) {
+            task.run();
+            return;
+        }
+        itemIcons.ready().copy().completeOnTimeout(null, ITEM_ICONS_WAIT_MILLIS, TimeUnit.MILLISECONDS)
+                .thenRun(task);
+    }
+
+    private void handleGetItemIcons(String requestId, JsonObject args) {
+        if (itemIcons == null) {
+            sendError(requestId, "unsupported", "this server has no item icons");
+            return;
+        }
+        List<String> hashes = requestedIconHashes(args);
+        if (hashes == null) {
+            sendError(requestId, "invalid_args",
+                    "getItemIcons takes 1 to " + ItemIconCatalog.MAX_BATCH_HASHES + " hashes of 64 lowercase hex characters");
+            return;
+        }
+        // Off the websocket thread: this reads files out of mod jars.
+        CompletableFuture.runAsync(() -> {
+            try {
+                JsonArray answer = new JsonArray();
+                for (ItemIconCatalog.Icon icon : itemIcons.serve(hashes)) {
+                    JsonObject entry = new JsonObject();
+                    entry.addProperty("hash", icon.hash());
+                    entry.addProperty("data", Base64.getEncoder().encodeToString(icon.png()));
+                    answer.add(entry);
+                }
+                adapter.logInfo("getItemIcons: served " + answer.size() + " of " + hashes.size() + " requested icons");
+                sendResponse(requestId, answer, null);
+            } catch (RuntimeException e) {
+                adapter.logWarning("getItemIcons failed: " + e);
+                sendError(requestId, "game_error", "reading item icons failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /** The requested hashes, or null when the request breaks the protocol's limits. */
+    private static List<String> requestedIconHashes(JsonObject args) {
+        JsonElement hashes = args.get("hashes");
+        if (hashes == null || !hashes.isJsonArray()) return null;
+        JsonArray array = hashes.getAsJsonArray();
+        if (array.isEmpty() || array.size() > ItemIconCatalog.MAX_BATCH_HASHES) return null;
+        List<String> out = new java.util.ArrayList<>(array.size());
+        for (JsonElement hash : array) {
+            if (!hash.isJsonPrimitive() || !hash.getAsJsonPrimitive().isString()
+                    || !ITEM_ICON_HASH.matcher(hash.getAsString()).matches()) return null;
+            out.add(hash.getAsString());
+        }
+        return out;
     }
 
     /** The whole declared icon in one response; Takaro checks the bytes against the declared size. */
@@ -752,6 +825,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             obj.addProperty("code", item.code());
             obj.addProperty("name", item.name());
             obj.addProperty("description", item.description());
+            String iconHash = itemIcons != null && isV1() ? itemIcons.hashFor(item.code()) : null;
+            if (iconHash != null) {
+                obj.addProperty("iconHash", iconHash);
+            }
             arr.add(obj);
         }
         return arr;

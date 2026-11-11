@@ -4,13 +4,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.takaro.minecraft.core.icons.ItemIconCatalog;
+import io.takaro.minecraft.core.map.PngWriter;
 import io.takaro.minecraft.core.map.TestRegions;
 import io.takaro.minecraft.core.map.WorldMap;
+import io.takaro.minecraft.core.model.GameItem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -204,6 +208,109 @@ class ProtocolV1Test {
         byte[] png = Base64.getDecoder().decode(tile.get("data").getAsString());
         assertEquals((byte) 0x89, png[0]);
         assertEquals('P', png[1]);
+    }
+
+    private TakaroWebSocketClient iconClient(ItemIconCatalog catalog, TakaroConnectorTest.TestAdapter adapter) throws Exception {
+        TakaroConfig config = new TakaroConfig();
+        config.setIdentityToken("id");
+        config.setRegistrationToken("reg");
+        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, "config",
+                new EventOutbox(), null, catalog) {
+            @Override
+            public void send(String text) { sent.add(text); }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+    }
+
+    private ItemIconCatalog iconCatalog(String item, byte[] png) throws Exception {
+        Path texture = dir.resolve("assets/mymod/textures/item/" + item + ".png");
+        Files.createDirectories(texture.getParent());
+        Files.write(texture, png);
+        return new ItemIconCatalog(List.of(dir), s -> {}, System.err::println);
+    }
+
+    private static class ItemsAdapter extends TakaroConnectorTest.TestAdapter {
+        @Override
+        public List<GameItem> listItems() {
+            return List.of(new GameItem("mymod:ruby", "Ruby", ""), new GameItem("minecraft:stick", "Stick", ""));
+        }
+    }
+
+    @Test
+    void itemIconsAreDeclaredOnlyWithACatalog() throws Exception {
+        assertFalse(iconClient(null, new ItemsAdapter()).capabilities().toString().contains("items.icons"));
+        ItemIconCatalog catalog = iconCatalog("ruby", PngWriter.write(new int[]{0xff112233}, 1, 1));
+        assertTrue(iconClient(catalog, new ItemsAdapter()).capabilities().toString().contains("\"items.icons\""));
+    }
+
+    @Test
+    void listItemsReportsTheHashOfTheBytesGetItemIconsServes() throws Exception {
+        byte[] png = PngWriter.write(new int[]{0xff112233}, 1, 1);
+        ItemIconCatalog catalog = iconCatalog("ruby", png);
+        catalog.buildInBackground(List.of("mymod:ruby", "minecraft:stick"));
+        TakaroWebSocketClient client = iconClient(catalog, new ItemsAdapter());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+
+        client.onMessage(request("items", "listItems", "{}"));
+        JsonArray items = awaitResponse("items").getAsJsonArray("payload");
+        JsonObject ruby = items.get(0).getAsJsonObject();
+        String hash = ruby.get("iconHash").getAsString();
+        assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(png)), hash);
+        assertFalse(items.get(1).getAsJsonObject().has("iconHash"));
+
+        client.onMessage(request("icons", "getItemIcons", "{\"hashes\":[\"" + hash + "\"]}"));
+        JsonArray icons = awaitResponse("icons").getAsJsonArray("payload");
+        assertEquals(1, icons.size());
+        assertEquals(hash, icons.get(0).getAsJsonObject().get("hash").getAsString());
+        assertArrayEquals(png, Base64.getDecoder().decode(icons.get(0).getAsJsonObject().get("data").getAsString()));
+    }
+
+    @Test
+    void getItemIconsRefusesARequestOutsideTheLimits() throws Exception {
+        ItemIconCatalog catalog = iconCatalog("ruby", PngWriter.write(new int[]{0xff112233}, 1, 1));
+        catalog.build(List.of("mymod:ruby"));
+        TakaroWebSocketClient client = iconClient(catalog, new ItemsAdapter());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+
+        String hash = "a".repeat(64);
+        String tooMany = "[" + String.join(",", java.util.Collections.nCopies(101, "\"" + hash + "\"")) + "]";
+        for (String[] bad : new String[][]{{"n1", "{\"hashes\":[]}"}, {"n2", "{\"hashes\":" + tooMany + "}"},
+                {"n3", "{\"hashes\":[\"ABC\"]}"}, {"n4", "{}"}}) {
+            client.onMessage(request(bad[0], "getItemIcons", bad[1]));
+            assertEquals("invalid_args", awaitResponse(bad[0]).getAsJsonObject("error").get("code").getAsString());
+        }
+
+        String exactly100 = "[" + String.join(",", java.util.Collections.nCopies(100, "\"" + hash + "\"")) + "]";
+        client.onMessage(request("ok", "getItemIcons", "{\"hashes\":" + exactly100 + "}"));
+        assertEquals(0, awaitResponse("ok").getAsJsonArray("payload").size());
+    }
+
+    @Test
+    void v0HasNoIconHashAndNoGetItemIcons() throws Exception {
+        ItemIconCatalog catalog = iconCatalog("ruby", PngWriter.write(new int[]{0xff112233}, 1, 1));
+        catalog.build(List.of("mymod:ruby"));
+        TakaroWebSocketClient client = iconClient(catalog, new ItemsAdapter());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(0));
+
+        client.onMessage(request("items", "listItems", "{}"));
+        assertFalse(awaitResponse("items").getAsJsonArray("payload").get(0).getAsJsonObject().has("iconHash"));
+    }
+
+    @Test
+    void anAbandonedIconBuildStillAnswersListItems() throws Exception {
+        ItemIconCatalog catalog = iconCatalog("ruby", PngWriter.write(new int[]{0xff112233}, 1, 1));
+        TakaroWebSocketClient client = iconClient(catalog, new ItemsAdapter());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+
+        catalog.abandon(new IllegalStateException("registry unavailable"));
+        client.onMessage(request("items", "listItems", "{}"));
+        assertFalse(awaitResponse("items").getAsJsonArray("payload").get(0).getAsJsonObject().has("iconHash"));
     }
 
     @Test
