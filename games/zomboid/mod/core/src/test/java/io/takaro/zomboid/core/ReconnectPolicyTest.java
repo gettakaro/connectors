@@ -29,12 +29,12 @@ class ReconnectPolicyTest {
     }
 
     @Test
-    void firstRetryAfterAStableSessionIsWithinOneAndAHalfSeconds() {
+    void firstRetryAfterAStableSessionIsUnderOneSecond() {
         for (int i = 0; i < 500; i++) {
             identifyAndStay(ReconnectPolicy.STABLE_MS);
             ReconnectPolicy.Delay d = policy.nextDelay();
             assertTrue(d.fast(), "stable drop must take the fast retry");
-            assertTrue(d.millis() >= 500 && d.millis() <= 1500, "fast retry out of range: " + d.millis());
+            assertTrue(d.millis() >= 200 && d.millis() <= 900, "fast retry out of range: " + d.millis());
             assertEquals(0, policy.failureStreak());
         }
     }
@@ -110,7 +110,7 @@ class ReconnectPolicyTest {
         assertEquals(30_000, policy.backoffCeiling(4));
         // an override never slows the first retry after a stable connection
         identifyAndStay(ReconnectPolicy.STABLE_MS);
-        assertTrue(policy.nextDelay().millis() <= 1500);
+        assertTrue(policy.nextDelay().millis() <= 900);
     }
 
     @Test

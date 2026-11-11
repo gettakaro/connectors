@@ -20,9 +20,12 @@ public final class ReconnectPolicy {
     /** How long an identified connection must stay up before its drop counts as "was stable". */
     public static final long STABLE_MS = 10_000;
     /** Shortest first retry after a stable connection dropped. */
-    public static final long FAST_MIN_MS = 500;
-    /** Random spread added to {@link #FAST_MIN_MS}: the first retry lands in 0.5-1.5 s. */
-    public static final long FAST_JITTER_MS = 1_000;
+    public static final long FAST_MIN_MS = 200;
+    /**
+     * Random spread added to {@link #FAST_MIN_MS}: the first retry lands in 0.2-0.9 s. The TLS
+     * handshake and identify take about another second, so Takaro sees the server back within 2 s.
+     */
+    public static final long FAST_JITTER_MS = 700;
 
     private final TakaroConfig config;
     private final LongSupplier clockMs;
