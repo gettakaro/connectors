@@ -18,13 +18,13 @@ public static partial class ContractHarness
         {
             double low = Seconds(0, configured, 0);
             double high = Seconds(0, configured, 0.999999);
-            True(low >= 0.5, $"base {configured}: the fast retry waits at least 0.5 s");
-            True(high <= 1.25, $"base {configured}: the fast retry is under 1.25 s");
-            True(high - low > 0.7, $"base {configured}: the fast retry is jittered");
+            True(low >= 0.25, $"base {configured}: the fast retry waits at least 0.25 s");
+            True(high <= 0.75, $"base {configured}: the fast retry is at most 0.75 s");
+            True(high - low > 0.45, $"base {configured}: the fast retry is jittered");
         }
         True(
-            Seconds(0, 30, 0.5) < 2,
-            "a stable session's drop is retried within 2 s even with the old 30 s config"
+            Seconds(0, 30, 0.999999) < 1,
+            "a stable session's drop is retried within a second even with the old 30 s config"
         );
     }
 
