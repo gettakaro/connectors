@@ -9,6 +9,7 @@ local util = require("takaro.util")
 local json = require("takaro.json")
 local scumlog = require("takaro.scumlog")
 local chatname = require("takaro.chatname")
+local progression = require("takaro.progression")
 
 local M = {}
 
@@ -39,6 +40,9 @@ M.MAX_GIVE = 50
 M.HANDS_DELAY_MS = 1500
 M.DEATH_POLL_MS = 1000
 M.DEATH_HOLD_MS = 3000 -- wait for a kill-log line (it names the attacker) before reporting a plain death
+M.PROGRESSION_SCAN_MS = 15000    -- how often the skill cache looks for players to read (FindAllOf costs ~5 ms)
+M.PROGRESSION_REFRESH_MS = 15000 -- a player's cached skills are read again after this long
+M.PROGRESSION_BUDGET_US = 1000   -- game-thread time per scan; players left over wait for the next scan
 M.CATALOG_SCHEMA = 2 -- bump when catalogue entries change, so caches rebuild
 M.ABSTRACT = { BP_BTBaseAnimal = true } -- base classes listed as primary assets, never spawned
 M.KICK_MESSAGE_DELAY_MS = 2000 -- the reason is shown in chat first; KickPlayer's own screen has no reason text
@@ -89,7 +93,8 @@ Game.__index = Game
 function M.new(env, log, opts)
   opts = opts or {}
   local g = setmetatable({ env = env or {}, log = log, hooks = {}, online = {}, ips = {}, bans = {},
-    recentChat = {}, perf = { ticks = 0, totalUs = 0, maxUs = 0, catalogUs = 0, loads = 0 },
+    recentChat = {}, perf = { ticks = 0, totalUs = 0, maxUs = 0, catalogUs = 0, loads = 0, progressionUs = 0 },
+    progression = {}, lastProgressionScan = 0,
     catalogs = {}, lastTail = 0, lastBanCheck = 0, kickQueue = {}, handQueue = {}, alive = {}, lastPos = {},
     pendingDeaths = {}, recentKills = {}, lastDeathPoll = 0, banned = {}, gameLoadedBans = {}, pendingUnbans = {},
     npcs = {}, lastNpcScan = -1e9, attacks = {}, delayedKicks = {} }, Game)
@@ -207,6 +212,16 @@ function Game:controllers()
   return out
 end
 
+-- SCUM's character is its user profile: New Character makes a new profile and prisoner for the same Steam account,
+-- and the old profile's database id is never reused. The login log prints the same id as Name(id).
+function Game:character_of(pc, name)
+  local prisoner = self:pawn(pc)
+  if not prisoner or not name then return nil end
+  local ok, id = pcall(function() return prisoner._serverUserProfileId.Value end)
+  if ok and math.type(id) == "integer" and id > 0 then return { id = tostring(id), name = name } end
+  return nil
+end
+
 function Game:player_of(pc, id)
   local name = str(pc:GetUserProfileName())
   if not name or name == "" then
@@ -220,7 +235,7 @@ function Game:player_of(pc, id)
     local okp, p = pcall(function() return ps.Ping end)
     if okp and type(p) == "number" and p > 0 then ping = math.floor(p * 4) end
   end
-  return { steamId = id, name = name, ip = self.ips[id], ping = ping }
+  return { steamId = id, name = name, ip = self.ips[id], ping = ping, character = self:character_of(pc, name) }
 end
 
 function Game:find_pc(id)
@@ -239,6 +254,56 @@ function Game:pawn(pc)
 end
 
 -- Actions ---------------------------------------------------------------------------------------------------
+
+-- The skill records of one prisoner, or nil when the prisoner or its skill component is not there yet.
+function Game:read_skill_records(pc)
+  local prisoner = self:pawn(pc)
+  if not prisoner then return nil end
+  local okC, comp = pcall(function() return prisoner.SkillComponent end)
+  if not okC or not valid(comp) then return nil end
+  local records = {}
+  comp._replicatedSkills:ForEach(function(_, element)
+    local r = element:get()
+    records[#records + 1] = { id = r.ID, level = r.Level, experience = r.ExperiencePoints }
+  end)
+  return records
+end
+
+function Game:read_attributes(pc)
+  local prisoner = self:pawn(pc)
+  if not prisoner then return nil end
+  local ok, packed = pcall(function() return prisoner._bodySimulationComponent._repState1 end)
+  return ok and packed or nil
+end
+
+-- Takaro polls getPlayerProgression on every player sync, so the game is read here, on a slow timer under a budget,
+-- and the request only looks at this cache. A failed read keeps the last value.
+function Game:refresh_progression(nowMs)
+  local t0 = self:now_us()
+  for _, c in ipairs(self:controllers()) do
+    local cached = self.progression[c.id]
+    if not cached or nowMs - cached.at >= M.PROGRESSION_REFRESH_MS then
+      local ok, records = pcall(self.read_skill_records, self, c.pc)
+      if ok and records and #records > 0 then
+        local tracks = progression.skill_tracks(records)
+        local attributes = progression.attribute_tracks(self:read_attributes(c.pc), cached and cached.attributes)
+        if #attributes == 0 and cached then attributes = cached.attributes or {} end
+        for _, track in ipairs(attributes) do tracks[#tracks + 1] = track end
+        self.progression[c.id] = { at = nowMs, tracks = tracks, attributes = attributes }
+      elseif not ok then
+        self.log:warn("progression read for %s: %s", c.id, tostring(records))
+      end
+      if self:now_us() - t0 >= M.PROGRESSION_BUDGET_US then break end
+    end
+  end
+  self.perf.progressionUs = self.perf.progressionUs + (self:now_us() - t0)
+end
+
+function Game:get_player_progression(params)
+  local cached = self.progression[tostring(params.gameId)]
+  if cached then return { ok = true, value = cached.tracks } end
+  return { ok = false, reason = "no reading yet" }
+end
 
 function Game:reachability()
   local gm = self:game_mode()
@@ -749,6 +814,11 @@ function Game:catalog_step(kind, budgetUs)
   end
 end
 
+function Game:catalogs_done()
+  local items, entities = self.catalogs.items, self.catalogs.entities
+  return items ~= nil and items.done == true and entities ~= nil and entities.done == true
+end
+
 function Game:list_items()
   local c = self:catalog_start("items")
   if not c.done then self.log:warn("listItems: catalogue still building (%d/%d)", #c.entries, c.total or 0) end
@@ -1021,7 +1091,8 @@ function Game:shutdown()
   local ksl = self:static("_ksl", M.UE.KismetSystem)
   local gm = self:game_mode()
   if not (ksl and gm) then return { ok = false, reason = "world not loaded" } end
-  ksl:QuitGame(gm, nil, 0, false)
+  -- QuitGame needs a player controller and silently does nothing on an empty server.
+  ksl:ExecuteConsoleCommand(gm, "quit", nil)
   return { ok = true }
 end
 
@@ -1042,25 +1113,27 @@ function Game:reconcile_online(list)
 end
 
 function Game:on_login(e)
+  local character = e.profileId and { id = e.profileId, name = e.name } or nil
   self.ips[e.steamId] = e.ip
   if e.position then self.lastPos[e.steamId] = e.position end
   self.names = self.names or {}
   self.names[e.steamId] = e.name
   if e.kind == "login" then
+    self.progression[e.steamId] = nil -- it may be another character now
     if self:is_banned(e.steamId) then
       self.log:info("banned player %s logged in; kicking", e.steamId)
       self.kickQueue[#self.kickQueue + 1] = { id = e.steamId, tries = 0 }
       return -- a refused login is not a session: no player-connected
     end
     if self:mark_online({ steamId = e.steamId }) then
-      self.events:player_connected({ steamId = e.steamId, name = e.name, ip = e.ip })
+      self.events:player_connected({ steamId = e.steamId, name = e.name, ip = e.ip, character = character })
     end
   else
     self.pendingDeaths[e.steamId] = nil
     self.alive[e.steamId] = nil
     if self.online[e.steamId] then
       self.online[e.steamId] = nil
-      self.events:player_disconnected({ steamId = e.steamId, name = e.name, ip = e.ip })
+      self.events:player_disconnected({ steamId = e.steamId, name = e.name, ip = e.ip, character = character })
     end
   end
 end
@@ -1338,6 +1411,11 @@ function Game:tick(nowMs)
     local okD, errD = pcall(self.poll_deaths, self, nowMs)
     if not okD then self.log:warn("death poll: %s", tostring(errD)) end
   end
+  if nowMs - self.lastProgressionScan >= M.PROGRESSION_SCAN_MS then
+    self.lastProgressionScan = nowMs
+    local okP, errP = pcall(self.refresh_progression, self, nowMs)
+    if not okP then self.log:warn("progression scan: %s", tostring(errP)) end
+  end
   if #self.kickQueue > 0 then
     local keep = {}
     for _, k in ipairs(self.kickQueue) do
@@ -1399,8 +1477,8 @@ end
 function Game:perf_summary()
   local p = self.perf
   local avg = p.ticks > 0 and math.floor(p.totalUs / p.ticks) or 0
-  return string.format("gameThread ticks=%d avgUs=%d maxUs=%d catalogMs=%d classLoads=%d", p.ticks, avg, p.maxUs,
-    math.floor(p.catalogUs / 1000), p.loads)
+  return string.format("gameThread ticks=%d avgUs=%d maxUs=%d catalogMs=%d classLoads=%d progressionMs=%d", p.ticks, avg,
+    p.maxUs, math.floor(p.catalogUs / 1000), p.loads, math.floor(p.progressionUs / 1000))
 end
 
 M.ACTION_FUNCTIONS = {

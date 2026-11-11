@@ -4,7 +4,7 @@
 local M = {}
 
 M.ACTIONS = {
-  "getPlayer", "getPlayers", "getPlayerLocation", "getPlayerInventory", "giveItem", "listItems", "listEntities",
+  "getPlayer", "getPlayers", "getPlayerLocation", "getPlayerInventory", "getPlayerProgression", "giveItem", "listItems", "listEntities",
   "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
   "unbanPlayer", "listBans", "testReachability", "shutdown", "getMapInfo", "getMapTile",
 }
@@ -45,6 +45,16 @@ M.actions = {
       .. "hands, container contents, nested). amount = UStackableItemComponent._repQuantity for stacks, quality = "
       .. "GetHealth/GetMaxHealth in whole percent. A failed read answers an error, never [] (Takaro would record "
       .. "removals). Rounds loaded in a weapon or magazine are not items and are not listed.",
+  },
+  getPlayerProgression = {
+    status = "live-supported",
+    responseShape = "null | ProgressionTrack[] { key, name, level, experience, progress? } (one skill.<name> track per skill, one attribute.<name> track per attribute)",
+    liveVerification = "live 2026-11-06 on SCUM 1.3.5.2 through Takaro: tracks stored on the player after a join",
+    reason = "UPrisonerSkillComponent._replicatedSkills holds level (0 no skill .. 4 above advanced) and experience; "
+      .. "progress is the share of the level's experience, on the scale measured on the client. "
+      .. "A slow timer reads it under a game-thread budget and the request answers from that cache. SCUM has no single "
+      .. "character level, so there is no character track. Attributes are one byte each in the body simulation's packed "
+      .. "_repState1; the layout was checked against the client's stats screen.",
   },
   giveItem = {
     status = "live-supported",
@@ -145,7 +155,7 @@ M.actions = {
     responseShape = "{ success, errorMessage? }",
     liveVerification = live("refused by default; with ENABLE_DESTRUCTIVE_COMMANDS=true answered success and the "
       .. "server exited cleanly 15 s later"),
-    reason = "Gated by ENABLE_DESTRUCTIVE_COMMANDS; KismetSystemLibrary:QuitGame after the response is sent.",
+    reason = "Gated by ENABLE_DESTRUCTIVE_COMMANDS; KismetSystemLibrary:ExecuteConsoleCommand quit after the response is sent.",
   },
   getMapInfo = {
     status = "schema-fallback",

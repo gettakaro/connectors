@@ -117,7 +117,7 @@ local function world(opts)
       end
       return obj({ IsValid = function() return false end })
     end,
-    QuitGame = function() rec("QuitGame") end,
+    ExecuteConsoleCommand = function(_, _, command) rec("ExecuteConsoleCommand", command) end,
   })
   W.gps = obj({
     BeginDeferredActorSpawnFromClass = function(_, _ctx, cls)
@@ -207,6 +207,34 @@ t.test("getPlayers lists controllers with a SteamID64, name, ping and the login-
   W.g:on_login({ kind = "login", steamId = ID1, name = "Alice", ip = "10.0.0.5" })
   local r = W.g:list_players()
   t.deep(r.value, { { steamId = ID1, name = "Alice", ping = 28, ip = "10.0.0.5" } })
+end)
+
+t.test("getPlayers reports the user profile id as the character, a login clears the old character's reading", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice") or W.pcs[#W.pcs]
+  pc:GetPrisoner()._serverUserProfileId = { Value = 7 }
+  W.g:start_events(W.events)
+  t.deep(W.g:list_players().value[1].character, { id = "7", name = "Alice" })
+  pc:GetPrisoner()._serverUserProfileId = { Value = 0 }
+  t.eq(W.g:list_players().value[1].character, nil)
+  W.g.progression[ID1] = { at = 1, tracks = {} }
+  W.g:on_login({ kind = "login", steamId = ID1, name = "Alice", ip = "10.0.0.5", profileId = "8" })
+  t.eq(W.g.progression[ID1], nil)
+end)
+
+t.test("shutdown quits through the console, which also works with nobody online", function()
+  local W = world()
+  t.ok(W.g:shutdown().ok)
+  t.eq(W.find("ExecuteConsoleCommand")[1][1], "quit")
+end)
+
+t.test("the catalogues count as ready when items and entities are both built", function()
+  local W = world()
+  t.eq(W.g:catalogs_done(), false)
+  W.g.catalogs = { items = { done = true }, entities = { done = false } }
+  t.eq(W.g:catalogs_done(), false)
+  W.g.catalogs.entities.done = true
+  t.eq(W.g:catalogs_done(), true)
 end)
 
 t.test("sendMessage: global via BroadcastChatLine(ServerMessage), directed via SendChatLineToPlayer, sender prefix", function()
@@ -534,7 +562,8 @@ t.test("events: login/logout from the login log, state dedup, IP kept, banned lo
   W.g:tick(1000) -- opens the file at its end
   W.files[f] = W.files[f] .. u16("2026.10.13-21.00.05: '10.0.0.5 " .. ID1 .. ":Alice(1)' logged in at: X=1 Y=2 Z=3\r\n")
   W.g:tick(3000)
-  t.deep(W.events.got[1], { "player_connected", { steamId = ID1, name = "Alice", ip = "10.0.0.5" } })
+  t.deep(W.events.got[1], { "player_connected", { steamId = ID1, name = "Alice", ip = "10.0.0.5",
+    character = { id = "1", name = "Alice" } } })
   -- getPlayers sees the same player: no second connect
   W.add_pc(ID1, "Alice")
   W.g:list_players()

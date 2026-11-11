@@ -14,8 +14,8 @@ end
 
 local caps = json.decode(read("capabilities.json"))
 
-local OFFICIAL_ACTIONS = { "getPlayer", "getPlayers", "getPlayerLocation", "getPlayerInventory", "giveItem", "listItems",
-  "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
+local OFFICIAL_ACTIONS = { "getPlayer", "getPlayers", "getPlayerLocation", "getPlayerInventory", "getPlayerProgression", "giveItem",
+  "listItems", "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
   "unbanPlayer", "listBans", "testReachability", "shutdown", "getMapInfo", "getMapTile" }
 local OFFICIAL_EVENTS = { "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "log" }
 
@@ -33,8 +33,8 @@ local function sorted(list)
   return c
 end
 
-t.test("registry covers exactly the 19 Takaro actions and 6 events", function()
-  t.eq(#OFFICIAL_ACTIONS, 19)
+t.test("registry covers exactly the 20 Takaro actions and 6 events", function()
+  t.eq(#OFFICIAL_ACTIONS, 20)
   t.deep(keys(coverage.actions), sorted(OFFICIAL_ACTIONS))
   t.deep(sorted(coverage.ACTIONS), sorted(OFFICIAL_ACTIONS))
   t.deep(keys(coverage.events), sorted(OFFICIAL_EVENTS))
