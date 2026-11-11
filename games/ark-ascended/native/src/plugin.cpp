@@ -228,8 +228,6 @@ constexpr auto kSteamWait = std::chrono::seconds(5);
 struct Pending { std::string eos; std::chrono::steady_clock::time_point deadline; bool asked = false, done = false; };
 std::unordered_map<std::string, std::string> g_ids;  // EOS id -> SteamID64
 std::vector<Pending> g_pending;
-std::atomic<void*> g_subsystem{nullptr};
-std::vector<void*> g_subsystems;  // every distinct EOS subsystem that ticked (game thread)
 FromStringFn g_fromString = nullptr;
 QueryFn g_query = nullptr;
 MappingFn g_mapping = nullptr;
@@ -261,37 +259,40 @@ bool SafeRead(const void* address, void** out) {
     }
 }
 
-// The server's EOS Connect handle, read from the game's own EOS subsystem. Tick is a virtual of a secondary base, so
-// the pointer the hook sees is inside the subsystem, not at its start: try the bases in front of it and keep the one
-// whose identity interface points back at it. Found once, then cached for the server's lifetime.
+// The server's EOS Connect handle, read from the game's EOS online subsystem: Subsystem -> IdentityImpl -> EOSConnect.
+// The identity points back at its subsystem, which confirms the layout before the handle is used. Found once, then
+// cached; every read is guarded, so a layout change costs the Steam id, never the server.
 EosConnect g_connect = nullptr;
-bool g_searched = false;
+int g_tries = 0;
 EosConnect Connect() {
-    if (g_connect != nullptr || g_searched || g_subsystems.empty()) return g_connect;
-    g_searched = true;
+    if (g_connect != nullptr || g_tries >= 3) return g_connect;
+    ++g_tries;
     const auto identityAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineSubsystemEOS.IdentityImpl"));
     const auto connectAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.EOSConnect"));
     const auto ownerAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.SubsystemEOS"));
     if (identityAt <= 0 || connectAt <= 0 || ownerAt <= 0) { LogLine("steam: EOS subsystem fields unknown"); return nullptr; }
     auto hex = [](const void* v) { char b[24]; snprintf(b, sizeof b, "%p", v); return std::string(b); };
-    for (void* tick : g_subsystems) {
-        auto* seen = static_cast<char*>(tick);
-        LogLine("steam: search tick=" + hex(seen));
-        for (ptrdiff_t back = 0; back <= 0x400; back += 8) {
-            char* base = seen - back;
+    for (const char* service : {"RedpointEOS", "EOS"}) {
+        FName name(service, FNAME_Find);
+        if (name.IsNone()) continue;
+        auto* subsystem = static_cast<char*>(NativeCall<void*, FName&>(nullptr, "IOnlineSubsystem.Get(FName&)", name));
+        LogLine(std::string("steam: subsystem ") + service + " = " + hex(subsystem));
+        if (subsystem == nullptr) continue;
+        for (ptrdiff_t back = 0; back <= 0x40; back += 8) {
+            char* base = subsystem - back;
             void *identity = nullptr, *owner = nullptr, *connect = nullptr;
             if (!SafeRead(base + identityAt, &identity) || identity == nullptr) continue;
             const bool ro = SafeRead(static_cast<char*>(identity) + ownerAt, &owner);
             const bool rc = SafeRead(static_cast<char*>(identity) + connectAt, &connect);
-            if (ro && rc && connect != nullptr)
-                LogLine("steam: back=" + std::to_string(back) + " identity=" + hex(identity) + " owner=" + hex(owner) + " connect=" + hex(connect));
+            LogLine("steam: back=" + std::to_string(back) + " identity=" + hex(identity) + " owner=" + (ro ? hex(owner) : "?") +
+                    " connect=" + (rc ? hex(connect) : "?"));
             if (!ro || owner != base || !rc || connect == nullptr) continue;
             g_connect = connect;
-            LogLine("steam: EOS Connect found (subsystem starts " + std::to_string(back) + " bytes before the tick pointer)");
+            LogLine(std::string("steam: EOS Connect found through ") + service);
             return g_connect;
         }
     }
-    LogLine("steam: EOS Connect not found in " + std::to_string(g_subsystems.size()) + " subsystems, players carry the EOS id only");
+    if (g_tries >= 3) LogLine("steam: EOS Connect not found, players carry the EOS id only");
     return nullptr;
 }
 
@@ -897,15 +898,6 @@ void FlushConnects(const std::string& only) {
     }
 }
 
-DECLARE_HOOK(FOnlineSubsystemEOS_Tick, bool, void*, float);
-bool Hook_EosTick(void* subsystem, float delta)
-{
-    steamlink::g_subsystem = subsystem;
-    if (steamlink::g_connect == nullptr && steamlink::g_subsystems.size() < 16 &&
-        std::find(steamlink::g_subsystems.begin(), steamlink::g_subsystems.end(), subsystem) == steamlink::g_subsystems.end())
-        steamlink::g_subsystems.push_back(subsystem);
-    return FOnlineSubsystemEOS_Tick_original(subsystem, delta);
-}
 
 DECLARE_HOOK(AShooterGameMode_HandleNewPlayer_Implementation, bool, AShooterGameMode*, AShooterPlayerController*, UPrimalPlayerData*, AShooterCharacter*, bool);
 bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, UPrimalPlayerData* data, AShooterCharacter* character, bool fromLogin)
@@ -1174,7 +1166,6 @@ void TailLog(fs::path file) {
     }
 }
 
-constexpr char kHookEosTick[] = "FOnlineSubsystemEOS.Tick(float)";
 constexpr char kHookNewPlayer[] = "AShooterGameMode.HandleNewPlayer_Implementation(AShooterPlayerController*,UPrimalPlayerData*,AShooterCharacter*,bool)";
 constexpr char kHookLogout[] = "AShooterGameMode.Logout(AController*)";
 constexpr char kHookPrintMessage[] = "UShooterCheatManager.PrintMessageOut(FString&)";
@@ -1223,7 +1214,6 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     g_client->SetLocalAction(LocalAction);
 
     auto& hooks = AsaApi::GetHooks();
-    hooks.SetHook(kHookEosTick, Hook_EosTick, &FOnlineSubsystemEOS_Tick_original);
     hooks.SetHook(kHookNewPlayer, Hook_HandleNewPlayer, &AShooterGameMode_HandleNewPlayer_Implementation_original);
     hooks.SetHook(kHookLogout, Hook_Logout, &AShooterGameMode_Logout_original);
     hooks.SetHook(kHookPrintMessage, Hook_PrintMessageOut, &UShooterCheatManager_PrintMessageOut_original);
@@ -1243,7 +1233,6 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     commands.RemoveOnTickCallback(kCallbackId);
     commands.RemoveOnChatMessageCallback(kCallbackId);
     auto& hooks = AsaApi::GetHooks();
-    hooks.DisableHook(kHookEosTick, Hook_EosTick);
     hooks.DisableHook(kHookNewPlayer, Hook_HandleNewPlayer);
     hooks.DisableHook(kHookLogout, Hook_Logout);
     hooks.DisableHook(kHookPrintMessage, Hook_PrintMessageOut);
