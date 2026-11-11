@@ -238,6 +238,12 @@ upgrade replaces only the jar, so the file is never overwritten. `-Dtakaro.confi
   error's name, message and HTTP status are logged, the socket is closed and retried with
   backoff (Takaro keeps an unidentified socket open). Close codes 1008/4001/4003 stop retrying
   until the file changes.
+- Reconnect timing (`ReconnectPolicy`): a connection that was identified and stayed up 10 s
+  reconnects after 0.2-0.9 s, so Takaro sees it back within about 2 s. Only consecutive failures
+  back off: 2 s doubling, jittered to [d/2, d], capped at 60 s; the streak resets only after the
+  next stable identify. Java-WebSocket's ping check (10 s) drops a silent dead link after 15-25 s,
+  which then takes the fast retry. Unacknowledged events stay in the `EventOutbox` and are resent
+  after the next identify.
 
 Env overrides: `TAKARO_WS_URL`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_REGISTRATION_TOKEN`,
 `TAKARO_DEBUG`, `TAKARO_LOG_EVENTS`, `TAKARO_SERVER_CHAT_NAME`, `TAKARO_DEBUG_CATALOG`,
