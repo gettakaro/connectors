@@ -83,7 +83,7 @@ Checked on TF2 server version 11138802 (Steam build 25995664), 2026-10-20. ✅ w
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | |
-| Player list | ✅ | Name, ping and IP; the id is the SteamID64. Bots only with `takaro_tf2_include_bots 1`. |
+| Player list | ✅ | Name and ping; the id is the SteamID64. The player's IP is not sent. Bots only with `takaro_tf2_include_bots 1`. |
 | Player location | ✅ | |
 | Teleport | ✅ | Also through the teleports module (`@settp`, `@tp`). |
 | Player inventory | ⚠️ | The equipped weapons with in-game names; not the Steam backpack or cosmetics. |
