@@ -63,7 +63,7 @@ class ConfigReloadTest {
 
         waitFor(() -> logs.stream().anyMatch(l -> l.contains("Takaro rejected identify: Invalid registrationToken provided (BadRequestError, http 400).")));
         assertTrue(logs.stream().anyMatch(l -> l.contains("Check registrationToken in /x/TakaroConfig.txt")));
-        waitFor(() -> logs.stream().anyMatch(l -> l.contains("Reconnecting in 60s")));
+        waitFor(() -> logs.stream().anyMatch(l -> l.contains("Reconnecting in ") && l.contains("(attempt 1, backing off)")));
 
         connector.applyConfig(config("good-token"));
 

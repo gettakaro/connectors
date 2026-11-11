@@ -17,9 +17,11 @@ public class TakaroConfig {
     private volatile String serverChatName;
     private volatile String configFileHint;
     private volatile boolean reconnectEnabled = true;
-    private volatile long reconnectDelay = 5000;
-    private volatile long maxReconnectDelay = 300000;
-    private volatile double backoffMultiplier = 1.5;
+    // Backoff for consecutive failures only; the first retry after a stable connection is
+    // always fast (ReconnectPolicy).
+    private volatile long reconnectDelay = 2000;
+    private volatile long maxReconnectDelay = 60000;
+    private volatile double backoffMultiplier = 2.0;
     private volatile boolean debugEnabled = false;
     private volatile boolean protocolV1Enabled = true;
 
@@ -43,6 +45,7 @@ public class TakaroConfig {
     public boolean isReconnectEnabled() { return reconnectEnabled; }
     public void setReconnectEnabled(boolean reconnectEnabled) { this.reconnectEnabled = reconnectEnabled; }
 
+    /** Base backoff delay after the first failed attempt; doubles per further failure. */
     public long getReconnectDelay() { return reconnectDelay; }
     public void setReconnectDelay(long reconnectDelay) { this.reconnectDelay = reconnectDelay; }
 
