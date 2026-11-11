@@ -552,6 +552,30 @@ def stale_epoch(cert, key):
         run.close()
 
 
+def request_before_identify_response(cert, key):
+    # Takaro may send a request (its reachability check) before our identifyResponse arrives.
+    # It must be answered once identified, never refused as "invalid request".
+    run = Run(cert, key, identify_now=False)
+    try:
+        index = run.peer.connections.get(timeout=5)
+        while True:
+            i, opcode, data = run.peer.frames.get(timeout=5)
+            if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
+                break
+        run.index = index
+        run.request('early-1', 'echo', {'n': 1})
+        run.request('early-2', 'echo', {'n': 2})
+        run.no_response('early-1', 0.5)
+        run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+        assert run.response('early-1')['payload'] == {'n': 1}
+        assert run.response('early-2')['payload'] == {'n': 2}
+        run.request('late', 'echo', {'n': 3})
+        assert run.response('late')['payload'] == {'n': 3}
+        print('bridge request before identifyResponse runs after identify: pass', flush=True)
+    finally:
+        run.close()
+
+
 def completion_limit(cert, key):
     run = Run(cert, key)
     try:
@@ -615,6 +639,7 @@ def main():
         config_reload(cert, key)
         overload(cert, key, False)
         overload(cert, key, True)
+        request_before_identify_response(cert, key)
         completion_limit(cert, key)
         location_window(cert, key)
         stale_epoch(cert, key)

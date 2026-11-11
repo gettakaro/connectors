@@ -1,5 +1,6 @@
 #include "native_transport.h"
 #include "ca_bundle.h"
+#include "reconnect_policy.h"
 
 #include <libwebsockets.h>
 #include <openssl/x509_vfy.h>
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <random>
 #include <thread>
 #include <vector>
 
@@ -35,6 +37,11 @@ struct CloseRequest { uint64_t epoch; uint16_t code; std::string reason; };
 std::unique_ptr<CloseRequest> closeRequest;
 bool connected = false;
 std::string lastError;
+// Set by MarkIdentified (protected by mu): the epoch whose identify Takaro accepted, and when.
+uint64_t identifiedEpoch = 0;
+Clock::time_point identifiedAt;
+// Service thread only: whether the last closed connection counted as stable for the policy.
+bool closedStable = false;
 struct Target { std::string url; bool connect = true; uint64_t generation = 0; };
 Target target; // protected by mu; written by Retarget, applied by the service thread
 struct HttpRequest {
@@ -126,10 +133,13 @@ struct Session {
     bool immediatePing = false;
 };
 Session session;
-lws_sorted_usec_list serviceTimer;
+lws_sorted_usec_list serviceTimer, dialTimer;
 void ServiceTimer(lws_sorted_usec_list* sul) {
     lws_sul_schedule(context, 0, sul, ServiceTimer, LWS_US_PER_SEC);
 }
+// lws_service() sleeps until the next scheduled timer, so a pending dial needs its own wakeup;
+// with only the 1 s service tick a redial could start up to a second late.
+void DialTimer(lws_sorted_usec_list*) {}
 
 bool Pop(Outbound& out) {
     std::lock_guard<std::mutex> g(mu);
@@ -265,8 +275,10 @@ int Callback(lws* wsi, lws_callback_reasons reason, void* user, void* in, size_t
     case LWS_CALLBACK_CLIENT_CLOSED: {
         if (session.wsi && wsi != session.wsi) return 0;
         if (session.open) Notify(NoticeType::Closed, session.id);
-        session = Session{};
         std::lock_guard<std::mutex> g(mu);
+        closedStable = session.open && identifiedEpoch == session.id &&
+                       Clock::now() - identifiedAt >= std::chrono::milliseconds(ReconnectPolicy::kStableMs);
+        session = Session{};
         connected = false;
         // Every queued outbound frame belongs to the old connection. The bridge
         // retains event ownership and replays after the next identify.
@@ -398,7 +410,9 @@ void Run() {
             httpEnabled = true;
         }
     }
-    unsigned delay = cfg.reconnectBaseMs;
+    ReconnectPolicy::Backoff backoff(cfg.reconnectBaseMs, cfg.reconnectMaxMs);
+    closedStable = false;
+    std::mt19937 rng(std::random_device{}());
     auto nextConnect = Clock::now();
     bool awaiting = false, redialNow = false;
     while (!stopping) {
@@ -409,7 +423,7 @@ void Run() {
         }
         if (retarget) {
             applyUrl(retarget->url, retarget->connect);
-            delay = cfg.reconnectBaseMs;
+            backoff.Reset();
             nextConnect = Clock::now();
             // The old socket's own CLOSED callback resets `session`; only then does the loop
             // dial again, so a late callback can never touch the new connection.
@@ -432,15 +446,20 @@ void Run() {
         lws_service(local, 100);
         if (redialNow && !session.wsi) {
             nextConnect = Clock::now();
-            delay = cfg.reconnectBaseMs;
+            backoff.Reset();
+            closedStable = false;
             awaiting = redialNow = false;
         } else if (awaiting && !session.wsi) {
+            const bool stable = closedStable;
+            closedStable = false;
+            const unsigned delay = backoff.NextDelayMs(stable, static_cast<uint32_t>(rng()));
             nextConnect = Clock::now() + std::chrono::milliseconds(delay);
-            delay = std::min(cfg.reconnectMaxMs, delay * 2);
+            lws_sul_schedule(local, 0, &dialTimer, DialTimer, static_cast<lws_usec_t>(delay) * 1000);
             awaiting = false;
+            Notify(NoticeType::Retry, 0, delay, stable ? "after a stable session"
+                                                       : "failure streak " + std::to_string(backoff.Streak()));
         }
         if (session.open) {
-            delay = cfg.reconnectBaseMs;
             const auto now = Clock::now();
             if (!session.timeoutSet &&
                 ((session.pings.size() >= 2 && now - session.lastPing >= std::chrono::seconds(5)) ||
@@ -470,6 +489,7 @@ void Run() {
     httpHost.clear(); httpPath.clear(); httpPort = 0; httpWsi = nullptr;
     { std::lock_guard<std::mutex> g(mu); context = nullptr; connected = false; }
     lws_sul_cancel(&serviceTimer);
+    lws_sul_cancel(&dialTimer);
     lws_context_destroy(local);
     session = Session{};
     transientBytes = 0;
@@ -568,6 +588,13 @@ bool Queue(Kind kind, std::string value, uint64_t eventSeq, uint64_t expectedEpo
     return static_cast<bool>(Queue({kind, std::make_shared<const std::string>(std::move(value)),
                                     expectedEpoch, eventSeq, false}));
 }
+void MarkIdentified(uint64_t expectedEpoch) {
+    std::lock_guard<std::mutex> g(mu);
+    if (!connected || expectedEpoch != epoch) return;
+    identifiedEpoch = expectedEpoch;
+    identifiedAt = Clock::now();
+}
+
 bool RequestClose(uint64_t expectedEpoch, uint16_t code, std::string reason) {
     std::lock_guard<std::mutex> g(mu);
     if (stopping || !connected || expectedEpoch != epoch) return false;
