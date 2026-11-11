@@ -215,6 +215,40 @@ public sealed class RunnerProtocolV1Tests
     }
 
     [TestMethod]
+    public async Task ADropAfterAStableSessionReconnectsWithinTwoSeconds()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        // A 20 s unit: only the fast path can reconnect within the bound below.
+        using var runner = new TakaroWebSocketRunner(
+            Config(takaro), new RecordingAdapter(), takaro.Log, null, takaro.Log, "cfg", TimeSpan.FromSeconds(20));
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+        await Task.Delay(ReconnectPolicy.StableAfter + TimeSpan.FromMilliseconds(500));
+
+        var droppedAt = DateTime.UtcNow;
+        await takaro.DropAsync();
+        await Until(() => takaro.Identifies >= 2);
+        var gap = DateTime.UtcNow - droppedAt;
+        Assert.IsTrue(gap < TimeSpan.FromSeconds(2), $"identify again after {gap.TotalSeconds:0.00} s");
+        Assert.IsTrue(takaro.LogLines.Any(l => l.Contains("failure streak 0", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task ADropBeforeTheSessionIsStableBacksOff()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        using var runner = new TakaroWebSocketRunner(
+            Config(takaro), new RecordingAdapter(), takaro.Log, null, takaro.Log, "cfg", TimeSpan.FromSeconds(20));
+        await runner.StartAsync();
+        await Until(() => takaro.Identifies >= 1 && takaro.Connected);
+
+        await takaro.DropAsync();
+        await Task.Delay(3000);
+        Assert.AreEqual(1, takaro.Identifies, "a connection that never settled extends the streak (10-20 s here)");
+        Assert.IsTrue(takaro.LogLines.Any(l => l.Contains("failure streak 1", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
     public async Task AVersionOneRejectionBacksOffInsteadOfReconnectingAtOnce()
     {
         using var takaro = new FakeTakaro(chosenVersion: 1, rejectWith: "invalid_args");
