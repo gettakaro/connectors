@@ -18,14 +18,14 @@ anything, and there is no Workshop item.
 ### 2. Download
 
 Download **`takaro-zomboid-agent-linux-<game build>-<version>.jar`** (for example
-`takaro-zomboid-agent-linux-42.21.0-<version>.jar`) from the latest release at
+`takaro-zomboid-agent-linux-42.22.2-<version>.jar`) from the latest release at
 https://takaro.io/connectors/zomboid (or from the latest `zomboid-vX.Y.Z` release at
 <https://github.com/gettakaro/connectors/releases>; do not use the `zomboid-dev` or `pr-…`
 pre-releases). `TakaroConnector-<version>.jar` beside it is the same file under its old name.
 It is one self-contained jar; there is nothing to unzip. To check it, fetch `SHA256SUMS` from the
 same release and run `sha256sum -c --ignore-missing SHA256SUMS` in the download folder.
 
-Supported server build: Project Zomboid 42.21.0, Steam build 25485538 (the `public` branch). The
+Supported server build: Project Zomboid 42.22.2, Steam build 26486687 (the `public` branch). The
 connector checks the server jar when it starts and refuses to hook another build unless you set
 `TAKARO_TARGET_POLICY=warn` on the server process.
 
@@ -137,7 +137,7 @@ stays inactive.
 
 ## What works, what doesn't
 
-Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-10-01. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -157,14 +157,14 @@ Checked on Project Zomboid 42.21.0 (4a0e9546ec), 2026-10-01. ✅ works, ⚠️ w
 | Ban list | ✅ | With expiry, including bans made outside Takaro. |
 | Give an item | ✅ | Appears in the inventory without a relog. |
 | Shop | ⚠️ | Not checked. |
-| Shut down the server | ⚠️ | Saves and quits on request; not checked on this build. |
+| Shut down the server | ✅ | Saves and quits on request; the game can take about two minutes to exit after saving, then restarts and re-identifies. |
 | Player joined / left | ✅ | Left also arrives on a kick. |
 | Chat messages | ✅ | With the player and channel. |
 | Player death | ✅ | With the position. |
-| Entity killed | ⚠️ | Zombie kills with the weapon (none for bare hands), at most about 20 per second; not checked on this build. |
+| Entity killed | ✅ | Zombie kills with the weapon (none for bare hands), at most about 20 per second. |
 | Server log lines | ⚠️ | Off by default; set `logEvents=true` (or `TAKARO_LOG_EVENTS=true`). |
-| Discord chat bridge | ⚠️ | Not checked. |
-| Modules | ⚠️ | Not checked. |
+| Discord chat bridge | ✅ | Player chat, joins and leaves reach Discord, and Discord messages show in game chat. Takaro's own messages come back as chat without a player, so use a bridge that skips those. |
+| Modules | ✅ | Chat commands such as `@balance`, module teleports, and module hooks and cron jobs that post to Discord. |
 | Game name, version and icon | ⚠️ | Not checked on takaro.io yet. |
 | Restarts and outages | ✅ | Re-identifies on its own after a server restart. |
 

@@ -4,15 +4,15 @@
   "game": "zomboid",
   "platform": "linux",
   "revision": "42.21.0",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
-    "since": "2026-09-29",
+    "status": "retired",
+    "since": "2026-11-10",
     "evidence": [
       "hooks + 99 direct API refs + 2 reflective fields unchanged vs 42.20.4 (static diff); zomboid-v1.1.0 agent with TAKARO_TARGET_POLICY=warn binds all hooks, identifies and answers reachability/getPlayers/executeConsoleCommand/sendMessage/listBans live on neo 2026-09-29",
       "real-client run 2026-10-01 on 42.21.0 4a0e9546ec: player-connected/disconnected, chat-message, player-death events; getPlayers, location, inventory, giveItem, broadcast + whisper, teleport, kick, ban/listBans/unban all proven through Takaro MCP (gettakaro#339 comment); entity-killed hook bound but no kill landed"
     ],
-    "notes": "Exact Steam pin of Build 42 42.21.0 (build 4a0e9546ec, Steam build 25485538). Startup, hook binding and the player-scoped actions and events were proven with a real client on 2026-10-01; entity-killed firing is not yet re-proven on this pin."
+    "notes": "Exact Steam pin of Build 42 42.21.0 (build 4a0e9546ec, Steam build 25485538). Startup, hook binding and the player-scoped actions and events were proven with a real client on 2026-10-01; entity-killed firing is not yet re-proven on this pin. Retired after public moved to build 26486687 (42.22.2) on 2026-11-06; Steam no longer serves depot 380871 manifest 5337933334995336130 to anonymous accounts (401), so this pin cannot be rebuilt anonymously. Retained so reports and exact-target operations still resolve."
   },
   "inputs": {
     "server": {
