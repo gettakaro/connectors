@@ -61,11 +61,14 @@ namespace TakaroEmpyrion.Protocol
         public string IdentityToken;
         public string RegistrationToken;
         public string ServerName;
-        public TimeSpan PingInterval = TimeSpan.FromSeconds(30);
-        public TimeSpan InboundTimeout = TimeSpan.FromSeconds(95);
+        /// <summary>Takaro answers every ping with a pong, so this also bounds the silence on a healthy link.</summary>
+        public TimeSpan PingInterval = TimeSpan.FromSeconds(10);
+        /// <summary>No inbound frame for this long (three missed pongs) means the socket is dead even if TCP says open.</summary>
+        public TimeSpan InboundTimeout = TimeSpan.FromSeconds(30);
         public TimeSpan IdentifyDeadline = TimeSpan.FromSeconds(20);
         public TimeSpan MaxBackoff = TimeSpan.FromSeconds(60);
-        public TimeSpan StableAfter = TimeSpan.FromSeconds(60);
+        /// <summary>How long a connection must stay identified before the failure streak resets (see ReconnectPolicy).</summary>
+        public TimeSpan StableAfter = TimeSpan.FromSeconds(10);
         public int OutboxCapacity = 500;
         /// <summary>When set, identify offers protocol versions [0, 1] with this Capability Manifest.</summary>
         public Func<JArray> Manifest;
@@ -79,7 +82,7 @@ namespace TakaroEmpyrion.Protocol
     }
 
     /// <summary>
-    /// Owns the Takaro connection: connect, identify, heartbeat, reconnect with jittered backoff, and one
+    /// Owns the Takaro connection: connect, identify, heartbeat, reconnect (ReconnectPolicy), and one
     /// sender thread (ClientWebSocket allows one outstanding send). Game events raised while the link is
     /// down wait in a bounded outbox and are flushed after the next identify. Carries no game symbols.
     ///
@@ -115,6 +118,10 @@ namespace TakaroEmpyrion.Protocol
         volatile bool _stopping;
         volatile bool _rejected;
         DateTime _lastInbound = DateTime.UtcNow;
+        volatile IWsConnection _deadLink;
+        // UTC ticks when the oldest ping still without any inbound frame after it was written to the socket (0: none).
+        long _unansweredPingSince;
+        const string PingFrame = "{\"type\":\"ping\"}";
         Thread _loop, _sender, _heart;
 
         public string GameServerId { get; private set; }
@@ -231,6 +238,7 @@ namespace TakaroEmpyrion.Protocol
                 try
                 {
                     c.Send(frame);
+                    if (frame == PingFrame) Interlocked.CompareExchange(ref _unansweredPingSince, DateTime.UtcNow.Ticks, 0);
                     _log.Debug("SEND " + LogText.Clip(frame));
                 }
                 catch (Exception e)
@@ -241,35 +249,51 @@ namespace TakaroEmpyrion.Protocol
             }
         }
 
+        /// <summary>
+        /// Checks the link once a second (or every PingInterval when shorter). The link is dead when nothing came in
+        /// for InboundTimeout and a ping that really left the socket has gone unanswered for InboundTimeout minus one
+        /// PingInterval, so pings stuck behind a burst of queued frames never close a healthy socket. A dead socket is
+        /// closed and reconnects like any other drop.
+        /// </summary>
         void RunHeartbeat()
         {
+            TimeSpan tick = _opt.PingInterval < TimeSpan.FromSeconds(1) ? _opt.PingInterval : TimeSpan.FromSeconds(1);
+            DateTime lastPing = DateTime.MinValue;
             while (!_stopping)
             {
-                Thread.Sleep(_opt.PingInterval);
+                Thread.Sleep(tick);
                 IWsConnection c = _conn;
-                if (c == null || !_identified) continue;
-                if (DateTime.UtcNow - _lastInbound > _opt.InboundTimeout)
+                if (c == null || !_identified) { lastPing = DateTime.MinValue; continue; }
+                DateTime now = DateTime.UtcNow;
+                long pingSince = Interlocked.Read(ref _unansweredPingSince);
+                if (now - _lastInbound > _opt.InboundTimeout && pingSince != 0
+                    && now - new DateTime(pingSince, DateTimeKind.Utc) >= _opt.InboundTimeout - _opt.PingInterval)
                 {
-                    _log.Warn("no frame from Takaro for " + (int)_opt.InboundTimeout.TotalSeconds + "s, reconnecting");
+                    _log.Warn("no frame from Takaro for " + (int)(now - _lastInbound).TotalSeconds + "s (inbound timeout " + (int)_opt.InboundTimeout.TotalSeconds + "s), closing the dead link");
+                    _deadLink = c;
                     c.Abort();
                     continue;
                 }
-                try { _sendQueue.Add("{\"type\":\"ping\"}"); } catch (InvalidOperationException) { }
+                if (lastPing == DateTime.MinValue) lastPing = now; // first ping one interval after identify
+                if (now - lastPing < _opt.PingInterval) continue;
+                lastPing = now;
+                try { _sendQueue.Add(PingFrame); } catch (InvalidOperationException) { }
             }
         }
 
         void RunLoop()
         {
-            int attempt = 0;
+            var policy = new ReconnectPolicy(_opt.StableAfter, _opt.MaxBackoff);
             while (!_stopping)
             {
-                DateTime connectedAt = DateTime.MinValue;
+                DateTime connectedAt = DateTime.MinValue, endedAt = DateTime.MinValue;
                 IWsConnection c = null;
                 try
                 {
                     c = _factory();
                     c.Connect(new Uri(_opt.Url), TimeSpan.FromSeconds(20));
                     _lastInbound = DateTime.UtcNow;
+                    Interlocked.Exchange(ref _unansweredPingSince, 0);
                     _conn = c;
                     c.Send(Serialize(BuildIdentify()));
                     _log.Info("connected to " + _opt.Url + ", identify sent");
@@ -282,32 +306,33 @@ namespace TakaroEmpyrion.Protocol
                             string text = c.Receive();
                             if (text == null) { _log.Warn("Takaro closed the connection"); break; }
                             _lastInbound = DateTime.UtcNow;
+                            Interlocked.Exchange(ref _unansweredPingSince, 0);
                             if (HandleFrame(text) && connectedAt == DateTime.MinValue) connectedAt = DateTime.UtcNow;
-                            if (connectedAt != DateTime.MinValue && attempt > 0 && DateTime.UtcNow - connectedAt > _opt.StableAfter) attempt = 0;
                         }
                     }
                     finally { watchdog.Dispose(); }
                 }
                 catch (Exception e)
                 {
-                    if (!_stopping && !_rejected) _log.Warn("connection error: " + e.GetType().Name + ": " + LogText.Clip(e.Message));
+                    if (!_stopping && !_rejected && _deadLink != c) _log.Warn("connection error: " + e.GetType().Name + ": " + LogText.Clip(e.Message));
                 }
                 finally
                 {
+                    endedAt = DateTime.UtcNow; // before teardown, so a slow Abort/Dispose does not count as stable time
                     _identified = false;
                     _protocolVersion = 0;
                     _rejected = false;
                     _conn = null;
                     if (c != null) { c.Abort(); c.Dispose(); }
                 }
+                _deadLink = null;
                 if (_stopping) break;
-                if (connectedAt != DateTime.MinValue && DateTime.UtcNow - connectedAt > _opt.StableAfter) attempt = 0;
                 Reconnects++;
-                double baseSec = Math.Min(_opt.MaxBackoff.TotalSeconds, Math.Pow(2, Math.Min(attempt, 6)));
-                double wait = baseSec * (0.5 + _rng.NextDouble() * 0.5);
-                attempt++;
-                _log.Info("reconnecting in " + wait.ToString("0.0") + "s (attempt " + attempt + ")");
-                Thread.Sleep(TimeSpan.FromSeconds(wait));
+                TimeSpan? identifiedFor = connectedAt == DateTime.MinValue ? (TimeSpan?)null : endedAt - connectedAt;
+                TimeSpan wait = policy.OnConnectionEnded(identifiedFor, _rng.NextDouble());
+                _log.Info("reconnecting in " + wait.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "s (attempt " + policy.Failures
+                          + (identifiedFor.HasValue ? ", previous connection identified for " + (int)identifiedFor.Value.TotalSeconds + "s" : ", previous attempt never identified") + ")");
+                Thread.Sleep(wait);
             }
         }
 

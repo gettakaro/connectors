@@ -87,7 +87,7 @@ Checked on Empyrion v1.19.6 build 5188 (Steam build 25490402), 2026-11-03. ✅ w
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects by itself after a server restart or network drop; events from the outage are sent afterwards. |
+| Connection | ✅ | Reconnects by itself after a server restart or network drop, usually within 2 s. A silently dead link is noticed within about 30 s. Events from the outage are sent afterwards. |
 | Player list | ✅ | Name, ping and IP. Steam players by SteamID64; Epic Games Store players by the game's own numeric id. Offline players answer with their last known data. |
 | Player location | ✅ | Live position, with the planet or playfield as the map layer. |
 | Teleport | ✅ | Within the player's playfield, or to another planet or playfield. |

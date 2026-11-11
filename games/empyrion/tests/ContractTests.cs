@@ -38,6 +38,9 @@ public static partial class ContractTests
         Run("map tiles", MapTiles);
         Run("map real data", MapRealData);
         Run("wire v1", WireV1);
+        Run("reconnect delays", ReconnectDelays);
+        Run("reconnect wire", ReconnectWire);
+        Run("reconnect slow uplink", ReconnectSlowUplink);
         Console.WriteLine("\n" + _pass + " passed, " + _fail + " failed");
         Console.Out.Flush();
         // Background protocol threads are still alive; exit hard so Mono's teardown cannot mask the result.
@@ -176,11 +179,21 @@ public static partial class ContractTests
         public readonly BlockingCollection<string> ToConnector = new BlockingCollection<string>();
         public readonly BlockingCollection<string> FromConnector = new BlockingCollection<string>();
         public volatile bool Aborted;
+        /// <summary>Answer pings like Takaro does, until Silent (a half-open link: frames go out, nothing comes back).</summary>
+        public volatile bool AutoPong, Silent;
+        /// <summary>Each Send blocks this long (a slow uplink).</summary>
+        public volatile int SendDelayMs;
         public void Connect(Uri uri, TimeSpan timeout) { }
-        public void Send(string text) { if (Aborted) throw new IOException("closed"); FromConnector.Add(text); }
+        public void Send(string text)
+        {
+            if (SendDelayMs > 0) Thread.Sleep(SendDelayMs);
+            if (Aborted) throw new IOException("closed");
+            FromConnector.Add(text);
+            if (AutoPong && !Silent && text == "{\"type\":\"ping\"}") ToConnector.Add("{\"type\":\"pong\"}");
+        }
         public string Receive()
         {
-            while (!Aborted) { if (ToConnector.TryTake(out string s, 50)) return s == "<close>" ? null : s; }
+            while (!Aborted) { if (ToConnector.TryTake(out string s, 50) && !Silent) return s == "<close>" ? null : s; }
             return null;
         }
         public void Abort() { Aborted = true; }
