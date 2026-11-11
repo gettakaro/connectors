@@ -20,6 +20,7 @@ Monorepo for connector plugins that implement the [Takaro Generic Connector Prot
 | SCUM | [`games/scum/`](games/scum/) | Lua + C++ (UE4SS mod inside `SCUMServer.exe`) | clang-cl cross-compile (`debian:13.7`) |
 | Team Fortress 2 | [`games/tf2/`](games/tf2/) | SourcePawn (SourceMod plugin + ProjectSky websocket/json extensions) | SourceMod 1.13 `spcomp64` (`debian:13.7`) |
 | Empyrion - Galactic Survival | [`games/empyrion/`](games/empyrion/) | C# (mod loaded by the game's own mod loader) | Mono `csc` (`mono:6.12.0.182`) |
+| Counter-Strike 2 (candidate) | [`games/counter-strike2/`](games/counter-strike2/) | C# / .NET 10 (CounterStrikeSharp server plugin) | pinned .NET SDK container |
 
 Each connector is self-contained with its own Docker dev environment, build system, and scripts. See each connector's README for details.
 

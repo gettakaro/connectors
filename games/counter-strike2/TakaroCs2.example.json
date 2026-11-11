@@ -1,0 +1,11 @@
+{
+  "ConfigVersion": 1,
+  "TakaroWsUrl": "wss://connect.takaro.io/",
+  "ServerName": "Counter-Strike 2",
+  "IdentityToken": "",
+  "RegistrationToken": "",
+  "IncludeBots": false,
+  "AllowShutdown": false,
+  "CommandAllowlistExact": ["sv_cheats"],
+  "CommandAllowlistPrefixes": []
+}
