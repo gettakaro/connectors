@@ -11,6 +11,7 @@
 #include <bcrypt.h>
 #include <wincrypt.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -228,6 +229,7 @@ struct Pending { std::string eos; std::chrono::steady_clock::time_point deadline
 std::unordered_map<std::string, std::string> g_ids;  // EOS id -> SteamID64
 std::vector<Pending> g_pending;
 std::atomic<void*> g_subsystem{nullptr};
+std::vector<void*> g_subsystems;  // every distinct EOS subsystem that ticked (game thread)
 FromStringFn g_fromString = nullptr;
 QueryFn g_query = nullptr;
 MappingFn g_mapping = nullptr;
@@ -265,34 +267,31 @@ bool SafeRead(const void* address, void** out) {
 EosConnect g_connect = nullptr;
 bool g_searched = false;
 EosConnect Connect() {
-    if (g_connect != nullptr || g_searched) return g_connect;
-    auto* seen = static_cast<char*>(g_subsystem.load());
-    if (seen == nullptr) return nullptr;
+    if (g_connect != nullptr || g_searched || g_subsystems.empty()) return g_connect;
     g_searched = true;
     const auto identityAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineSubsystemEOS.IdentityImpl"));
     const auto connectAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.EOSConnect"));
     const auto ownerAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.SubsystemEOS"));
     if (identityAt <= 0 || connectAt <= 0 || ownerAt <= 0) { LogLine("steam: EOS subsystem fields unknown"); return nullptr; }
     auto hex = [](const void* v) { char b[24]; snprintf(b, sizeof b, "%p", v); return std::string(b); };
-    LogLine("steam: search tick=" + hex(seen) + " identityAt=" + std::to_string(identityAt) + " connectAt=" + std::to_string(connectAt) +
-            " ownerAt=" + std::to_string(ownerAt));
-    for (ptrdiff_t back = 0; back <= 0x400; back += 8) {
-        char* base = seen - back;
-        void *identity = nullptr, *owner = nullptr, *connect = nullptr;
-        if (!SafeRead(base + identityAt, &identity) || identity == nullptr) continue;
-        if (back <= 0x80) {
-            void *o = nullptr, *c = nullptr;
-            const bool ro = SafeRead(static_cast<char*>(identity) + ownerAt, &o), rc = SafeRead(static_cast<char*>(identity) + connectAt, &c);
-            LogLine("steam: back=" + std::to_string(back) + " identity=" + hex(identity) + " owner=" + (ro ? hex(o) : "unreadable") +
-                    " connect=" + (rc ? hex(c) : "unreadable"));
+    for (void* tick : g_subsystems) {
+        auto* seen = static_cast<char*>(tick);
+        LogLine("steam: search tick=" + hex(seen));
+        for (ptrdiff_t back = 0; back <= 0x400; back += 8) {
+            char* base = seen - back;
+            void *identity = nullptr, *owner = nullptr, *connect = nullptr;
+            if (!SafeRead(base + identityAt, &identity) || identity == nullptr) continue;
+            const bool ro = SafeRead(static_cast<char*>(identity) + ownerAt, &owner);
+            const bool rc = SafeRead(static_cast<char*>(identity) + connectAt, &connect);
+            if (ro && rc && connect != nullptr)
+                LogLine("steam: back=" + std::to_string(back) + " identity=" + hex(identity) + " owner=" + hex(owner) + " connect=" + hex(connect));
+            if (!ro || owner != base || !rc || connect == nullptr) continue;
+            g_connect = connect;
+            LogLine("steam: EOS Connect found (subsystem starts " + std::to_string(back) + " bytes before the tick pointer)");
+            return g_connect;
         }
-        if (!SafeRead(static_cast<char*>(identity) + ownerAt, &owner) || owner != base) continue;
-        if (!SafeRead(static_cast<char*>(identity) + connectAt, &connect) || connect == nullptr) continue;
-        g_connect = connect;
-        LogLine("steam: EOS Connect found (subsystem starts " + std::to_string(back) + " bytes before the tick pointer)");
-        return g_connect;
     }
-    LogLine("steam: EOS Connect not found, players carry the EOS id only");
+    LogLine("steam: EOS Connect not found in " + std::to_string(g_subsystems.size()) + " subsystems, players carry the EOS id only");
     return nullptr;
 }
 
@@ -902,6 +901,9 @@ DECLARE_HOOK(FOnlineSubsystemEOS_Tick, bool, void*, float);
 bool Hook_EosTick(void* subsystem, float delta)
 {
     steamlink::g_subsystem = subsystem;
+    if (steamlink::g_connect == nullptr && steamlink::g_subsystems.size() < 16 &&
+        std::find(steamlink::g_subsystems.begin(), steamlink::g_subsystems.end(), subsystem) == steamlink::g_subsystems.end())
+        steamlink::g_subsystems.push_back(subsystem);
     return FOnlineSubsystemEOS_Tick_original(subsystem, delta);
 }
 
