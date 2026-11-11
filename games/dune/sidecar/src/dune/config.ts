@@ -56,6 +56,7 @@ export interface SidecarConfig {
   senderName: string;
   reconnectBaseMs: number;
   reconnectMaxMs: number;
+  reconnectFastMs: number;
 
   // --- Postgres (read-only) ---
   pgUrl: string;
@@ -237,6 +238,8 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
     senderName: env.TAKARO_SENDER_NAME?.trim() || env.TAKARO_SERVER_CHAT_NAME?.trim() || '',
     reconnectBaseMs: int(env.TAKARO_RECONNECT_BASE_MS, 2000),
     reconnectMaxMs: int(env.TAKARO_RECONNECT_MAX_MS, 60000),
+    // First retry after a stable session dropped (jittered 0.5x-1.5x); BASE/MAX only shape repeated failures.
+    reconnectFastMs: int(env.TAKARO_RECONNECT_FAST_MS, 1000),
 
     pgUrl: pgUrlOf(env),
     pgStatementTimeoutMs: int(env.DUNE_PG_STATEMENT_TIMEOUT_MS, 5000),

@@ -89,6 +89,7 @@ async function main(): Promise<void> {
     {
       baseReconnectMs: config.reconnectBaseMs,
       maxReconnectMs: config.reconnectMaxMs,
+      fastReconnectMs: config.reconnectFastMs,
       ...(config.takaroProtocol === 1 ? { manifest: () => buildManifest(MAP_DIMENSIONS, gameBuild.version()) } : {}),
     },
   );
