@@ -219,14 +219,35 @@ void* Reflect::FindObjectByPath(const std::string& package, const std::string& n
     return g_findObjectPath(nullptr, p, false);
 }
 
+namespace {
+// Copies an engine-filled TArray<UObject*> into `out` and frees it. A large result (the whole object
+// array is ~100k entries, ~800 KB) lives in memory the allocator mapped during the call, so a /proc
+// maps table cached a moment earlier does not know it yet; re-read the maps once before rejecting it.
+std::atomic<uint64_t> g_resultArrayRemaps{0};
+void TakeResultArray(TArray<void*>& arr, std::vector<void*>& out, const char* what) {
+    if (arr.Data && arr.Num > 0) {
+        const size_t bytes = (size_t)arr.Num * 8;
+        bool readable = MemReadable(arr.Data, bytes);
+        if (!readable) {
+            MemMapsRefresh();
+            readable = MemReadable(arr.Data, bytes);
+            if (readable && g_resultArrayRemaps.fetch_add(1) == 0)
+                PluginLog("reflect: %s result (%d entries) sat in memory mapped after the last maps read; "
+                          "re-read /proc/self/maps", what, arr.Num);
+        }
+        if (readable) out.assign(arr.Data, arr.Data + arr.Num);
+        else PluginLog("reflect: %s returned %d entries at %p that are not readable", what, arr.Num, arr.Data);
+    }
+    if (arr.Data && g_free) g_free(arr.Data);
+}
+}  // namespace
+
 bool Reflect::GetObjectsOfClass(void* cls, std::vector<void*>& out, bool includeDerived) {
     out.clear();
     if (!cls || !g_getObjectsOfClass) return false;
     TArray<void*> arr;
     g_getObjectsOfClass(cls, &arr, includeDerived, 0x10 /*RF_ClassDefaultObject*/, 0);
-    if (arr.Data && arr.Num > 0 && MemReadable(arr.Data, (size_t)arr.Num * 8))
-        out.assign(arr.Data, arr.Data + arr.Num);
-    if (arr.Data && g_free) g_free(arr.Data);
+    TakeResultArray(arr, out, "GetObjectsOfClass");
     return true;
 }
 
@@ -235,9 +256,7 @@ bool Reflect::GetObjectsWithOuter(void* outer, std::vector<void*>& out, bool inc
     if (!outer || !g_getObjectsWithOuter) return false;
     TArray<void*> arr;
     g_getObjectsWithOuter(outer, &arr, includeNested, 0, 0);
-    if (arr.Data && arr.Num > 0 && MemReadable(arr.Data, (size_t)arr.Num * 8))
-        out.assign(arr.Data, arr.Data + arr.Num);
-    if (arr.Data && g_free) g_free(arr.Data);
+    TakeResultArray(arr, out, "GetObjectsWithOuter");
     return true;
 }
 
