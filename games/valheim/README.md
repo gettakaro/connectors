@@ -29,9 +29,9 @@ Stop the server and unzip so the whole `TakaroValheim` folder lands in `BepInEx/
 <server>/BepInEx/plugins/TakaroValheim/...the other files from the zip
 ```
 
-**Optional inventory mod.** A player who wants Takaro to see their inventory and skills installs BepInExPack
-Valheim 5.4.2351 in their game folder, then unzips `takaro-valheim-inventory-companion.zip` (same
-release) into its `BepInEx/plugins/`. Other players play normally without it.
+**Optional inventory mod.** A player who wants Takaro to see their inventory and skills installs
+BepInExPack Valheim 5.4.2351 in their game folder, then unzips
+`takaro-valheim-inventory-companion.zip` (same release) into its `BepInEx/plugins/`. Other players play normally without it.
 
 ### 3. Configure
 
@@ -123,7 +123,7 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Modules | ✅ | |
 | Game name, version and icon | ✅ | The icon can take about two hours to appear. |
 | Restarts and outages | ✅ | Events from an outage are sent afterwards. |
-| Single player lookup | ❌ | Takaro uses the player list. |
+| Single player lookup | ✅ | Answers only for online players. |
 
 ## Known issues
 
