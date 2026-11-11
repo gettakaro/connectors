@@ -162,7 +162,7 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   With nobody online, a broadcast succeeds without delivering anything.
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
-  `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.
+  `inventory <player>`, `give <player> <itemCode> [amount] [level] [rarity]` (level 1-255; omitted, or a level the item cannot have, = the item's default level; rarity common, uncommon, rare, epic or legendary, omitted = the item's default rarity; the game keeps the rarity of an item that has no rarity variants, for example the crafted Scrappy Sword stays Common), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.
   `<player>` is a SteamID64 or the name (persona or character name, case-insensitive). A name with spaces is given
   quoted (`level "Character 1"`, single quotes too; `\"` escapes a quote) or bare (`level Character 1`): bare words are
   matched against the online players, and a line that fits more than one way, or a name several online players share,

@@ -36,8 +36,14 @@ Form Whisper() {
 const std::vector<Form> kTeleport = {
     {1, 3, 3, [](const std::vector<Arg>& r) { return IsNum(r[0].text) && IsNum(r[1].text) && IsNum(r[2].text); }},
     {2, 0, 0}};
-const std::vector<Form> kGive = {{1, 1, 3, [](const std::vector<Arg>& r) {
-                                      return (r.size() < 2 || IsNum(r[1].text)) && (r.size() < 3 || IsNum(r[2].text));
+bool IsRarity(const std::string& s) {
+    for (const char* k : {"common", "uncommon", "rare", "epic", "legendary"})
+        if (s == k) return true;
+    return false;
+}
+const std::vector<Form> kGive = {{1, 1, 4, [](const std::vector<Arg>& r) {
+                                      return (r.size() < 2 || IsNum(r[1].text)) && (r.size() < 3 || IsNum(r[2].text)) &&
+                                             (r.size() < 4 || IsRarity(r[3].text));
                                   }}};
 
 struct Result {
@@ -195,6 +201,12 @@ int main() {
         Check(r.ok && r.p.rest.size() == 2, "give quoted name");
         r = Run("76561198000000002 Wood", kGive, online);
         Check(r.ok && r.p.players[0].name == "bob", "give SteamID64");
+        r = Run("Character 1 Wood 5 3 legendary", kGive, online);
+        Check(r.ok && r.p.players[0].steamId == "76561198000000001" && r.p.rest.size() == 4 &&
+                  r.p.rest[3].text == "legendary",
+              "give bare name, amount, level and rarity");
+        r = Run("Character 1 Wood 5 3 shiny", kGive, online);
+        Check(!r.ok, "give with an unknown rarity");
         r = Run("Character 1", kGive, online);
         Check(!r.ok, "give without an item code");
     }

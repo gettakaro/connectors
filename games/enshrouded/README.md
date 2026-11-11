@@ -152,7 +152,7 @@ Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ wo
 | Locations | ✅ | About 800 map places under their in-game names, including Flame Shrines and Fast Travel Points. |
 | World map | ⚠️ | You upload the map image yourself. Not checked on takaro.io yet. Without an upload, a tile pack you render yourself also works (see [INSTALL.md](INSTALL.md)). |
 | Send a message | ⚠️ | Broadcasts show in chat as a notice with the sender name in front, never under a player's name. Whispers reach the player; whether others also see them is not checked. |
-| Console commands | ✅ | Enshrouded has no console; the connector provides `help`, `players`, `levels`, `level`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. `give <player> <itemCode> [amount] [level]`; `levels` and `level <player>` show character level and experience. |
+| Console commands | ✅ | Enshrouded has no console; the connector provides `help`, `players`, `levels`, `level`, `say`, `whisper`, `location`, `teleport`/`tp`, `inventory`, `give`, `item`, `kick`, `save-and-shutdown`. `give <player> <itemCode> [amount] [level] [common|uncommon|rare|epic|legendary]`; `levels` and `level <player>` show character level and experience. |
 | Kick | ✅ | The player must be online. |
 | Ban and unban | ✅ | Ban needs the player online; unban works offline. The connector lifts timed bans itself when they end. |
 | Ban list | ✅ | Timed bans show reason and end time; permanent bans show no reason. |

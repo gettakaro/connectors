@@ -19,8 +19,9 @@ bool WorldGetLocation(const std::string& playerName, Vec3& out, std::string& err
 bool WorldTeleport(const std::string& playerName, const Vec3& to, std::string& err);
 bool WorldInventoryJson(const std::string& playerName, std::string& json, std::string& err);
 // level: AdminInventoryCreateAction.level (1-255); 0 = the game's default level for the item.
+// rarity: AdminInventoryCreateAction.rarity 0 Common, 1 Uncommon, 2 Rare, 3 Epic, 4 Legendary; -1 = the item's default.
 bool WorldGiveItem(const std::string& playerName, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail,
-                   uint8_t level = 0);
+                   uint8_t level = 0, int rarity = -1);
 // recipientMachine: "" broadcasts; otherwise the machine index printed in "[server] Machine 'M'" of the recipient.
 bool WorldSendMessage(const std::string& text, const std::string& recipientMachine, uint8_t type, uint32_t senderHandle,
                       std::string& err);

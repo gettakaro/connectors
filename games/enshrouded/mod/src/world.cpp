@@ -318,6 +318,7 @@ struct Give {
     uint16_t count = 0;  // informational: the game ignores AdminInventoryCreateAction.count
     bool fullStack = false;
     uint8_t level = 0;  // AdminInventoryCreateAction.level; 0 = the item's default level
+    int rarity = -1;    // AdminInventoryCreateAction.rarity 0 Common .. 4 Legendary; -1 = the item's default rarity
     int injections = 0;
 };
 SrwLock g_giveLock;
@@ -349,6 +350,7 @@ void GiveTryInject() {
     memcpy(a + 8, &g_give.count, 2);
     memset(a + 10, 0, 10);  // hasItemRarity, rarity, level, createForAllPlayers, createFullStack, fill..., cleanup, flame
     a[12] = g_give.level;              // level
+    if (g_give.rarity >= 0) a[10] = 1, a[11] = (uint8_t)g_give.rarity;  // hasItemRarity, rarity
     a[14] = g_give.fullStack ? 1 : 0;  // createFullStack: AdminInventoryCreate (0x153ef0) creates maxStackSize, else 1
     g_give.injections++;
     InterlockedExchange(&g_bypassEid, (LONG)g_give.eid);
@@ -1238,7 +1240,7 @@ bool WorldInventoryJson(const std::string& name, std::string& json, std::string&
 }
 
 bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount, std::string& err, std::string& detail,
-                   uint8_t level) {
+                   uint8_t level, int rarity) {
     if (!g_giveOk) {
         err = "giveItem unavailable (inventory_actions/isAdminEntity unresolved)";
         return false;
@@ -1285,6 +1287,7 @@ bool WorldGiveItem(const std::string& name, const ItemDef& item, uint32_t amount
             g_give.count = count;
             g_give.fullStack = full;
             g_give.level = level;
+            g_give.rarity = rarity;
             InterlockedExchange(&g_giveState, kGiveActive);
         }
         uint64_t t0 = NowMs();

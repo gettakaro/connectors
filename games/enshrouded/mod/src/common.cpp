@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -222,6 +223,15 @@ bool ParseItemLevel(const std::string& text, uint8_t& level) {
     if (!end || *end != 0 || !(d >= 1 && d <= 255) || d != (double)(int)d) return false;
     level = (uint8_t)d;
     return true;
+}
+
+bool ParseItemRarity(const std::string& text, int& rarity) {
+    static const char* kRarities[] = {"common", "uncommon", "rare", "epic", "legendary"};
+    std::string t = text;
+    for (auto& c : t) c = (char)tolower((unsigned char)c);
+    for (int k = 0; k < 5; k++)
+        if (t == kRarities[k]) return rarity = k, true;
+    return false;
 }
 
 bool ParseItemLevel(const JsonValue* v, uint8_t& level) {
