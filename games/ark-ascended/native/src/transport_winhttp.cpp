@@ -10,6 +10,7 @@
 #include <wincrypt.h>
 
 #include <chrono>
+#include <random>
 #include <cstdio>
 #include <vector>
 
@@ -307,7 +308,7 @@ void WinHttpTransport::RequestClose(uint64_t epoch, const std::string& reason) {
 
 void WinHttpTransport::MarkIdentified(uint64_t epoch) {
     std::lock_guard<std::mutex> g(mu_);
-    if (cur_ && cur_->id == epoch) attempts_ = 0;
+    if (cur_ && cur_->id == epoch) identifiedAtMs_ = Now();
 }
 
 void WinHttpTransport::Retarget(const std::string& url, bool connect) {
@@ -409,8 +410,9 @@ void WinHttpTransport::Supervisor() {
         {
             std::lock_guard<std::mutex> g(mu_);
             if (retargeted_) continue;  // new settings: connect again at once
-            uint64_t d = (uint64_t)o_.reconnectBaseMs << std::min(attempts_, 20u);
-            delay = (unsigned)std::min<uint64_t>(d, o_.reconnectMaxMs);
+            if (identifiedAtMs_ != 0 && Now() - identifiedAtMs_ >= kStableSessionMs) attempts_ = 0;
+            identifiedAtMs_ = 0;
+            delay = ReconnectDelayMs(attempts_, jitter_(rng_), o_.reconnectBaseMs, o_.reconnectMaxMs);
             attempts_++;
             nextAttemptAtMs_ = Now() + delay;
         }

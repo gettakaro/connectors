@@ -295,7 +295,23 @@ static void test_garbage_ignored() {
     CHECK(r.c->Identified());
 }
 
+static void test_reconnect_delay() {
+    using native::ReconnectDelayMs;
+    // After a stable session: back within 1-2 s, spread by the random half.
+    CHECK(ReconnectDelayMs(0, 0.0) == 1000);
+    CHECK(ReconnectDelayMs(0, 0.999) < 2000);
+    // Repeated failures back off: 1-2 s, 2-4 s, 4-8 s, ... capped at 60 s.
+    CHECK(ReconnectDelayMs(1, 0.0) == 1000 && ReconnectDelayMs(1, 0.999) < 2000);
+    CHECK(ReconnectDelayMs(2, 0.0) == 2000 && ReconnectDelayMs(2, 0.999) < 4000);
+    CHECK(ReconnectDelayMs(3, 0.5) == 6000);
+    CHECK(ReconnectDelayMs(10, 0.0) == 30000 && ReconnectDelayMs(10, 0.999) <= 60000);
+    CHECK(ReconnectDelayMs(1000, 0.999) <= 60000);
+    // A bad random value never stretches the wait.
+    CHECK(ReconnectDelayMs(0, 7.0) == 1000 && ReconnectDelayMs(0, -1.0) == 1000);
+}
+
 int main() {
+    test_reconnect_delay();
     test_identify();
     test_identify_rejected();
     test_args_shapes();

@@ -1,6 +1,8 @@
 // Ported from the Takaro Enshrouded native connector (gettakaro/connectors games/enshrouded/mod/src/native, MIT).
 #include "transport.h"
 
+#include <algorithm>
+
 namespace native {
 
 const char* QueueStatusName(QueueStatus s) {
@@ -99,6 +101,13 @@ uint64_t Heartbeat::OnPong() {
     if (w <= confirmed_) return 0;
     confirmed_ = w;
     return w;
+}
+
+unsigned ReconnectDelayMs(unsigned failures, double rand01, unsigned baseMs, unsigned maxMs) {
+    if (rand01 < 0 || !(rand01 < 1)) rand01 = 0;
+    if (failures == 0) return 1000 + (unsigned)(rand01 * 1000);
+    const uint64_t full = std::min<uint64_t>((uint64_t)baseMs << std::min(failures - 1, 20u), maxMs);
+    return (unsigned)(full / 2 + (uint64_t)(rand01 * (double)(full / 2)));
 }
 
 }  // namespace native
