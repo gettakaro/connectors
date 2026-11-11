@@ -12,7 +12,7 @@
 #
 # The zip holds addons/sourcemod/{plugins,extensions,scripting,licenses}, the config template
 # cfg/sourcemod/takaro_tf2.cfg and addons/sourcemod/takaro-target.json (the target identity).
-# The chat unit-test plugin (tests/takaro_tf2_chat_test.sp) is compiled next to it into the stage's out/
+# The unit-test plugins (tests/takaro_tf2_chat_test.sp, tests/takaro_tf2_reconnect_test.sp) are compiled next to it into the stage's out/
 # folder and never shipped. Set SPCOMP to compile with a local SourceMod compiler instead of the pinned
 # image (development only).
 set -euo pipefail
@@ -72,8 +72,9 @@ tar -xzf "$cache/downloads/sourcemod-linux.tar.gz" -C "$stage/sm" addons/sourcem
 
 # The release version goes into the plugin the server reports; the tracked source keeps its own.
 scripting="$project_root/mod/addons/sourcemod/scripting"
-cp "$scripting/takaro_tf2.sp" "$scripting/takaro_tf2_item_catalog.inc" "$scripting/takaro_tf2_chat.inc" "$stage/src/"
-cp "$project_root/tests/takaro_tf2_chat_test.sp" "$stage/src/"
+cp "$scripting/takaro_tf2.sp" "$scripting/takaro_tf2_item_catalog.inc" "$scripting/takaro_tf2_chat.inc" \
+    "$scripting/takaro_tf2_reconnect.inc" "$stage/src/"
+cp "$project_root/tests/takaro_tf2_chat_test.sp" "$project_root/tests/takaro_tf2_reconnect_test.sp" "$stage/src/"
 python3 -I - "$stage/src/takaro_tf2.sp" "$version" <<'PY'
 import re, sys
 path, version = sys.argv[1:3]
@@ -86,7 +87,7 @@ PY
 
 echo "== takaro_tf2.smx (SourceMod spcomp64)"
 if [ -n "${SPCOMP:-}" ]; then
-    for plugin in takaro_tf2 takaro_tf2_chat_test; do
+    for plugin in takaro_tf2 takaro_tf2_chat_test takaro_tf2_reconnect_test; do
         "$SPCOMP" "$stage/src/$plugin.sp" -i "$stage/src" -i "$stage/include" \
             -i "$stage/sm/addons/sourcemod/scripting/include" -o "$stage/out/$plugin.smx" >>"$stage/spcomp.log" 2>&1 \
             || { cat "$stage/spcomp.log" >&2; exit 1; }
@@ -96,7 +97,7 @@ else
         set -euo pipefail
         trap "chown -R $OWNER /stage" EXIT
         cd /stage
-        for plugin in takaro_tf2 takaro_tf2_chat_test; do
+        for plugin in takaro_tf2 takaro_tf2_chat_test takaro_tf2_reconnect_test; do
             sm/addons/sourcemod/scripting/spcomp64 src/$plugin.sp -i src -i include \
                 -i sm/addons/sourcemod/scripting/include -o out/$plugin.smx >>spcomp.log 2>&1 \
                 || { cat spcomp.log >&2; exit 1; }
@@ -144,7 +145,7 @@ for ext in ("websocket", "json"):
             rel = os.path.relpath(path, root).replace(os.sep, "/")
             files[f"{SM}/extensions/{rel}"] = open(path, "rb").read()
 files[f"{SM}/plugins/takaro_tf2.smx"] = open(os.path.join(stage, "out", "takaro_tf2.smx"), "rb").read()
-for f in ("takaro_tf2.sp", "takaro_tf2_item_catalog.inc", "takaro_tf2_chat.inc"):
+for f in ("takaro_tf2.sp", "takaro_tf2_item_catalog.inc", "takaro_tf2_chat.inc", "takaro_tf2_reconnect.inc"):
     files[f"{SM}/scripting/{f}"] = open(os.path.join(stage, "src", f), "rb").read()
 files["cfg/sourcemod/takaro_tf2.cfg"] = open(os.path.join(project, "mod", "cfg", "sourcemod", "takaro_tf2.cfg"), "rb").read()
 for f in ("LICENSE-sm-ext-websocket.txt", "LICENSE-sm-ext-json.txt"):

@@ -54,6 +54,7 @@ Edit `tf/cfg/sourcemod/takaro_tf2.cfg`:
 | `takaro_tf2_include_bots` | `1` lists bots as players. Default: `0`. |
 | `takaro_tf2_shutdown_enabled` | `1` lets Takaro stop the server. Default: `0`. |
 | `takaro_tf2_server_chat_name` | Optional sender name on Takaro messages, for example `MyServer` (see below). |
+| `takaro_tf2_reconnect_min_ms` / `takaro_tf2_reconnect_max_ms` | Backoff after repeated failed connects: first wait and cap, in ms. Default: `1000` / `60000`. A dropped connection that was working is retried within a second either way. |
 
 Start the server. Do not start it with `-insecure`: without Steam authentication players have no
 SteamID, and Takaro cannot ban them.
