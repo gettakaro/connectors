@@ -93,8 +93,10 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn("MAX_RECONNECT_ATTEMPTS", transport)
         self.assertNotIn("Giving up", transport)
         self.assertIn("_reconnectAttempts++", transport)
-        self.assertIn("Math.Pow(2", transport)
-        self.assertIn("MAX_RECONNECT_INTERVAL_SECONDS", transport)
+        self.assertIn("ReconnectPolicy.NextDelay(", transport)
+        policy = self.source("src/WebSocket/ReconnectPolicy.cs")
+        self.assertIn("Math.Pow(2", policy)
+        self.assertIn("MaxSeconds = 60", policy)
 
     def test_native_game_logs_are_forwarded_without_connector_feedback(self):
         api = self.source("src/API.cs")

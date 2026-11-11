@@ -52,8 +52,9 @@ LOADED_LINE = re.compile(r"\[MODS\]\s+Loaded Mod: Takaro \((?P<version>[^)]+)\)"
 QUIT_LINE = re.compile(r"INF Preparing quit|\[NET\] ServerShutdown")
 BANNER_MARKERS = ("Last played version:", "GamePref.GameVersion")
 
-# The mod waits ReconnectIntervalSeconds (30) before its first attempt and backs off from
-# there, so the 20 s the lifecycle checks allow a Minecraft connector is far too short.
+# The mod retries a dropped connection within about a second, but a server that is still
+# starting backs off from ReconnectIntervalSeconds up to 60 s, so the 20 s the lifecycle
+# checks allow a Minecraft connector is too short.
 RECONNECT_BUDGET = 120.0
 QUIT_BUDGET = 120.0
 STOP_TIMEOUT = 120
@@ -68,7 +69,7 @@ CONFIG_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
     <IdentityToken>{identity}</IdentityToken>
     <RegistrationToken>{registration}</RegistrationToken>
     <Enabled>true</Enabled>
-    <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
+    <ReconnectIntervalSeconds>2</ReconnectIntervalSeconds>
   </WebSocket>
 </Takaro>
 """

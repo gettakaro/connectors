@@ -35,7 +35,9 @@ namespace Takaro.Config
     public static class ConfigFiles
     {
         public const string DefaultUrl = "wss://connect.takaro.io/";
-        public const int DefaultReconnectIntervalSeconds = 30;
+        // The base of the backoff after consecutive failures; a drop after a
+        // stable connection is retried within about a second whatever it says.
+        public const int DefaultReconnectIntervalSeconds = 2;
 
         public const string Header =
             "\n"

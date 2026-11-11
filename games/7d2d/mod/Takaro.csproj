@@ -129,6 +129,7 @@
     <Compile Include="src\WebSocket\GameProfile.cs" />
     <Compile Include="src\WebSocket\ReadHandlers.cs" />
     <Compile Include="src\WebSocket\RequestRouter.cs" />
+    <Compile Include="src\WebSocket\ReconnectPolicy.cs" />
     <Compile Include="src\WebSocket\TransportSession.cs" />
     <Compile Include="src\WebSocket\WebSocketMessage.cs" />
     <Compile Include="src\WebSocket\ProtocolHandshake.cs" />

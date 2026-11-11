@@ -10,7 +10,7 @@ namespace Takaro.WebSocket
 {
     /// <summary>
     /// Owns the WebSocket connection to Takaro: connect/identify, heartbeat,
-    /// exponential-backoff reconnect, and an outbound send queue drained by a
+    /// reconnect (ReconnectPolicy), and an outbound send queue drained by a
     /// dedicated sender thread so callers (including the game main thread) never
     /// block on socket I/O. Incoming messages are handed to RequestRouter.
     ///
@@ -22,8 +22,9 @@ namespace Takaro.WebSocket
     ///           names the negotiated protocol version (absent means 0); no
     ///           answer within IDENTIFY_DEADLINE_SECONDS closes the socket
     ///        -> backlog is drained and the heartbeat starts
-    ///        -> the reconnect backoff is reset only once the connection has
-    ///           stayed up for CONNECTION_STABLE_SECONDS
+    ///        -> the failure streak is reset only once the connection has
+    ///           stayed up for CONNECTION_STABLE_SECONDS; a drop after that is
+    ///           retried within about a second, consecutive failures back off
     /// Takaro's connector sends `{"type":"connected"}` the instant the socket is
     /// accepted, before it has processed identify, and the edge answers an
     /// unidentified `gameEvent` with a bare TCP terminate (the 1006 bounce), so
@@ -58,19 +59,18 @@ namespace Takaro.WebSocket
 
         private volatile bool _shuttingDown;
 
+        // Attempts that failed since the last stable connection
+        // (ReconnectPolicy). Only the connect lock's holders touch it.
         private int _reconnectAttempts;
 
-        // Kept short: a retry is one cheap TLS handshake, and with the 45 s
-        // dead-link timeout a 300 s cap left the server unreachable for up to
-        // five minutes after Takaro came back (2026-10-01 outage test).
-        private const int MAX_RECONNECT_INTERVAL_SECONDS = 60;
+        private readonly Random _jitter = new Random();
 
         // Every Takaro version answers identify; a socket that stays silent
         // past this is not going to, and is replaced.
         private const int IDENTIFY_DEADLINE_SECONDS = 30;
 
-        // How long a connection must stay up before the reconnect backoff is
-        // reset. See ResetBackoffIfStable().
+        // How long a confirmed connection must stay up before the failure streak
+        // is reset and its drop gets the fast retry. See ResetBackoffIfStable().
         private const int CONNECTION_STABLE_SECONDS = 10;
 
         // Every ping we send is answered with a pong. On protocol v0 each pong
@@ -276,14 +276,14 @@ namespace Takaro.WebSocket
         }
 
         /// <summary>
-        /// The reconnect backoff is reset only once a connection has *stayed up*
-        /// for CONNECTION_STABLE_SECONDS. Resetting it merely because a socket
-        /// opened (0.1.4) meant a peer that accepted and then instantly dropped
-        /// every connection produced an endless 30 s loop with no backoff growth.
+        /// The failure streak is reset only once a confirmed connection has
+        /// *stayed up* for CONNECTION_STABLE_SECONDS. Resetting it merely because
+        /// a socket opened (0.1.4) meant a peer that accepted and then instantly
+        /// dropped every connection was retried forever without backing off.
         /// </summary>
         private void ResetBackoffIfStable()
         {
-            if (!_session.IsConnected || _reconnectAttempts == 0)
+            if (!_session.IsConnected || !_session.IsConfirmed || _reconnectAttempts == 0)
                 return;
 
             int uptimeSeconds = _session.SecondsSinceOpened();
@@ -620,6 +620,17 @@ namespace Takaro.WebSocket
 
                     StopTimers();
 
+                    // Decided here as well as on the sender poll, which may not
+                    // have run since the connection became stable.
+                    if (
+                        ReconnectPolicy.ClosedSessionWasStable(
+                            wasConfirmed,
+                            uptimeSeconds,
+                            CONNECTION_STABLE_SECONDS
+                        )
+                    )
+                        _reconnectAttempts = 0;
+
                     if (!_shuttingDown)
                     {
                         ScheduleReconnect();
@@ -855,20 +866,26 @@ namespace Takaro.WebSocket
 
         private void ScheduleReconnect()
         {
-            // Counts *consecutive* failures: it is reset only in
-            // ConfirmConnection(), never merely because a socket opened, so a
+            // The streak counts *consecutive* failures: it is reset only once a
+            // confirmed connection has stayed up (ResetBackoffIfStable,
+            // HandleClose), never merely because a socket opened, so a
             // connection that dies right after the handshake still backs off.
+            int streak = _reconnectAttempts;
             _reconnectAttempts++;
 
-            int baseIntervalSeconds = ConfigManager.Instance.ReconnectIntervalSeconds;
-            int backoffExponent = Math.Min(16, Math.Max(0, _reconnectAttempts - 1));
-            double backoffMultiplier = Math.Pow(2, backoffExponent);
-            int intervalSeconds = (int)
-                Math.Min(baseIntervalSeconds * backoffMultiplier, MAX_RECONNECT_INTERVAL_SECONDS);
-            var interval = TimeSpan.FromSeconds(Math.Max(1, intervalSeconds));
+            double random;
+            lock (_jitter)
+                random = _jitter.NextDouble();
+            TimeSpan interval = ReconnectPolicy.NextDelay(
+                streak,
+                ConfigManager.Instance.ReconnectIntervalSeconds,
+                random
+            );
 
             LogService.Instance.Info(
-                $"Scheduling reconnect attempt {_reconnectAttempts} in {interval.TotalSeconds} seconds"
+                $"Scheduling reconnect attempt {_reconnectAttempts} in "
+                    + $"{interval.TotalSeconds:0.000} seconds"
+                    + (streak == 0 ? " (fast retry)" : $" (failure streak {streak})")
             );
 
             if (_reconnectTimer != null)
