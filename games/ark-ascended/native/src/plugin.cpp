@@ -290,6 +290,8 @@ void Ask(Pending& p) {
 }
 }  // namespace steamlink
 
+void FlushConnects(const std::string& only = std::string());
+
 tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     tj::Value p = tj::Value::object();
     p.set("gameId", tj::str(eos));
@@ -841,7 +843,7 @@ bool OnChat(AShooterPlayerController* pc, FString* message, int mode, int, bool 
 }
 
 // Sends the held-back player-connected once the Steam lookup answered or timed out; `force` sends it now (logout).
-void FlushConnects(const std::string& only = std::string()) {
+void FlushConnects(const std::string& only) {
     const auto now = std::chrono::steady_clock::now();
     for (auto it = steamlink::g_pending.begin(); it != steamlink::g_pending.end();) {
         const bool forced = !only.empty() && it->eos == only;
