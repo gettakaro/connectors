@@ -3,6 +3,7 @@ import EventEmitter from 'node:events';
 import WebSocket from 'ws';
 import { CONNECTOR_IDENTITY } from './gameProfile.js';
 import type { GameEventType, IdentifyPayload, ProtocolErrorCode, RequestPayload, WsMessage } from './protocol.js';
+import { DEFAULT_RECONNECT_TIMING, reconnectDelay, type ReconnectTiming } from './reconnectPolicy.js';
 
 /** Version 1 event buffer: at least the 1,000 the protocol recommends. */
 export const EVENT_BUFFER_LIMIT = 2000;
@@ -24,9 +25,21 @@ export class TakaroWsClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private gameServerId: string | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private reconnectAttempts = 0;
+  /** Connect attempts that failed since the last stable session; see reconnectPolicy.ts. */
+  private failures = 0;
+  /** The current socket was identified and stayed up for stableMs. */
+  private sessionStable = false;
+  private stableTimer: NodeJS.Timeout | null = null;
+  private pingTimer: NodeJS.Timeout | null = null;
+  private livenessTimer: NodeJS.Timeout | null = null;
+  private lastInboundAt = 0;
+  private readonly timing: ReconnectTiming;
   private shuttingDown = false;
   private protocolVersion = 0;
+  /** The version the last identified socket negotiated; decides whether a gap buffers events. */
+  private streamVersion = 0;
+  /** The game server the buffered events were written for. */
+  private streamServerId: string | null = null;
   // Version 1 delivery: one stream per process, seq strictly increasing across reconnects.
   private readonly streamId = randomUUID();
   private nextSeq = 1;
@@ -36,11 +49,13 @@ export class TakaroWsClient extends EventEmitter {
   constructor(
     private url: string,
     private identifyPayload: IdentifyPayload,
-    private readonly baseReconnectMs = 3000,
-    private readonly maxReconnectMs = 60000,
+    baseReconnectMs = DEFAULT_RECONNECT_TIMING.baseMs,
+    maxReconnectMs = DEFAULT_RECONNECT_TIMING.maxMs,
     private readonly protocol: ProtocolOptions = { offerV1: false, manifest: () => [] },
+    timing: Partial<ReconnectTiming> = {},
   ) {
     super();
+    this.timing = { ...DEFAULT_RECONNECT_TIMING, baseMs: baseReconnectMs, maxMs: maxReconnectMs, ...timing };
   }
 
   /** The protocol version negotiated on the current connection (0 until identified). */
@@ -73,26 +88,40 @@ export class TakaroWsClient extends EventEmitter {
   connect(): void {
     if (this.shuttingDown || this.ws) return;
     if (!this.identifyPayload.registrationToken) return;
-    const ws = new WebSocket(this.url);
+    const ws = new WebSocket(this.url, { handshakeTimeout: this.timing.handshakeTimeoutMs });
     this.ws = ws;
     // Every callback checks that its socket is still the current one: a socket dropped by
     // reconfigure() closes later, and its close must not tear down or reschedule the new one.
     ws.on('open', () => {
       if (this.ws !== ws) return;
-      this.reconnectAttempts = 0;
+      // An open socket is not a success: the failure streak resets only once the session
+      // is identified and stable, so a peer that accepts and drops at once still backs off.
+      this.watchLiveness(ws);
       this.send({ type: 'identify', payload: this.identifyMessage() });
+    });
+    // Control-frame pongs and pings count as traffic too.
+    ws.on('pong', () => {
+      if (this.ws === ws) this.lastInboundAt = Date.now();
+    });
+    ws.on('ping', () => {
+      if (this.ws === ws) this.lastInboundAt = Date.now();
     });
     ws.on('message', (data) => {
       if (this.ws !== ws) return;
+      this.lastInboundAt = Date.now();
       try {
         this.handle(JSON.parse(data.toString()) as WsMessage);
       } catch (err) {
         this.emit('clientError', err);
       }
     });
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
       if (this.ws !== ws) return;
       this.ws = null;
+      const wasStable = this.sessionStable;
+      this.clearSessionTimers();
+      this.failures = wasStable ? 0 : this.failures + 1;
+      this.emit('closed', { code, reason: reason.toString(), stable: wasStable });
       this.markDisconnected();
       this.scheduleReconnect();
     });
@@ -116,7 +145,7 @@ export class TakaroWsClient extends EventEmitter {
     this.identifyPayload = identifyPayload;
     if (this.shuttingDown) return true;
     this.clearReconnectTimer();
-    this.reconnectAttempts = 0;
+    this.failures = 0;
     this.dropSocket();
     this.connect();
     return true;
@@ -139,6 +168,7 @@ export class TakaroWsClient extends EventEmitter {
     const ws = this.ws;
     if (!ws) return;
     this.ws = null;
+    this.clearSessionTimers();
     ws.removeAllListeners('message');
     // A late 'error' on a socket closed before it opened would otherwise be unhandled.
     ws.on('error', () => undefined);
@@ -159,6 +189,49 @@ export class TakaroWsClient extends EventEmitter {
   private clearReconnectTimer(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+  }
+
+  /**
+   * A blackholed link keeps the socket "open" and swallows everything written to it, and
+   * nothing on the TCP level says so for minutes. So the last inbound frame is tracked, and
+   * a socket silent for inboundTimeoutMs is terminated; its close reconnects as usual.
+   */
+  private watchLiveness(ws: WebSocket): void {
+    this.lastInboundAt = Date.now();
+    // Checked often enough that a dead link is closed at most a ninth past the timeout.
+    const checkEvery = Math.max(20, Math.floor(this.timing.inboundTimeoutMs / 9));
+    this.livenessTimer = setInterval(() => {
+      if (this.ws !== ws) return;
+      const silentMs = Date.now() - this.lastInboundAt;
+      if (silentMs < this.timing.inboundTimeoutMs) return;
+      this.emit('linkDead', silentMs);
+      ws.terminate();
+    }, checkEvery);
+  }
+
+  /** Called once identify is accepted: start the pings and the stability clock. */
+  private startSession(ws: WebSocket): void {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      if (this.ws === ws) this.send({ type: 'ping' });
+    }, this.timing.pingIntervalMs);
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null;
+      if (this.ws !== ws || !this.identified()) return;
+      this.sessionStable = true;
+      this.failures = 0;
+    }, this.timing.stableMs);
+  }
+
+  private clearSessionTimers(): void {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    if (this.livenessTimer) clearInterval(this.livenessTimer);
+    this.stableTimer = null;
+    this.pingTimer = null;
+    this.livenessTimer = null;
+    this.sessionStable = false;
   }
 
   identified(): boolean {
@@ -193,7 +266,9 @@ export class TakaroWsClient extends EventEmitter {
    * Takaro acknowledges it and resent after a reconnect; the oldest is dropped on overflow.
    */
   sendGameEvent(type: GameEventType, data: unknown): boolean {
-    if (this.protocolVersion !== 1) return this.send({ type: 'gameEvent', payload: { type, data } });
+    // Between two version 1 sockets the event is buffered like any unacknowledged one.
+    const v1 = this.identified() ? this.protocolVersion === 1 : this.streamVersion === 1;
+    if (!v1) return this.send({ type: 'gameEvent', payload: { type, data } });
     const event = { seq: this.nextSeq++, type, data };
     this.buffer.push(event);
     if (this.buffer.length > EVENT_BUFFER_LIMIT) {
@@ -233,7 +308,12 @@ export class TakaroWsClient extends EventEmitter {
         }
         if (payload?.gameServerId) {
           this.gameServerId = payload.gameServerId;
+          if (this.ws) this.startSession(this.ws);
           this.protocolVersion = payload.protocolVersion === 1 ? 1 : 0;
+          this.streamVersion = this.protocolVersion;
+          // Events written for one game server are never replayed to another (new token or identity).
+          if (this.streamServerId !== null && this.streamServerId !== payload.gameServerId) this.buffer.length = 0;
+          this.streamServerId = payload.gameServerId;
           if (this.protocolVersion === 1) {
             for (const event of this.buffer) this.sendBuffered(event);
           } else {
@@ -273,8 +353,8 @@ export class TakaroWsClient extends EventEmitter {
   private scheduleReconnect(): void {
     if (this.shuttingDown) return;
     this.clearReconnectTimer();
-    const delay = Math.min(this.maxReconnectMs, this.baseReconnectMs * 2 ** this.reconnectAttempts);
-    this.reconnectAttempts += 1;
+    const delay = reconnectDelay(this.failures, this.timing);
+    this.emit('reconnectScheduled', { delayMs: delay, failures: this.failures });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();

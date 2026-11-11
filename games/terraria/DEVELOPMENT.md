@@ -197,6 +197,20 @@ which an upgrade replaces whole. Nothing ships it.
   current). An emptied token disconnects. TShock credentials, allowlists, `enableShutdown` and
   `serverChatName` apply live; `httpPort`, `pollIntervalMs`, `logFiles`, `logExcludePatterns` log
   that they need a restart.
+- **Reconnect** (`bridge/src/takaro/reconnectPolicy.ts`). A socket that was identified and stayed
+  up 10 s resets the failure streak; when it drops, the next attempt is 0.5 to 1.25 s later.
+  Every failed attempt (refused, handshake past 15 s, closed before it was stable, identify
+  rejected) adds to the streak: 2 s, 4 s, 8 s ... capped at 60 s, each wait randomly between half
+  and all of its step. An open socket alone never resets the streak. On an identified socket
+  the bridge sends `{"type":"ping"}` every 15 s; a socket with no inbound frame for 45 s
+  (checked every 5 s) is terminated and reconnected like any other drop. Version 1 events
+  written between two sockets are buffered and resent, never to a different game server. The
+  log tail and the player poller pause while disconnected and pick up where they stopped; a
+  reconnect to the same game server keeps who is online, so it reports only the joins and
+  leaves from the gap (no repeated `player-connected` hooks). Log lines:
+  `Takaro socket closed (code N, ...)`,
+  `Takaro reconnect in N ms (fast retry after a stable session | failure streak N)`,
+  `Takaro link silent for N s; closing it as dead`.
 - **Banners** name the file: no token, missing TShock credentials, a rejected identify (409: the
   name is taken). Only `name: message (http N)` of Takaro's error is logged, which can carry
   Takaro's own request headers and token.

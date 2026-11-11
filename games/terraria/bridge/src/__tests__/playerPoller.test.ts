@@ -145,6 +145,25 @@ test('reset clears diff state so a fresh session re-emits connects', async () =>
   ]);
 });
 
+test('resetOutcome after a Takaro reconnect keeps who is online: only the changes in the gap are reported', async () => {
+  const harness = createHarness([guide]);
+
+  await harness.poller.pollOnce();
+  harness.poller.stop();
+  // While the socket was down the guide stayed and the merchant joined.
+  harness.setSnapshot([guide, merchant]);
+  harness.poller.resetOutcome();
+  assert.equal(harness.poller.lastPollAt, null);
+  assert.equal(harness.poller.lastPollOk, null);
+
+  await harness.poller.pollOnce();
+
+  assert.deepEqual(harness.events, [
+    { type: 'player-connected', data: { player: guide } },
+    { type: 'player-connected', data: { player: merchant } },
+  ]);
+});
+
 test('an unhandled rejection from start() does not escape the interval callback', async () => {
   const harness = createHarness([guide]);
   harness.setFailure(connectionRefused());

@@ -36,8 +36,17 @@ export class PlayerPoller {
     this.timer = null;
   }
 
+  /** Forgets who is online too, so the next poll announces every player again. */
   reset(): void {
     this.previous.clear();
+    this.resetOutcome();
+  }
+
+  /**
+   * Forgets only the last poll's outcome (for /health). Who is online is kept, so the next
+   * poll reports just the joins and leaves since the last one.
+   */
+  resetOutcome(): void {
     this.lastPollAt = null;
     this.lastPollOk = null;
     this.lastFailureMessage = null;

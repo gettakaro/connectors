@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   // The poller runs every pollIntervalMs and is the only component that continuously
   // exercises the game server, so its latest outcome is the freshest reachability truth
   // available. Before it has produced one (startup, or right after a Takaro reconnect
-  // resets it) fall back to the startup probe so a healthy server is not reported down.
+  // resets its outcome) fall back to the startup probe so a healthy server is not reported down.
   const isTshockReachable = (): boolean => poller.lastPollOk ?? startupReachable;
   const health = new HealthServer(config.httpPort, () => {
     const tshockReachable = isTshockReachable();
@@ -143,17 +143,29 @@ async function main(): Promise<void> {
   // The connection state goes to the log through one place: `takaro-maint verify` reads
   // those two lines out of this bridge's log to prove the handshake and the reconnect.
   logConnectionState(takaro);
-  takaro.on('identified', () => {
+  // The game server the online players were last announced to. A reconnect to the same one
+  // (Takaro's edge cuts sockets now and then) only reports what changed while the socket was
+  // down: the poller and the log tail resume where they stopped, and version 1 buffers the
+  // rest. Announcing everyone again would fire player-connected hooks for players who never
+  // left. A different game server (new token or identity) gets everyone announced.
+  let announcedTo: string | null = null;
+  takaro.on('identified', (gameServerId: string) => {
     const map = mapImage.current();
     logger.info(`Takaro protocol version ${takaro.getProtocolVersion()}, ${CONNECTOR_IDENTITY.connector.name} ${CONNECTOR_IDENTITY.connector.version}${takaro.getProtocolVersion() === 1 ? `, game profile ${GAME_DISPLAY_NAME} ${adapter.gameVersion() ?? '(version unknown)'} icon ${gameIconResponse().revision}, map ${map ? `revision ${map.revision} (${map.width}x${map.height})` : 'not rendered yet'}` : ''}`);
-    presence.reset();
-    poller.reset();
+    if (gameServerId !== announcedTo) {
+      presence.reset();
+      poller.reset();
+      announcedTo = gameServerId;
+    } else {
+      poller.resetOutcome();
+    }
     poller.start();
     for (const tailer of tailers) tailer.start();
   });
   takaro.on('disconnected', () => {
     poller.stop();
-    poller.reset();
+    // Who is online is kept for the next identify; see announcedTo above.
+    poller.resetOutcome();
     for (const tailer of tailers) tailer.stop();
   });
 
