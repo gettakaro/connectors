@@ -413,6 +413,11 @@ namespace TakaroEmpyrion.Game
             _catalogFromEcf = false;
         }
 
+        /// <summary>The client stores each stack count twice, once as ((count + 1471) * 53) ^ key in an int, and bans the player
+        /// for a year (ClientCheat 'Item-Count') when the copies disagree, which happens once that product overflows at 40517089.
+        /// A grant merges into an existing stack, so the cap leaves a wide margin.</summary>
+        public const int MaxGiveAmount = 1000000;
+
         async Task<JToken> GiveItem(Args a)
         {
             string gameId = a.RequirePlayerGameId();
@@ -420,6 +425,7 @@ namespace TakaroEmpyrion.Game
             if (string.IsNullOrEmpty(item)) throw new ArgsException("missing item");
             int amount = (int)Math.Round(a.Num("amount") ?? 1);
             if (amount < 1) throw new ActionFailure("amount must be at least 1");
+            if (amount > MaxGiveAmount) throw new ActionFailure("amount " + amount + " is above " + MaxGiveAmount + ": the Empyrion client bans a player whose stack goes past 40517088");
             await EnsureCatalogFresh();
             if (!_catalog.TryId(item, out int id, out string code)) throw new ActionFailure("unknown item '" + item + "'");
             PlayerRecord r = await OnlineByGameId(gameId) ?? throw new ActionFailure("player " + gameId + " is not online");

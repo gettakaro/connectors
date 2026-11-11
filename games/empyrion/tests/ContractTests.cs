@@ -490,6 +490,14 @@ public static partial class ContractTests
         Check(r != null && (string)r["type"] == "response" && given != null && given.id == 101 && given.itemStack.id == 4300 && given.itemStack.count == 5, "giveItem resolves code + entity, explicit null quality");
         r = ask("giveItem", "{\"gameId\":\"76561198000000001\",\"item\":\"Nope\",\"amount\":1}");
         Check(r != null && (string)r["type"] == "error", "giveItem unknown item is an error, not a success");
+        int addsBefore;
+        lock (game.Requests) addsBefore = game.Requests.Count(k => k.Key == CmdId.Request_Player_AddItem);
+        r = ask("giveItem", "{\"gameId\":\"76561198000000001\",\"item\":\"IronOre\",\"amount\":2000000000}");
+        int addsAfter;
+        lock (game.Requests) addsAfter = game.Requests.Count(k => k.Key == CmdId.Request_Player_AddItem);
+        Check(r != null && (string)r["type"] == "error" && addsAfter == addsBefore, "giveItem above the client's stack limit is refused before reaching the game");
+        r = ask("giveItem", "{\"gameId\":\"76561198000000001\",\"item\":\"IronOre\",\"amount\":1000000}");
+        Check(r != null && (string)r["type"] == "response", "giveItem at the cap is delivered");
 
         r = ask("teleportPlayer", "{\"player\":{\"gameId\":\"76561198000000001\"},\"x\":10,\"y\":20,\"z\":30,\"dimension\":null}");
         IdPositionRotation tp;
