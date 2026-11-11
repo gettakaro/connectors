@@ -115,4 +115,12 @@ private:
     int64_t lastPingMs_ = 0, lastInboundMs_ = 0;
 };
 
+// Wait before the next connect. failures = connects in a row that did not end in a stable identified session.
+// After a stable session drops (failures == 0) the connector is back within 1-2 s, so a cut link does not
+// outlast Takaro's reachability check; only repeated failures back off, exponentially up to maxMs. The
+// random half (rand01 in [0,1)) spreads a fleet of servers that lost the same edge.
+unsigned ReconnectDelayMs(unsigned failures, double rand01, unsigned baseMs = 2000, unsigned maxMs = 60000);
+// A session counts as stable once it stayed identified this long; a shorter one keeps the failure streak.
+constexpr int64_t kStableSessionMs = 30000;
+
 }  // namespace native

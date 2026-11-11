@@ -11,6 +11,7 @@
 #include "transport.h"
 
 #include <atomic>
+#include <random>
 #include <condition_variable>
 #include <mutex>
 #include <string>
@@ -59,7 +60,10 @@ private:
     Epoch* cur_ = nullptr;
     bool open_ = false;
     uint64_t epoch_ = 0;
-    unsigned attempts_ = 0;
+    unsigned attempts_ = 0;           // under mu_: connects in a row without a stable session
+    int64_t identifiedAtMs_ = 0;      // under mu_: when the current session was identified, 0 if not yet
+    std::mt19937 rng_{std::random_device{}()};
+    std::uniform_real_distribution<double> jitter_{0.0, 1.0};
     std::string url_;        // under mu_; o_.url is only the initial value
     bool connect_ = true;    // under mu_
     uint64_t generation_ = 0;  // under mu_: bumped by Retarget, so an epoch opened with old settings is dropped
