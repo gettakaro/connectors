@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/ark-v0.4.0...ark-v0.5.0) (2026-11-11)
+
+
+### Features
+
+* **ark:** reconnect fast after a stable session drops ([#887](https://github.com/gettakaro/connectors/issues/887)) ([e6c1278](https://github.com/gettakaro/connectors/commit/e6c127891db7cce3a5089f4aaaaf386d50367d21))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/ark-v0.3.0...ark-v0.4.0) (2026-10-30)
 
 
