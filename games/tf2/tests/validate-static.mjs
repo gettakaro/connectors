@@ -130,6 +130,17 @@ assert(plugin.includes('HookUserMessage(GetUserMessageId("SayText2"), UserMsg_Sa
   const handler = plugin.slice(plugin.indexOf("Action HandleChatCommand("), plugin.indexOf("public Action UserMsg_SayText2("));
   assert((handler.match(/EmitChatMessage\(/g) || []).length === 1 && handler.includes("if (IsFakeClient(client)) {\n    EmitChatMessage("), "the say listener emits directly only for bots");
 }
+// Reconnect policy (gettakaro/connectors#858): the plugin schedules reconnects itself.
+{
+  const reconnect = readFileSync(join(scriptingRoot, "takaro_tf2_reconnect.inc"), "utf8");
+  assert(plugin.includes('#include "takaro_tf2_reconnect.inc"'), "plugin must use the shared reconnect policy");
+  assert(plugin.includes("g_WebSocket.AutoReconnect = false;") && !plugin.includes("MinReconnectWait"), "the extension's automatic reconnection (no jitter, no stable-session reset) must stay off");
+  assert(plugin.includes("ReconnectDelayMs(g_FailureStreak") && plugin.includes("NextFailureStreak(g_FailureStreak"), "reconnect waits must come from ReconnectDelayMs and the failure streak");
+  assert(plugin.includes("INBOUND_TIMEOUT_SECONDS") && plugin.includes('WriteString("{\\"type\\":\\"ping\\"}")'), "a silent link must be detected by heartbeat and inbound timeout");
+  assert(/#define RECONNECT_FAST_MIN_MS 250\b/.test(reconnect) && /#define RECONNECT_FAST_JITTER_MS 750\b/.test(reconnect), "the first retry after a stable session must stay within 0.25-1.0 s");
+  assert(config.includes('takaro_tf2_reconnect_max_ms "60000"') && plugin.includes('"takaro_tf2_reconnect_max_ms", "60000"'), "the backoff cap defaults to 60 s");
+  assert(readFileSync(packagePath, "utf8").includes("takaro_tf2_reconnect_test"), "the reconnect unit-test plugin must be built");
+}
 assert(plugin.includes("IsCommandAllowed"), "plugin must enforce a command allowlist");
 assert(plugin.includes("takaro_tf2_shutdown_enabled") && plugin.includes("ServerCommand(\"quit\")"), "shutdown must be cvar-gated");
 assert(plugin.includes("GetClientAuthId(client, AuthId_SteamID64"), "plugin must use SteamID64 identity mapping");

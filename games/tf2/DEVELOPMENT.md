@@ -13,12 +13,14 @@ and SourceMod 1.13 are installed by the operator.
 |---|---|
 | `mod/addons/sourcemod/scripting/takaro_tf2.sp` | The plugin: Takaro protocol (v0 and v1 with event acks), game adapter, cvars. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_chat.inc` | Server chat name resolution and the one renderer for Takaro chat lines. |
+| `mod/addons/sourcemod/scripting/takaro_tf2_reconnect.inc` | Reconnect policy: delay per failure streak, stable-session and liveness timeouts. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc` | Generated weapon catalog for `listItems` (item definition index, in-game name). |
 | `mod/cfg/sourcemod/takaro_tf2.cfg` | The config template shipped in the zip (no secrets). |
 | `scripts/build-release.sh` | Release build for one catalog target. |
 | `scripts/generate-tf2-item-catalog.mjs` | Regenerates the item catalog from the TF2 item schema. |
 | `scripts/run-live-smoke.sh` | Boots a local srcds against the fake Takaro in `tests/live-harness.mjs`. |
 | `tests/takaro_tf2_chat_test.sp` | Unit tests for `takaro_tf2_chat.inc`, run as a plugin on a SourceMod server. |
+| `tests/takaro_tf2_reconnect_test.sp` | Unit tests for `takaro_tf2_reconnect.inc`, run the same way. |
 | `tests/validate-static.mjs` | Source-level contract checks (actions, events, cvars, wire shapes, `capabilities.json`). |
 | `capabilities.json` | What each Takaro action and event does on TF2. |
 
@@ -54,7 +56,8 @@ The build also compiles `tests/takaro_tf2_chat_test.sp` (never shipped) to
 `_data/build/stage-<fp16>/out/takaro_tf2_chat_test.smx`. Copy it into any SourceMod server's
 `addons/sourcemod/plugins/` and run `sm plugins load takaro_tf2_chat_test`: it prints
 `takaro_tf2_chat_test: PASS <n>` (or one `FAIL` line per broken case) to the server console and the
-SourceMod log, then unloads itself.
+SourceMod log, then unloads itself. `takaro_tf2_reconnect_test.smx` is built and run the same way and prints
+`takaro_tf2_reconnect_test: PASS <n>`.
 
 `run-live-smoke.sh` needs a local TF2 dedicated server with MetaMod:Source 1.12 and SourceMod 1.13
 installed, and the `ws` npm package for the fake Takaro:
@@ -85,6 +88,16 @@ item (code = item definition index) to `takaro_tf2_item_catalog.inc`.
 
 ## Behaviour notes
 
+- Reconnects are scheduled by the plugin (`takaro_tf2_reconnect.inc`); the extension's own automatic
+  reconnection is off, because it has no jitter and resets its backoff on any handshake. A connection
+  that was identified and stayed up for 10 s is retried 0.25-1.0 s after it drops, so it is
+  identified again within about 2 s. Only consecutive failures back off: `takaro_tf2_reconnect_min_ms`
+  doubled per failure plus up to 100 % jitter, capped at `takaro_tf2_reconnect_max_ms` (75-100 % of
+  the cap once there); the streak resets after the next stable connection. The plugin pings Takaro
+  every 10 s; 30 s without any inbound frame closes the socket as dead (a blackholed link never sends
+  a reset). The socket must open within 15 s and be identified within 20 s. Unacknowledged v1 events
+  stay queued and are resent after every reconnect. `takaro_tf2_reconnect` forces a reconnect and
+  `takaro_tf2_state` prints the connection state, failure streak and pending reconnect.
 - Identity is the SteamID64 (`platformId` `steam:<id>`). A server started with `-insecure` has no
   Steam auth; real clients then get a `SOURCE_<userid>` fallback id that `banPlayer` refuses.
 - `banPlayer` and `unbanPlayer` go through the engine's `banid` and `removeid`; the connector keeps

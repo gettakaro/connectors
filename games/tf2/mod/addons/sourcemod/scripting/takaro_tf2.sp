@@ -6,6 +6,7 @@
 
 #include "takaro_tf2_item_catalog.inc"
 #include "takaro_tf2_chat.inc"
+#include "takaro_tf2_reconnect.inc"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -78,6 +79,18 @@ ArrayList g_OutboxType = null;
 ArrayList g_OutboxData = null;
 float g_LastAckTime = 0.0;
 
+// Connection lifecycle (see takaro_tf2_reconnect.inc). Times are GetEngineTime() seconds.
+int g_FailureStreak = 0;
+bool g_SessionStable = false;   // identified for CONNECTION_STABLE_SECONDS
+bool g_ReplacingSocket = false; // callbacks of a socket being deleted are ignored
+float g_ReconnectAt = 0.0;      // > 0: a connect attempt is scheduled for this time
+float g_AttemptStartedAt = 0.0;
+float g_IdentifiedAt = 0.0;
+float g_LastInboundAt = 0.0;
+float g_LastHeartbeatAt = 0.0;
+float g_LostAt = 0.0;           // when the last connection ended, 0 when none is pending
+int g_LastPongCount = 0;
+
 public void OnPluginStart()
 {
   g_OutboxSeq = new ArrayList();
@@ -90,8 +103,8 @@ public void OnPluginStart()
   g_CvarIdentityToken = CreateConVar("takaro_tf2_identity_token", "", "Takaro connector identity token.", FCVAR_PROTECTED);
   g_CvarRegistrationToken = CreateConVar("takaro_tf2_registration_token", "", "Takaro connector registration token.", FCVAR_PROTECTED);
   g_CvarIncludeBots = CreateConVar("takaro_tf2_include_bots", "0", "Include bots in players and events.");
-  g_CvarReconnectMinMs = CreateConVar("takaro_tf2_reconnect_min_ms", "1000", "Minimum WebSocket reconnect wait in milliseconds.");
-  g_CvarReconnectMaxMs = CreateConVar("takaro_tf2_reconnect_max_ms", "30000", "Maximum WebSocket reconnect wait in milliseconds.");
+  g_CvarReconnectMinMs = CreateConVar("takaro_tf2_reconnect_min_ms", "1000", "First wait in milliseconds of the backoff after consecutive failed connects (doubles per failure, plus jitter). A drop after a stable connection is always retried in 0.25-1.0 s.");
+  g_CvarReconnectMaxMs = CreateConVar("takaro_tf2_reconnect_max_ms", "60000", "Cap in milliseconds of the reconnect backoff after consecutive failed connects.");
   g_CvarCommandAllowlistExact = CreateConVar("takaro_tf2_command_allowlist_exact", "status", "Semicolon-separated exact commands allowed for executeConsoleCommand.");
   g_CvarCommandAllowlistPrefixes = CreateConVar("takaro_tf2_command_allowlist_prefixes", "", "Semicolon-separated command prefixes allowed for executeConsoleCommand.");
   g_CvarShutdownEnabled = CreateConVar("takaro_tf2_shutdown_enabled", "0", "Allow Takaro shutdown to execute the quit command.");
@@ -99,6 +112,7 @@ public void OnPluginStart()
   g_CvarServerChatName = CreateConVar("takaro_tf2_server_chat_name", "", "Sender name for Takaro messages when Takaro sends none. Empty keeps [Takaro].");
 
   AutoExecConfig(true, "takaro_tf2");
+  g_CvarWsUrl.AddChangeHook(OnWsUrlChanged);
 
   g_PlayerSteamIds = new StringMap();
   g_PlayerNames = new StringMap();
@@ -122,6 +136,7 @@ public void OnPluginStart()
   RegServerCmd("takaro_tf2_state", Command_State);
 
   CreateTimer(5.0, Timer_CheckEventAck, _, TIMER_REPEAT);
+  CreateTimer(0.1, Timer_Connection, _, TIMER_REPEAT);
 
   EmitLogEvent("info", "Takaro TF2 connector loaded");
 }
@@ -140,13 +155,7 @@ public void OnPluginEnd()
 {
   EmitLogEvent("info", "Takaro TF2 connector unloading");
 
-  if (g_WebSocket != null) {
-    if (g_WebSocket.ReadyState != CLOSED) {
-      g_WebSocket.Disconnect();
-    }
-    delete g_WebSocket;
-    g_WebSocket = null;
-  }
+  CloseTakaroSocket();
 
   delete g_PlayerSteamIds;
   delete g_PlayerNames;
@@ -411,47 +420,166 @@ void Event_ObjectDestroyed(Event event, const char[] name, bool dontBroadcast)
 
 Action Command_Reconnect(int args)
 {
+  g_FailureStreak = 0;
   ConnectTakaro();
   return Plugin_Handled;
 }
 
 Action Command_State(int args)
 {
-  PrintToServer("[TakaroTF2] connected=%d identified=%d ws=%x", g_Connected, g_Identified, g_WebSocket);
+  float now = GetEngineTime();
+  PrintToServer("[TakaroTF2] connected=%d identified=%d stable=%d streak=%d reconnectIn=%.2f inboundAge=%.1f ws=%x",
+    g_Connected, g_Identified, g_SessionStable, g_FailureStreak,
+    g_ReconnectAt > 0.0 ? g_ReconnectAt - now : -1.0, now - g_LastInboundAt, g_WebSocket);
   return Plugin_Handled;
+}
+
+// Deletes the current socket. Its callbacks still run during the delete and are ignored.
+void CloseTakaroSocket()
+{
+  if (g_WebSocket == null) {
+    return;
+  }
+  g_ReplacingSocket = true;
+  if (g_WebSocket.Connected) {
+    g_WebSocket.Disconnect();
+  }
+  delete g_WebSocket;
+  g_WebSocket = null;
+  g_ReplacingSocket = false;
+}
+
+// The current connection ended (closed, failed, timed out or found dead): schedule the next attempt.
+void HandleConnectionLost(const char[] reason)
+{
+  if (g_ReconnectAt > 0.0) {
+    return;
+  }
+  bool wasIdentified = g_Identified;
+  bool wasStable = g_SessionStable;
+  g_Connected = false;
+  g_Identified = false;
+  g_SessionStable = false;
+
+  g_FailureStreak = NextFailureStreak(g_FailureStreak, wasStable);
+  int delayMs = ReconnectDelayMs(g_FailureStreak, g_CvarReconnectMinMs.IntValue, g_CvarReconnectMaxMs.IntValue,
+    GetRandomInt(0, 1000));
+  float now = GetEngineTime();
+  if (g_LostAt <= 0.0) {
+    g_LostAt = now;
+  }
+  g_ReconnectAt = now + float(delayMs) / 1000.0;
+  LogMessage("[TakaroTF2] Takaro connection lost (%s; identified=%d stable=%d failureStreak=%d); reconnecting in %d ms",
+    reason, wasIdentified, wasStable, g_FailureStreak, delayMs);
+}
+
+// Closes a socket that is open but useless (dead link, no identify) and schedules the reconnect.
+void DropConnection(const char[] reason)
+{
+  LogMessage("[TakaroTF2] Dropping the Takaro connection: %s", reason);
+  HandleConnectionLost(reason);
+  CloseTakaroSocket();
+}
+
+Action Timer_Connection(Handle timer)
+{
+  float now = GetEngineTime();
+  if (g_ReconnectAt > 0.0) {
+    if (now >= g_ReconnectAt) {
+      ConnectTakaro();
+    }
+    return Plugin_Continue;
+  }
+  if (g_WebSocket == null) {
+    return Plugin_Continue;
+  }
+
+  if (!g_WebSocket.Connected) {
+    // Normally the close or error callback reports this first; this is the backstop.
+    if (g_WebSocket.ReadyState == CLOSED && now - g_AttemptStartedAt > 2.0) {
+      HandleConnectionLost(g_Connected ? "socket closed" : "connect failed");
+    } else if (now - g_AttemptStartedAt > CONNECT_DEADLINE_SECONDS) {
+      DropConnection("connect timed out");
+    }
+    return Plugin_Continue;
+  }
+
+  int pongs = g_WebSocket.PongsReceived;
+  if (pongs != g_LastPongCount) {
+    g_LastPongCount = pongs;
+    g_LastInboundAt = now;
+  }
+
+  if (!g_Identified) {
+    if (now - g_AttemptStartedAt > IDENTIFY_DEADLINE_SECONDS) {
+      DropConnection("no accepted identifyResponse in time");
+    }
+    return Plugin_Continue;
+  }
+
+  if (!g_SessionStable && now - g_IdentifiedAt >= CONNECTION_STABLE_SECONDS) {
+    g_SessionStable = true;
+    if (g_FailureStreak != 0) {
+      LogMessage("[TakaroTF2] Takaro connection stable; reconnect backoff reset (was failureStreak=%d)", g_FailureStreak);
+    }
+    g_FailureStreak = 0;
+  }
+
+  if (now - g_LastInboundAt > INBOUND_TIMEOUT_SECONDS) {
+    char reason[96];
+    Format(reason, sizeof(reason), "no inbound traffic for %.1f s", now - g_LastInboundAt);
+    DropConnection(reason);
+    return Plugin_Continue;
+  }
+
+  if (now - g_LastHeartbeatAt >= HEARTBEAT_INTERVAL_SECONDS) {
+    g_LastHeartbeatAt = now;
+    g_WebSocket.WriteString("{\"type\":\"ping\"}");
+  }
+  return Plugin_Continue;
+}
+
+// A new URL applies at once, and an empty URL that is set later starts the connector.
+void OnWsUrlChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+  if (!StrEqual(oldValue, newValue)) {
+    g_FailureStreak = 0;
+    ConnectTakaro();
+  }
 }
 
 void ConnectTakaro()
 {
+  g_ReconnectAt = 0.0;
+  CloseTakaroSocket();
+  g_Connected = false;
+  g_Identified = false;
+  g_SessionStable = false;
+
   char url[MAX_WS_URL_LENGTH];
   g_CvarWsUrl.GetString(url, sizeof(url));
   TrimString(url);
-
   if (url[0] == '\0') {
     EmitLogEvent("error", "takaro_tf2_ws_url is empty; connector will not start");
     return;
   }
 
-  if (g_WebSocket != null) {
-    if (g_WebSocket.ReadyState != CLOSED) {
-      g_WebSocket.Disconnect();
-    }
-    delete g_WebSocket;
-    g_WebSocket = null;
-  }
-
-  g_Connected = false;
-  g_Identified = false;
+  float now = GetEngineTime();
+  g_AttemptStartedAt = now;
+  g_LastInboundAt = now;
+  g_LastHeartbeatAt = now;
+  g_LastPongCount = 0;
 
   g_WebSocket = new WebSocket(url, WebSocket_JSON);
   g_WebSocket.SetOpenCallback(OnTakaroOpen);
   g_WebSocket.SetMessageCallback(OnTakaroMessage);
   g_WebSocket.SetCloseCallback(OnTakaroClose);
   g_WebSocket.SetErrorCallback(OnTakaroError);
-  g_WebSocket.AutoReconnect = true;
-  g_WebSocket.MinReconnectWait = g_CvarReconnectMinMs.IntValue;
-  g_WebSocket.MaxReconnectWait = g_CvarReconnectMaxMs.IntValue;
-  g_WebSocket.PingInterval = 30;
+  // Reconnects are scheduled by the plugin (HandleConnectionLost), never by the extension.
+  g_WebSocket.AutoReconnect = false;
+  g_WebSocket.PingInterval = 10;
+  // Closing a dead link waits for the close handshake on the game thread: keep that short.
+  g_WebSocket.CloseTimeout = 1;
   g_WebSocket.Connect();
 
   EmitLogEvent("info", "Connecting to Takaro WebSocket");
@@ -459,7 +587,11 @@ void ConnectTakaro()
 
 void OnTakaroOpen(WebSocket ws)
 {
+  if (ws != g_WebSocket || g_ReplacingSocket) {
+    return;
+  }
   g_Connected = true;
+  g_LastInboundAt = GetEngineTime();
   g_ProtocolVersion = 0;
   PrintToServer("[TakaroTF2] [info] Takaro WebSocket connected");
   SendIdentify();
@@ -467,19 +599,34 @@ void OnTakaroOpen(WebSocket ws)
 
 void OnTakaroClose(WebSocket ws, int code, const char[] reason)
 {
-  g_Connected = false;
-  g_Identified = false;
+  if (ws != g_WebSocket || g_ReplacingSocket) {
+    return;
+  }
   LogMessage("[TakaroTF2] Takaro WebSocket closed: code=%d reason=%s", code, reason);
   EmitLogEvent("warn", "Takaro WebSocket closed");
+  char lost[160];
+  Format(lost, sizeof(lost), "closed with code %d", code);
+  HandleConnectionLost(lost);
 }
 
 void OnTakaroError(WebSocket ws, const char[] errMsg)
 {
+  if (ws != g_WebSocket || g_ReplacingSocket) {
+    return;
+  }
   EmitLogEvent("error", errMsg);
+  if (!ws.Connected) {
+    HandleConnectionLost(errMsg);
+  }
 }
 
 void OnTakaroMessage(WebSocket ws, const JSON message, int wireSize)
 {
+  if (ws != g_WebSocket || g_ReplacingSocket) {
+    return;
+  }
+  g_LastInboundAt = GetEngineTime();
+
   char type[64];
   if (!message.PtrTryGetString("/type", type, sizeof(type))) {
     SendErrorResponse("", "malformed-message", "Incoming message is missing type");
@@ -488,6 +635,11 @@ void OnTakaroMessage(WebSocket ws, const JSON message, int wireSize)
 
   if (StrEqual(type, "ping", false)) {
     SendPong(message);
+    return;
+  }
+
+  // Answer to the plugin's heartbeat; arriving at all is what counts.
+  if (StrEqual(type, "pong", false)) {
     return;
   }
 
@@ -508,8 +660,16 @@ void OnTakaroMessage(WebSocket ws, const JSON message, int wireSize)
         } else {
           g_ProtocolVersion = 0;
         }
-        g_LastAckTime = GetGameTime();
-        PrintToServer("[TakaroTF2] [info] Takaro identity accepted: gameServerId=%s protocol=%d", gameServerId, g_ProtocolVersion);
+        float now = GetEngineTime();
+        g_LastAckTime = now;
+        g_IdentifiedAt = now;
+        if (g_LostAt > 0.0) {
+          LogMessage("[TakaroTF2] Takaro identity accepted: gameServerId=%s protocol=%d, %.2f s after the connection was lost (%d event(s) queued)",
+            gameServerId, g_ProtocolVersion, now - g_LostAt, g_OutboxSeq.Length);
+          g_LostAt = 0.0;
+        } else {
+          LogMessage("[TakaroTF2] Takaro identity accepted: gameServerId=%s protocol=%d", gameServerId, g_ProtocolVersion);
+        }
         FlushOutbox();
       }
       return;
@@ -1439,9 +1599,9 @@ Action Timer_CheckEventAck(Handle timer)
 {
   if (g_ProtocolVersion == 1 && g_Identified && g_OutboxSeq.Length > 0
     && GetEngineTime() - g_LastAckTime > ACK_TIMEOUT_SECONDS) {
-    PrintToServer("[TakaroTF2] [warn] no eventAck for %.0f s; reconnecting to resend %d event(s)",
-      ACK_TIMEOUT_SECONDS, g_OutboxSeq.Length);
-    ConnectTakaro();
+    char reason[96];
+    Format(reason, sizeof(reason), "no eventAck for %.0f s with %d event(s) pending", ACK_TIMEOUT_SECONDS, g_OutboxSeq.Length);
+    DropConnection(reason);
   }
   return Plugin_Continue;
 }
