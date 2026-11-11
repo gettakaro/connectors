@@ -10,6 +10,7 @@
 #include "native/transport.h"
 #include "testlib.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <regex>
@@ -153,6 +154,93 @@ void HeartbeatTests() {
     h2.Reset(0);
     for (int i = 0; i < 8; i++) h2.OnPingSent(i * 6000);
     CHECK(!h2.PingDue(100000, true));
+}
+
+void ReconnectPolicyTests() {
+    t::Group("reconnect-policy");
+    ReconnectPolicy::Params p;  // defaults: base 2000, max 60000, fast 250 + [0,500], stable 10 s
+    ReconnectPolicy rp(p, 42);
+    // never identified: every end is a failure, exponential with equal jitter, capped at 60 s
+    unsigned expectHi[] = {2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000};
+    for (unsigned hi : expectHi) {
+        bool est = true;
+        unsigned d = rp.NextDelayMs(0, &est);
+        CHECK(!est);
+        CHECK(d >= hi / 2 && d <= hi);
+    }
+    CHECK_EQ(rp.Streak(), 8u);
+    // identified, but dropped before the stable window: still a failure, the streak keeps growing
+    rp.OnIdentified(1000);
+    bool est = true;
+    unsigned d = rp.NextDelayMs(1000 + 9999, &est);
+    CHECK(!est);
+    CHECK(d >= 30000 && d <= 60000);
+    CHECK_EQ(rp.Streak(), 9u);
+    // identified and stable for 10 s: fast retry well under 2 s, streak reset
+    rp.OnIdentified(20000);
+    d = rp.NextDelayMs(30000, &est);
+    CHECK(est);
+    CHECK(d >= 250 && d <= 750);
+    CHECK_EQ(rp.Streak(), 0u);
+    // the identify mark is consumed: if that fast retry fails, the backoff starts at base
+    d = rp.NextDelayMs(31000, &est);
+    CHECK(!est);
+    CHECK(d >= 1000 && d <= 2000);
+    CHECK_EQ(rp.Streak(), 1u);
+    // Reset (new settings) clears the streak
+    rp.NextDelayMs(32000);
+    rp.Reset();
+    CHECK_EQ(rp.Streak(), 0u);
+    CHECK(rp.NextDelayMs(33000) <= 2000);
+    // jitter: 200 stable drops spread over the fast window and are not all equal
+    unsigned lo = ~0u, hi = 0;
+    std::map<unsigned, int> seen;
+    for (int i = 0; i < 200; i++) {
+        rp.OnIdentified(i * 100000);
+        unsigned f = rp.NextDelayMs(i * 100000 + 60000);
+        lo = std::min(lo, f);
+        hi = std::max(hi, f);
+        seen[f]++;
+    }
+    CHECK(lo >= 250 && hi <= 750);
+    CHECK(hi - lo >= 300);
+    CHECK(seen.size() > 50);
+    // capped streak delays are jittered too, not all exactly 60 s
+    ReconnectPolicy cap(p, 7);
+    std::map<unsigned, int> capSeen;
+    for (int i = 0; i < 40; i++) {
+        unsigned c = cap.NextDelayMs(0);
+        if (i >= 10) capSeen[c]++;
+        CHECK(c <= 60000);
+    }
+    CHECK(capSeen.size() > 10);
+    // operator overrides of the old keys still drive the streak; the first retry after a stable session
+    // stays fast whatever the base
+    ReconnectPolicy::Params slow;
+    slow.baseMs = 30000;
+    slow.maxMs = 120000;
+    ReconnectPolicy rs(slow, 3);
+    d = rs.NextDelayMs(0);
+    CHECK(d >= 15000 && d <= 30000);
+    for (int i = 0; i < 5; i++) d = rs.NextDelayMs(0);
+    CHECK(d >= 60000 && d <= 120000);
+    rs.OnIdentified(0);
+    CHECK(rs.NextDelayMs(10000) <= 750);
+    // max below base is raised to base
+    ReconnectPolicy::Params odd;
+    odd.baseMs = 5000;
+    odd.maxMs = 1000;
+    ReconnectPolicy ro(odd, 9);
+    for (int i = 0; i < 4; i++) CHECK(ro.NextDelayMs(0) <= 5000);
+    // seed 0 picks a seed from the clock; two policies give different sequences
+    ReconnectPolicy a(p, 0), b(p, 0);
+    bool differ = false;
+    for (int i = 0; i < 10 && !differ; i++) {
+        a.OnIdentified(0);
+        b.OnIdentified(0);
+        differ = a.NextDelayMs(20000) != b.NextDelayMs(20000);
+    }
+    CHECK(differ);
 }
 
 void QueueTests() {
@@ -535,6 +623,7 @@ void RunUnitTests() {
     ItemLevelTests();
     IsoTests();
     HeartbeatTests();
+    ReconnectPolicyTests();
     QueueTests();
     ConfigTests();
     PersistenceTests();

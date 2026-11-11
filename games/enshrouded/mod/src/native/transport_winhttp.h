@@ -23,7 +23,7 @@ public:
     struct Options {
         std::string url;
         std::string caFile;
-        unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
+        unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;  // failure-streak backoff (ReconnectPolicy)
         Heartbeat::Params heartbeat;
     };
     explicit WinHttpTransport(Options o);
@@ -59,7 +59,7 @@ private:
     Epoch* cur_ = nullptr;
     bool open_ = false;
     uint64_t epoch_ = 0;
-    unsigned attempts_ = 0;
+    ReconnectPolicy policy_;  // under mu_
     std::string url_;        // under mu_; o_.url is only the initial value
     bool connect_ = true;    // under mu_
     uint64_t generation_ = 0;  // under mu_: bumped by Retarget, so an epoch opened with old settings is dropped
