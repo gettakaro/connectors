@@ -1,6 +1,8 @@
 // Ported from the Takaro Enshrouded native connector (gettakaro/connectors games/enshrouded/mod/src/native, MIT).
 #include "transport.h"
 
+#include <algorithm>
+
 namespace native {
 
 const char* QueueStatusName(QueueStatus s) {
@@ -65,6 +67,21 @@ size_t FrameQueues::TotalFrames() const {
 }
 
 size_t FrameQueues::TotalBytes() const { return bytes_[0] + bytes_[1] + bytes_[2] + bytes_[3]; }
+
+int64_t ReconnectPolicy::NextDelayMs(unsigned streak, double random, int64_t baseMs, int64_t maxMs) {
+    if (!(random >= 0)) random = 0;  // also NaN
+    if (random > 1) random = 1;
+    maxMs = std::max<int64_t>(maxMs, 1);
+    if (streak == 0) return std::min<int64_t>(kFastMinMs + (int64_t)(kFastJitterMs * random), maxMs);
+    int64_t ceiling = std::clamp<int64_t>(baseMs, 1, maxMs);
+    for (unsigned i = 1; i < streak && ceiling < maxMs; i++) ceiling = std::min(ceiling * 2, maxMs);
+    // Equal jitter: at least half the ceiling, so the streak still grows.
+    return ceiling / 2 + (int64_t)((ceiling - ceiling / 2) * random);
+}
+
+bool ReconnectPolicy::SessionWasStable(bool identified, int64_t identifiedForMs, int64_t stableMs) {
+    return identified && identifiedForMs >= stableMs;
+}
 
 void Heartbeat::Reset(int64_t nowMs) {
     pings_.clear();

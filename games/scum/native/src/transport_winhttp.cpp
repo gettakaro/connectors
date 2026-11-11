@@ -307,7 +307,7 @@ void WinHttpTransport::RequestClose(uint64_t epoch, const std::string& reason) {
 
 void WinHttpTransport::MarkIdentified(uint64_t epoch) {
     std::lock_guard<std::mutex> g(mu_);
-    if (cur_ && cur_->id == epoch) attempts_ = 0;
+    if (cur_ && cur_->id == epoch && !identifiedAtMs_) identifiedAtMs_ = Now();
 }
 
 void WinHttpTransport::Retarget(const std::string& url, bool connect) {
@@ -405,16 +405,22 @@ void WinHttpTransport::Supervisor() {
         if (stopping_) break;
         RunEpoch();
         if (stopping_) break;
-        unsigned delay;
+        int64_t delay;
+        unsigned streak;
         {
             std::lock_guard<std::mutex> g(mu_);
             if (retargeted_) continue;  // new settings: connect again at once
-            uint64_t d = (uint64_t)o_.reconnectBaseMs << std::min(attempts_, 20u);
-            delay = (unsigned)std::min<uint64_t>(d, o_.reconnectMaxMs);
+            if (ReconnectPolicy::SessionWasStable(identifiedAtMs_ != 0, endedAtMs_ - identifiedAtMs_)) attempts_ = 0;
+            streak = attempts_;
+            delay = ReconnectPolicy::NextDelayMs(streak, std::uniform_real_distribution<double>(0, 1)(rng_),
+                                                 o_.reconnectBaseMs, o_.reconnectMaxMs);
             attempts_++;
             nextAttemptAtMs_ = Now() + delay;
         }
-        PluginLog("native: reconnecting to Takaro in %ums", delay);
+        if (streak == 0)
+            PluginLog("native: reconnecting to Takaro in %lldms (fast retry)", (long long)delay);
+        else
+            PluginLog("native: reconnecting to Takaro in %lldms (failure streak %u)", (long long)delay, streak);
         std::unique_lock<std::mutex> l(mu_);
         supCv_.wait_for(l, std::chrono::milliseconds(delay), [&] { return stopping_.load() || retargeted_; });
         nextAttemptAtMs_ = 0;
@@ -430,6 +436,7 @@ void WinHttpTransport::RunEpoch() {
         std::lock_guard<std::mutex> g(mu_);
         urlText = url_;
         generation = generation_;
+        identifiedAtMs_ = endedAtMs_ = 0;
     }
     if (!ParseUrl(urlText, url)) {
         Fail("url (must be wss://host[:port]/path)", 0);
@@ -592,6 +599,7 @@ void WinHttpTransport::RunEpoch() {
             e->dead = true;
             e->why = "stopping";
         }
+        endedAtMs_ = Now();
         open_ = false;  // no new frames for this epoch
     }
     sendCv_.notify_all();
