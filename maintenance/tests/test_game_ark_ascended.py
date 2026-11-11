@@ -19,10 +19,10 @@ from takaro_maint.exit_codes import ConflictError, UsageError
 from takaro_maint.games import adapter_for
 
 GAME = "ark-ascended"
-TARGET = "windows-26515168"
+TARGET = "windows-26564816"
 APP = 2430930
 DEPOT = "2430931"
-MANIFEST = "3083367148300701914"
+MANIFEST = "3866706003566311928"
 VERSION = "0.1.0-dev.abc1234"
 ARTIFACT = f"takaro-ark-ascended-{TARGET}-{VERSION}.zip"
 PLUGIN = "ArkApi/Plugins/TakaroAsa"
@@ -61,7 +61,7 @@ def test_catalog_validate_accepts_the_target(run: Any) -> None:
 def test_the_steam_pin_is_exact_and_anonymous() -> None:
     server = record()["inputs"]["server"]
 
-    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (APP, "public", 26515168, "windows")
+    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (APP, "public", 26564816, "windows")
     assert server["depots"][DEPOT]["manifest"] == MANIFEST
     assert server["credentials"] is None
     assert len(server["files"][f"{WIN64}/ArkAscendedServer.exe"]["sha256"]) == 64
@@ -106,7 +106,7 @@ def test_resolve_names_the_artifact_and_build_inputs(run: Any) -> None:
 
     assert payload["artifactFileNames"]["mod"] == f"takaro-ark-ascended-{TARGET}-{{version}}.zip"
     env = adapter_for(GAME).env(payload, "ARK_ASCENDED")
-    assert env["ARK_ASCENDED_STEAM_BUILDID"] == "26515168"
+    assert env["ARK_ASCENDED_STEAM_BUILDID"] == "26564816"
     assert env["ARK_ASCENDED_ARTIFACT_MOD"] == f"takaro-ark-ascended-{TARGET}-{{version}}.zip"
     assert env["ARK_ASCENDED_TOOLCHAIN"].startswith("debian:13.7@sha256:")
     assert env["ARK_ASCENDED_DEP_ASAAPI_URL"].endswith("AsaApi_2.11.zip")
