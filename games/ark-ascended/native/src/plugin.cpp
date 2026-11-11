@@ -368,10 +368,13 @@ tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     tj::Value p = tj::Value::object();
     p.set("gameId", tj::str(eos));
     p.set("name", tj::str(r.name.empty() ? eos : r.name));
-    p.set("epicOnlineServicesId", tj::str(eos));
+    // An EOS id is issued per EOS product and Takaro keeps one per player, so for a Steam player it would fight the
+    // EOS id of every other EOS game. The Steam id names the account everywhere; the EOS id stays the gameId.
     if (const auto steam = steamlink::g_ids.find(eos); steam != steamlink::g_ids.end()) {
         p.set("steamId", tj::str(steam->second));
         p.set("platformId", tj::str("steam:" + steam->second));
+    } else {
+        p.set("epicOnlineServicesId", tj::str(eos));
     }
     if (!r.ip.empty()) p.set("ip", tj::str(r.ip));
     if (r.ping >= 0) p.set("ping", tj::num(r.ping));
