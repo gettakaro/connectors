@@ -34,6 +34,7 @@ class ProtocolV1Test {
     private final List<String> sent = new CopyOnWriteArrayList<>();
     private volatile boolean open = true;
     private WorldMap worldMap;
+    private final TakaroConnectorTest.TestAdapter adapter = new TakaroConnectorTest.TestAdapter();
 
     @AfterEach
     void tearDown() {
@@ -52,7 +53,7 @@ class ProtocolV1Test {
             worldMap = new WorldMap(List.of(new WorldMap.Dimension("overworld", "Overworld", dir.resolve("region"), false)),
                     TestRegions.colors(), s -> {});
         }
-        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), new TakaroConnectorTest.TestAdapter(),
+        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter,
                 config, "config", outbox, worldMap) {
             @Override
             public void send(String text) { sent.add(text); }
@@ -122,6 +123,73 @@ class ProtocolV1Test {
     }
 
     @Test
+    void identifyDeclaresProgressionAsServerOwned() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onOpen(null);
+
+        JsonObject progression = sentOfType("identify").get(0).getAsJsonObject("payload")
+                .getAsJsonArray("capabilities").asList().stream().map(JsonElement::getAsJsonObject)
+                .filter(c -> c.get("name").getAsString().equals("players.progression")).findFirst().orElseThrow();
+        assertEquals("server", progression.getAsJsonObject("parameters").get("source").getAsString());
+    }
+
+    @Test
+    void progressionAnswersTheXpLevelBarAndPointsWithoutTheGameThread() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(1));
+        adapter.progression.record("uuid-1", 13, 0.42f, 512);
+
+        client.onMessage(request("p1", "getPlayerProgression", "{\"gameId\":\"uuid-1\"}"));
+
+        assertEquals("[{\"key\":\"character\",\"name\":\"Level\",\"level\":13,\"experience\":512,\"progress\":0.42}]",
+                awaitResponse("p1").get("payload").toString());
+        assertFalse(adapter.mainThreadUsed);
+    }
+
+    @Test
+    void progressionKeepsAnUnreadablePlayerBarInsideZeroToOne() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(1));
+
+        adapter.progression.record("over", 1, 1.5f, 0);
+        adapter.progression.record("under", 1, -0.5f, 0);
+        adapter.progression.record("nan", 1, Float.NaN, 0);
+        client.onMessage(request("over", "getPlayerProgression", "{\"gameId\":\"over\"}"));
+        client.onMessage(request("under", "getPlayerProgression", "{\"gameId\":\"under\"}"));
+        client.onMessage(request("nan", "getPlayerProgression", "{\"gameId\":\"nan\"}"));
+
+        assertEquals(1, progress(awaitResponse("over")));
+        assertEquals(0, progress(awaitResponse("under")));
+        assertEquals(0, progress(awaitResponse("nan")));
+    }
+
+    private static double progress(JsonObject response) {
+        return response.getAsJsonArray("payload").get(0).getAsJsonObject().get("progress").getAsDouble();
+    }
+
+    @Test
+    void progressionAnswersNullForAPlayerTheServerHasNotSeen() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(1));
+
+        client.onMessage(request("p1", "getPlayerProgression", "{\"gameId\":\"nobody\"}"));
+        client.onMessage(request("p2", "getPlayerProgression", "{\"gameId\":null}"));
+
+        assertTrue(awaitResponse("p1").get("payload").isJsonNull());
+        assertTrue(awaitResponse("p2").get("payload").isJsonNull());
+    }
+
+    @Test
+    void progressionIsNotAnsweredOnVersionZero() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onMessage(identifyResponse(0));
+
+        client.onMessage(request("p1", "getPlayerProgression", "{\"gameId\":\"uuid-1\"}"));
+
+        assertTrue(awaitResponse("p1").has("error"));
+    }
+
+    @Test
     void withoutTheMapSettingIdentifyStillOffersV1WithoutTheMap() throws Exception {
         TakaroWebSocketClient client = client(false, new EventOutbox());
         client.onOpen(null);
@@ -148,6 +216,17 @@ class ProtocolV1Test {
         assertEquals("early", payload.getAsJsonObject("data").get("msg").getAsString());
         assertFalse(payload.has("seq"));
         assertEquals(0, outbox.size());
+    }
+
+    @Test
+    void consoleChatIsSentWithoutAPlayer() throws Exception {
+        TakaroWebSocketClient client = client(true, new EventOutbox("stream-d"));
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        client.emitChatMessage(null, null, "global", "server restart soon");
+        JsonObject data = sentOfType("gameEvent").get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals("server restart soon", data.get("msg").getAsString());
+        assertFalse(data.has("player"));
     }
 
     @Test
@@ -180,6 +259,94 @@ class ProtocolV1Test {
         List<JsonObject> resent = sentOfType("gameEvent");
         assertEquals(1, resent.size());
         assertEquals(2, resent.get(0).getAsJsonObject("payload").get("seq").getAsLong());
+    }
+
+    @Test
+    void eventsFromManyThreadsLeaveInSeqOrder() throws Exception {
+        // Takaro drops any seq at or below one it has seen, so an event that is overtaken is lost.
+        TakaroConfig config = new TakaroConfig();
+        config.setIdentityToken("id");
+        config.setRegistrationToken("reg");
+        TakaroWebSocketClient client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter,
+                config, "config", new EventOutbox("stream-t"), null) {
+            @Override
+            public void send(String text) {
+                Thread.yield();
+                sent.add(text);
+            }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        int threads = 8;
+        int each = 400;
+        List<Thread> workers = new ArrayList<>();
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        for (int t = 0; t < threads; t++) {
+            Thread w = new Thread(() -> {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    return;
+                }
+                for (int i = 0; i < each; i++) client.emitLog("line " + i);
+            });
+            workers.add(w);
+            w.start();
+        }
+        go.countDown();
+        for (Thread w : workers) w.join();
+        List<JsonObject> events = sentOfType("gameEvent");
+        assertEquals(threads * each, events.size());
+        long last = 0;
+        for (JsonObject e : events) {
+            long seq = e.getAsJsonObject("payload").get("seq").getAsLong();
+            assertTrue(seq > last, "seq " + seq + " sent after " + last);
+            last = seq;
+        }
+    }
+
+    @Test
+    void anEventRaisedDuringIdentifyWaitsForTheBacklog() throws Exception {
+        TakaroConfig config = new TakaroConfig();
+        config.setIdentityToken("id");
+        config.setRegistrationToken("reg");
+        TakaroWebSocketClient[] holder = new TakaroWebSocketClient[1];
+        TakaroConnectorTest.TestAdapter racing = new TakaroConnectorTest.TestAdapter() {
+            @Override
+            public void logInfo(String msg) {
+                super.logInfo(msg);
+                if (!msg.startsWith("Identified successfully")) return;
+                // Another thread raises an event just as the protocol switches to v1.
+                Thread other = new Thread(() -> holder[0].emitLog("raced"));
+                other.start();
+                try {
+                    other.join(300);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        TakaroWebSocketClient client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), racing,
+                config, "config", new EventOutbox("stream-r"), null) {
+            @Override
+            public void send(String text) { sent.add(text); }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+        holder[0] = client;
+        client.onOpen(null);
+        client.emitLog("held 1");
+        client.emitLog("held 2");
+        client.onMessage(identifyResponse(1));
+        long deadline = System.currentTimeMillis() + 5000;
+        while (sentOfType("gameEvent").size() < 3 && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        List<Long> seqs = sentOfType("gameEvent").stream()
+                .map(e -> e.getAsJsonObject("payload").get("seq").getAsLong()).collect(Collectors.toList());
+        assertEquals(List.of(1L, 2L, 3L), seqs);
     }
 
     @Test

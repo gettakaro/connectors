@@ -6,7 +6,9 @@ dependencies {
     implementation(libs.java.websocket)
     implementation(libs.gson)
     compileOnly(libs.log4j.api)
+    compileOnly(libs.log4j.core)
 
+    testImplementation(libs.log4j.core)
     testImplementation("org.junit.jupiter:junit-jupiter:6.1.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

@@ -3,6 +3,7 @@ package io.takaro.minecraft.paper;
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
 import io.takaro.minecraft.core.PlayerNotOnlineException;
+import io.takaro.minecraft.core.PlayerProgression;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
@@ -13,6 +14,7 @@ import io.papermc.paper.ServerBuildInfo;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.ban.ProfileBanList;
 import org.bukkit.entity.EntityType;
@@ -30,6 +32,7 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     private TakaroConnector connector;
     private volatile EventEmitter eventEmitter;
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
+    private final PlayerProgression progression = new PlayerProgression();
 
     @Override
     public void onEnable() {
@@ -44,6 +47,8 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
                 getDataFolder().toPath().resolve("config.yml"), new PaperYamlConfigFormat(), this);
         connector = new TakaroConnector(this, configFile);
         connector.start();
+
+        Bukkit.getScheduler().runTaskTimer(this, () -> recordProgression(), 20L, 20L);
     }
 
     @Override
@@ -161,6 +166,18 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
         return items;
     }
 
+    @Override
+    public PlayerProgression progression() { return progression; }
+
+    private void recordProgression() {
+        Bukkit.getOnlinePlayers().forEach(this::recordProgression);
+    }
+
+    void recordProgression(Player player) {
+        progression.record(player.getUniqueId().toString(),
+                player.getLevel(), player.getExp(), player.getTotalExperience());
+    }
+
     // --- GameAdapter: World queries ---
 
     @Override
@@ -238,10 +255,17 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
     @Override
     public CommandResult executeConsoleCommand(String command) {
         try {
-            boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-            return new CommandResult(success, "", null);
+            StringBuilder output = new StringBuilder();
+            var sender = Bukkit.createCommandSender(message -> {
+                output.append(PlainTextComponentSerializer.plainText().serialize(message)).append('\n');
+                Bukkit.getConsoleSender().sendMessage(message); // keep the line in the server log
+            });
+            boolean success = Bukkit.dispatchCommand(sender, command);
+            return new CommandResult(success, output.toString().stripTrailing(), null);
         } catch (Exception e) {
-            return new CommandResult(false, "", e.getMessage());
+            // Bukkit wraps the real failure in a CommandException that only names the command.
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            return new CommandResult(false, "", cause.getMessage());
         }
     }
 

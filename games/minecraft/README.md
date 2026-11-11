@@ -193,32 +193,31 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Player location | ✅ | Rounded to whole blocks. |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground or the player falls. |
 | Player inventory | ✅ | Changes are reported as they happen. |
+| Player levels and skills | ✅ | The XP level above the hotbar as the `character` track, with the XP bar as progress and the game's total points as experience. Dying resets it, as in game. |
 | Item list | ✅ | About 1,500 items with their in-game names. |
 | Item icons | ⚠️ | Modded items on Fabric and NeoForge show their own picture, read from the mod jars on the server (the first frame for an animated texture, one flat face for a block). Vanilla items use Takaro's Minecraft icon pack, because a server has no vanilla art. Models with their own 3D shape and no flat texture get no picture. Paper custom items are not covered. |
 | Entity list | ✅ | Paper lists the mob types; Fabric and NeoForge list every entity type, including things like Primed TNT. |
 | Locations | ❌ | Minecraft has no list of named locations. |
-| World map | ⚠️ | Off by default (`map` setting). Tiled map of all three dimensions. Not checked on takaro.io yet. Checked on Fabric only. |
+| World map | ⚠️ | Off by default (`map` setting). Tiled map of all three dimensions. Not checked on takaro.io yet. |
 | Send a message | ✅ | Broadcasts and whispers, as `[Name] text` and `Name whispers to you: text` when a server chat name is set. |
-| Console commands | ⚠️ | The command runs, but its output text is not returned. |
+| Console commands | ✅ | The command's output comes back to Takaro. On Paper, a plugin command that only accepts the real console can refuse. |
 | Kick | ✅ | The reason is shown to the player. |
 | Ban and unban | ✅ | Timed and permanent, on the server's own ban list. |
 | Ban list | ✅ | Includes bans placed while the player was offline. |
 | Give an item | ⚠️ | Straight into the inventory, but always in default condition (quality/durability is ignored). |
-| Shop | ✅ | Orders deliver into the inventory; not enough currency is refused. Checked on Fabric. |
+| Shop | ✅ | Orders deliver into the inventory; not enough currency is refused. |
 | Shut down the server | ✅ | Saves and stops; your host has to start it again. |
 | Player joined / left | ✅ | Everyone still online is reported as left at shutdown. |
-| Chat messages | ✅ | |
+| Chat messages | ✅ | Player chat, and `/say` from the server console or RCON, sent without a player. |
 | Player death | ✅ | With the position. |
 | Entity killed | ✅ | Entity and weapon as game ids, for example `minecraft:husk`. |
-| Server log lines | ❌ | Not sent to Takaro. |
-| Discord chat bridge | ✅ | Both ways. Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages. Checked on Fabric. |
-| Modules | ✅ | Chat commands such as `@settp home` and `@tp home`. Checked on Fabric. |
+| Server log lines | ✅ | Up to 40 lines per 30 seconds; the connector's own lines are left out. |
+| Discord chat bridge | ✅ | Both ways. Use the `chatBridgeNoEcho` module; the plain chat bridge echoes Takaro's own messages. Discord to game checked on Fabric. |
+| Modules | ✅ | Chat commands such as `@settp home` and `@tp home`. |
 | Game name, version and icon | ✅ | Takaro shows Minecraft with its icon and the running game version. |
 
 ## Known issues
 
-- The Fabric 26.1.2 file is built and checked the same way as the others, but not played on.
 - Items given by Takaro or the shop always arrive in default condition.
-- Console command output is not returned; check the effect in game.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).

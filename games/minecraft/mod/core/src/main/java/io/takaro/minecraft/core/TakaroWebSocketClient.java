@@ -120,6 +120,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         return protocol >= 1;
     }
 
+    boolean isIdentified() {
+        return identified && isOpen();
+    }
+
     /** The settings this connection uses; the connector updates the ones that need no reconnect. */
     TakaroConfig settings() {
         return config;
@@ -293,10 +297,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     @Override
     public void emitChatMessage(String gameId, String playerName, String channel, String message) {
         JsonObject data = new JsonObject();
-        JsonObject player = new JsonObject();
-        player.addProperty("gameId", gameId);
-        player.addProperty("name", playerName);
-        data.add("player", player);
+        // The server console has no player; Takaro takes a chat message without one.
+        if (gameId != null) {
+            JsonObject player = new JsonObject();
+            player.addProperty("gameId", gameId);
+            player.addProperty("name", playerName);
+            data.add("player", player);
+        }
         data.addProperty("channel", channel);
         data.addProperty("msg", message);
         sendGameEvent("chat-message", data);
@@ -351,13 +358,17 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void sendGameEvent(String eventType, JsonObject data) {
         // v1 is always on offer: keep every event until Takaro acks it, and send it once identified.
-        JsonObject payload = outbox.add(eventType, data);
-        if (isV1() && isOpen()) {
-            sendEventPayload(payload);
-            return;
-        }
-        if (protocol == 0 && isOpen() && identified) {
-            sendPlainEvent(payload);
+        // Events come from several threads. Takaro drops a seq at or below one it has already
+        // seen, so numbering and sending share one lock and leave in seq order.
+        synchronized (outbox) {
+            JsonObject payload = outbox.add(eventType, data);
+            if (isV1() && isOpen()) {
+                sendEventPayload(payload);
+                return;
+            }
+            if (protocol == 0 && isOpen() && identified) {
+                sendPlainEvent(payload);
+            }
         }
     }
 
@@ -407,6 +418,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         JsonObject profile = capability("game.profile");
         profile.add("parameters", GameProfile.parameters(runningGameVersion()));
         caps.add(profile);
+        JsonObject progression = capability("players.progression");
+        JsonObject progressionParameters = new JsonObject();
+        progressionParameters.addProperty("source", "server");
+        progression.add("parameters", progressionParameters);
+        caps.add(progression);
         if (worldMap != null) {
             JsonObject map = capability("map");
             JsonObject parameters = new JsonObject();
@@ -506,23 +522,26 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
 
         currentReconnectDelay = config.getReconnectDelay();
-        protocol = optInt(payload, "protocolVersion", 0);
-        identified = true;
-
         JsonObject server = optObject(payload, "server");
         String serverId = server != null && hasValue(server, "id") ? optString(server, "id", "")
                 : optString(payload, "gameServerId", null);
-        adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
-                + ", protocol v" + protocol);
-        List<JsonObject> backlog = outbox.unacked();
-        if (!backlog.isEmpty()) {
-            adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
-        }
-        for (JsonObject event : backlog) {
-            if (isV1()) {
-                sendEventPayload(event);
-            } else {
-                sendPlainEvent(event);
+        // Switching protocol and resending the backlog under the outbox lock keeps a new event from
+        // leaving ahead of older unacked ones.
+        synchronized (outbox) {
+            protocol = optInt(payload, "protocolVersion", 0);
+            identified = true;
+            adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
+                    + ", protocol v" + protocol);
+            List<JsonObject> backlog = outbox.unacked();
+            if (!backlog.isEmpty()) {
+                adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
+            }
+            for (JsonObject event : backlog) {
+                if (isV1()) {
+                    sendEventPayload(event);
+                } else {
+                    sendPlainEvent(event);
+                }
             }
         }
     }
@@ -541,16 +560,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             adapter.logDebug("Request: action=" + action + ", requestId=" + requestId);
         }
 
-        // Parse args - it's a JSON string that needs to be parsed
-        JsonElement argsElement = hasValue(payload, "args") ? payload.get("args") : null;
         JsonObject args;
-        if (argsElement != null && argsElement.isJsonPrimitive() && argsElement.getAsJsonPrimitive().isString()) {
-            String argsStr = argsElement.getAsString();
-            args = argsStr.isEmpty() ? new JsonObject() : JsonParser.parseString(argsStr).getAsJsonObject();
-        } else if (argsElement != null && argsElement.isJsonObject()) {
-            args = argsElement.getAsJsonObject();
-        } else {
-            args = new JsonObject();
+        try {
+            args = parseArgs(hasValue(payload, "args") ? payload.get("args") : null);
+        } catch (IllegalArgumentException e) {
+            sendError(requestId, "invalid_args", e.getMessage());
+            return;
         }
 
         if (action.equals("getMapTile") && isV1()) {
@@ -559,6 +574,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         if (action.equals("getItemIcons") && isV1()) {
             handleGetItemIcons(requestId, args);
+            return;
+        }
+
+        if (action.equals("getPlayerProgression") && isV1()) {
+            JsonArray tracks = adapter.progression().tracks(playerGameId(args));
+            sendResponse(requestId, tracks != null ? tracks : com.google.gson.JsonNull.INSTANCE, null);
             return;
         }
 
@@ -621,6 +642,25 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 sendError(requestId, "unsupported", "Action not implemented: " + action);
                 break;
         }
+    }
+
+    /** Takaro sends args as an object, an array when empty, or the same two encoded as a string. */
+    private static JsonObject parseArgs(JsonElement args) {
+        JsonElement parsed = args;
+        if (args != null && args.isJsonPrimitive() && args.getAsJsonPrimitive().isString()) {
+            String text = args.getAsString();
+            try {
+                parsed = text.isEmpty() ? null : JsonParser.parseString(text);
+            } catch (com.google.gson.JsonParseException e) {
+                throw new IllegalArgumentException("args is not valid JSON");
+            }
+        }
+        return parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : new JsonObject();
+    }
+
+    /** The target player, from a flat gameId or a nested player object. */
+    private static String playerGameId(JsonObject args) {
+        return optString(args, "gameId", optString(optObject(args, "player"), "gameId", null));
     }
 
     private void handleGetMapTile(String requestId, JsonObject args) {
@@ -762,7 +802,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private JsonElement handleGetPlayer(JsonObject args) {
-        String gameId = optString(args, "gameId", null);
+        String gameId = playerGameId(args);
         if (gameId == null) return null;
         PlayerInfo player = adapter.getPlayer(gameId);
         return player != null ? playerInfoToJson(player) : null;
@@ -778,7 +818,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private JsonElement handleGetPlayerLocation(JsonObject args) {
-        String gameId = optString(args, "gameId", null);
+        String gameId = playerGameId(args);
         if (gameId == null) return null;
         PlayerLocation loc = adapter.getPlayerLocation(gameId);
         if (loc == null) return null;
@@ -791,7 +831,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private JsonElement handleGetPlayerInventory(JsonObject args) {
-        String gameId = optString(args, "gameId", null);
+        String gameId = playerGameId(args);
         if (gameId == null) return new JsonArray();
         List<InventoryItem> items = adapter.getPlayerInventory(gameId);
         JsonArray arr = new JsonArray();
@@ -807,8 +847,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleGiveItem(JsonObject args) {
-        JsonObject player = optObject(args, "player");
-        String gameId = optString(player, "gameId", null);
+        String gameId = playerGameId(args);
         String itemCode = optString(args, "item", null);
         int amount = optInt(args, "amount", 1);
         String quality = optString(args, "quality", "");
@@ -897,8 +936,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleTeleportPlayer(JsonObject args) {
-        JsonObject player = optObject(args, "player");
-        String gameId = optString(player, "gameId", null);
+        String gameId = playerGameId(args);
         double x = optDouble(args, "x", 0);
         double y = optDouble(args, "y", 0);
         double z = optDouble(args, "z", 0);
@@ -908,8 +946,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleKickPlayer(JsonObject args) {
-        JsonObject player = optObject(args, "player");
-        String gameId = optString(player, "gameId", null);
+        String gameId = playerGameId(args);
         String reason = optString(args, "reason", "");
         if (gameId != null) {
             adapter.kickPlayer(gameId, reason);
@@ -917,8 +954,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleBanPlayer(JsonObject args) {
-        JsonObject player = optObject(args, "player");
-        String gameId = optString(player, "gameId", null);
+        String gameId = playerGameId(args);
         String reason = optString(args, "reason", "");
         String expiresAt = optString(args, "expiresAt", null);
         if (gameId != null) {
@@ -927,7 +963,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     private void handleUnbanPlayer(JsonObject args) {
-        String gameId = optString(args, "gameId", null);
+        String gameId = playerGameId(args);
         if (gameId != null) {
             adapter.unbanPlayer(gameId);
         }
