@@ -219,8 +219,18 @@ native/
   events in a fresh random stream, seq 1, 2, ...; events replayed from disk keep the stream and seq
   they were first sent with (an outbox written before protocol 1 joins the current stream), so
   Takaro's high-water deduplication drops what it already handled. Every identify resends the
-  unacknowledged tail in order. A Takaro outage or a server restart therefore replays it. Reconnect
-  backoff doubles from 2 s to 60 s and resets after a successful identify. A health snapshot
+  unacknowledged tail in order. A Takaro outage or a server restart therefore replays it.
+- **Reconnect** (`core/takaro/reconnect.{h,cpp}`, both transports). A connection that was identified
+  and stayed up 10 s and then drops is redialled after 0.5 to 1.25 s (random). Every other ending
+  (refused or failed dial, TLS or handshake error, identify rejected, a drop before 10 s) is one
+  step of a failure streak: 2 s, 4 s, 8 s ... capped at 60 s, each picked at random between half
+  and the whole step. Only a stable identified session clears the streak. `TAKARO_RECONNECT_BASE_MS`
+  and `TAKARO_RECONNECT_MAX_MS` still set the streak's first step and cap; they do not slow the fast
+  retry. A half-open link is closed from the connector side: Linux closes it when two WebSocket
+  pings (every 5 s) go unanswered for a full interval or nothing arrives for 20 s, Windows after
+  20 s without a frame; the close then follows the same fast retry. Log lines:
+  `native: Takaro reconnect in N ms (fast retry after a stable session | failure streak N)` and
+  `native: Takaro link silent (no frame or pong); closing it as dead`. A health snapshot
   (including a `protocol` block: version, streamId, acks, the manifest sent) is written to
   `<Saved>/Takaro/state/health.json`.
 - **Toolchain.** `platform/linux/Dockerfile.build` is Debian buster pinned by digest, with
