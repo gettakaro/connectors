@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-26334129",
+  "game": "ark-ascended",
+  "platform": "windows",
+  "revision": "26334129",
+  "default": false,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-06",
+    "evidence": [
+      "games/ark-ascended/README.md (What works, what doesn't)",
+      "games/ark-ascended/capabilities.json (status and game API per action and event, kept equal to native/src/plugin.cpp by tests/check_capabilities.py)",
+      "live-verified 2026-11-06 against build 26334129 with a real game client"
+    ],
+    "notes": "ARK: Survival Ascended dedicated server, game 96.9, Steam build 26334129 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 2430930,
+      "branch": "public",
+      "buildid": 26334129,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "2430931": {
+          "manifest": "6604340029022292600",
+          "size": 12159680506,
+          "files": 240
+        }
+      },
+      "files": {
+        "ShooterGame/Binaries/Win64/ArkAscendedServer.exe": {
+          "sha256": "9bbd9bfefb732ede1294aa15da941f7198b1570c272e5deca8909e9a1ce3374b",
+          "size": 197020264
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/ark-ascended/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    },
+    "deps": {
+      "asaapi": {
+        "coordinate": "ArkServerApi:AsaApi:2.03",
+        "sha256": "ac72fb29436198ac062cd273e1c496b1ef4e6ffddeec08243d11d9b35e8b8ae3",
+        "resolvedCoordinate": "https://github.com/ArkServerApi/AsaApi/releases/download/2.03/AsaApi_2.03.zip"
+      },
+      "asaapi-source": {
+        "coordinate": "ArkServerApi:AsaApi:77be34d11feca2790b54fcd5a3d48678588d52bb",
+        "sha256": "c6f75a643b1c7150cedf01428bdbb796c8d42980ebe7152018b8d5a53ee852c3",
+        "resolvedCoordinate": "https://codeload.github.com/ArkServerApi/AsaApi/tar.gz/77be34d11feca2790b54fcd5a3d48678588d52bb"
+      },
+      "fmt": {
+        "coordinate": "fmtlib:fmt:11.1.4",
+        "sha256": "49b039601196e1a765e81c5c9a05a61ed3d33f23b3961323d7322e4fe213d3e6",
+        "resolvedCoordinate": "https://github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "mod",
+      "artifact": "takaro-ark-ascended-windows-26334129-{version}.zip",
+      "installDir": "ShooterGame/Binaries/Win64"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "ShooterGame/Saved/",
+    "ShooterGame/Binaries/Win64/BanList.txt",
+    "ShooterGame/Binaries/Win64/config.json",
+    "ShooterGame/Binaries/Win64/ArkApi/Cache/",
+    "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/TakaroConfig.txt",
+    "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/takaro.log",
+    "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/state/"
+  ],
+  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. TakaroAsa.dll is compiled with MSVC toolset 14.44 on GitHub's windows-2022 runner, because AsaApi's headers and AsaApi.lib target MSVC; that toolset is selected by native/build.bat but the runner image is not pinned by digest. The Debian image runs the unit tests. The headers come from the AsaApi commit pinned here and AsaApi.lib from the pinned release: the release's own headers are older than this game build. Depot 1004 is Valve's redistributable depot, listed by the server app."
+}

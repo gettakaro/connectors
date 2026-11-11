@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "ark-ascended",
+  "name": "ARK: Survival Ascended",
+  "connector": "ark-ascended",
+  "platforms": [
+    "windows"
+  ],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "ark-ascended",
+        "app": 2430930,
+        "os": "windows",
+        "depots": [
+          "2430931"
+        ],
+        "channels": {
+          "public": {
+            "branch": "public"
+          }
+        },
+        "knownBranches": [],
+        "readinessNote": "The connector is an AsaApi plugin (TakaroAsa.dll) inside ArkAscendedServer.exe, proven on game 97.21 (Steam build 26564816) and 97.17 (26515168) with AsaApi 2.11; the older game 96.9 target uses AsaApi 2.03. AsaApi resolves the game from an offset cache keyed on the sha256 of the server exe and published by community CDNs, so a new build stays down until that cache exists, and every new build needs a live retest before it is declared."
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/ark-ascended"
+  },
+  "componentRoles": {
+    "mod": {
+      "description": "The release zip unpacked into ShooterGame/Binaries/Win64: the pinned AsaApi release (AsaApiLoader.exe and ArkApi/) and the TakaroAsa plugin in ArkApi/Plugins/TakaroAsa, which holds the Takaro connection itself; no sidecar",
+      "artifactPattern": "takaro-ark-ascended-{target}-{version}.zip"
+    }
+  },
+  "legacyAssetAliases": {}
+}

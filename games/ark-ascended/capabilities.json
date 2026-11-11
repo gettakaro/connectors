@@ -1,0 +1,170 @@
+{
+  "game": "ark-ascended",
+  "connector": "takaro-ark-ascended",
+  "statusVocabulary": [
+    "live-supported",
+    "schema-fallback",
+    "unsupported"
+  ],
+  "note": "Kept equal to the action dispatch and the Capability Manifest in native/src/plugin.cpp by tests/check_capabilities.py; liveVerified is set only by a committed live run.",
+  "actions": {
+    "testReachability": {
+      "status": "live-supported",
+      "responseShape": "{connectable,reason}",
+      "reason": "connectable once AsaApi reports the server status Ready",
+      "liveVerified": false
+    },
+    "getPlayers": {
+      "status": "live-supported",
+      "responseShape": "IGamePlayer[]",
+      "reason": "UWorld player controllers; gameId and epicOnlineServicesId = EOS id, no Steam id is available",
+      "liveVerified": false
+    },
+    "getPlayer": {
+      "status": "live-supported",
+      "responseShape": "IGamePlayer",
+      "reason": "online by EOS id; offline from state/known-players.json",
+      "liveVerified": false
+    },
+    "getPlayerLocation": {
+      "status": "live-supported",
+      "responseShape": "{x,y,z,dimension}",
+      "reason": "pawn position; offline players give the last position seen since the server started",
+      "liveVerified": false
+    },
+    "getPlayerInventory": {
+      "status": "live-supported",
+      "responseShape": "IItemDTO[]",
+      "reason": "carried and equipped items of an online player; engrams, hidden items, skins and account cosmetics are left out",
+      "liveVerified": false
+    },
+    "getPlayerProgression": {
+      "status": "live-supported",
+      "responseShape": "IProgressionTrack[] | null",
+      "reason": "one `character` track from the survivor's status component, cached on each getPlayers; a player without a body keeps the last reading",
+      "liveVerified": false
+    },
+    "giveItem": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "AShooterPlayerController.GiveItem by item class path, with quantity, quality and blueprint",
+      "liveVerified": false
+    },
+    "listItems": {
+      "status": "live-supported",
+      "responseShape": "IItemDTO[]",
+      "reason": "UPrimalGameData.MasterItemList with display names, snapshotted when the world is ready",
+      "liveVerified": false
+    },
+    "listEntities": {
+      "status": "live-supported",
+      "responseShape": "IEntityDTO[]",
+      "reason": "UPrimalGameData dino entries with display names, snapshotted when the world is ready",
+      "liveVerified": false
+    },
+    "listLocations": {
+      "status": "live-supported",
+      "responseShape": "ILocationDTO[]",
+      "reason": "the map's player starts; ARK has no list of named places a server can read",
+      "liveVerified": false
+    },
+    "sendMessage": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "AsaApi chat to all or to one online player, senderNameOverride honoured; a directed message never falls back to a broadcast",
+      "liveVerified": false
+    },
+    "executeConsoleCommand": {
+      "status": "live-supported",
+      "responseShape": "{success,rawResult,errorMessage}",
+      "reason": "the RCON cheat manager, which exists only with RCONEnabled=True; output of cheat-manager commands is captured",
+      "liveVerified": false
+    },
+    "teleportPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "AsaApi TeleportToPos, read back to confirm it took effect",
+      "liveVerified": false
+    },
+    "kickPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "AShooterGameMode.KickPlayerController with the reason",
+      "liveVerified": false
+    },
+    "banPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "the game's ban list; reason and expiresAt kept in state/bans.json, a timed ban is lifted by the connector",
+      "liveVerified": false
+    },
+    "unbanPlayer": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "AShooterGameMode.UnbanPlayer, works offline",
+      "liveVerified": false
+    },
+    "listBans": {
+      "status": "live-supported",
+      "responseShape": "IBanDTO[]",
+      "reason": "state/bans.json plus bans made in the game from BanList.txt",
+      "liveVerified": false
+    },
+    "shutdown": {
+      "status": "live-supported",
+      "responseShape": "null",
+      "reason": "DoExit through the RCON cheat manager, which exists only with RCONEnabled=True; online players are reported as left first",
+      "liveVerified": false
+    },
+    "getGameIcon": {
+      "status": "live-supported",
+      "responseShape": "{revision,data}",
+      "reason": "icon-256.png in the plugin folder, revision from its sha256",
+      "liveVerified": false
+    },
+    "getMapInfo": {
+      "status": "unsupported",
+      "responseShape": "-",
+      "reason": "protocol v0 only; the v1 map capability replaces it",
+      "liveVerified": false
+    }
+  },
+  "events": {
+    "player-connected": {
+      "status": "live-supported",
+      "responseShape": "EventPlayerConnected",
+      "reason": "AShooterGameMode.HandleNewPlayer_Implementation hook; a banned player is not reported",
+      "liveVerified": false
+    },
+    "player-disconnected": {
+      "status": "live-supported",
+      "responseShape": "EventPlayerDisconnected",
+      "reason": "AShooterGameMode.Logout hook, and for every online player on shutdown",
+      "liveVerified": false
+    },
+    "chat-message": {
+      "status": "live-supported",
+      "responseShape": "EventChatMessage",
+      "reason": "AsaApi chat callback; tribe chat as team, everything else as global; admin ServerChat arrives with no player",
+      "liveVerified": false
+    },
+    "player-death": {
+      "status": "live-supported",
+      "responseShape": "EventPlayerDeath",
+      "reason": "AShooterGameState.NotifyPlayerDied hook, with the position and a player attacker",
+      "liveVerified": false
+    },
+    "entity-killed": {
+      "status": "live-supported",
+      "responseShape": "EventEntityKilled",
+      "reason": "APrimalDinoCharacter.Die hook for a kill by a player directly; a kill by a tamed creature is not reported",
+      "liveVerified": false
+    },
+    "log": {
+      "status": "live-supported",
+      "responseShape": "EventLogLine",
+      "reason": "the game's own lines from ShooterGame.log, filtered and budgeted",
+      "liveVerified": false
+    }
+  }
+}

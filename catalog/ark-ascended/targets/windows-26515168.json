@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-26515168",
+  "game": "ark-ascended",
+  "platform": "windows",
+  "revision": "26515168",
+  "default": false,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-09",
+    "evidence": [
+      "games/ark-ascended/README.md (What works, what doesn't)",
+      "games/ark-ascended/capabilities.json (status and game API per action and event, kept equal to native/src/plugin.cpp by tests/check_capabilities.py)",
+      "live-checked 2026-11-09 on build 26515168 (game 97.17) with AsaApi 2.11 and a real 97.14 client: join, chat, admin chat, levels, survivor switch, inventory, teleport, give, kick, ban, deaths, a dino kill, reconnect after a dropped socket and a restart all work"
+    ],
+    "notes": "ARK: Survival Ascended dedicated server, game 97.17, Steam build 26515168 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 2430930,
+      "branch": "public",
+      "buildid": 26515168,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "2430931": {
+          "manifest": "3083367148300701914",
+          "size": 12248261415,
+          "files": 221
+        }
+      },
+      "files": {
+        "ShooterGame/Binaries/Win64/ArkAscendedServer.exe": {
+          "sha256": "7d996fe3de5e1830d1bdc216494e635ffc9685f1b6e3d8b4b48a45fa7fb9e421",
+          "size": 215555176
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/ark-ascended/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    },
+    "deps": {
+      "asaapi": {
+        "coordinate": "ArkServerApi:AsaApi:2.11",
+        "sha256": "64f5f1165ef73f3439bba3794e77e379489167cc385c0ac5c4717ca60ad3e88a",
+        "resolvedCoordinate": "https://github.com/ArkServerApi/AsaApi/releases/download/2.11/AsaApi_2.11.zip"
+      },
+      "asaapi-source": {
+        "coordinate": "ArkServerApi:AsaApi:bd376a0422291b0b1bf15a0b7868e7e275605da9",
+        "sha256": "5c23ec8ac18382a3b678860ec82d1d503088fc4b0b8ea031708450b8acec3738",
+        "resolvedCoordinate": "https://codeload.github.com/ArkServerApi/AsaApi/tar.gz/bd376a0422291b0b1bf15a0b7868e7e275605da9"
+      },
+      "fmt": {
+        "coordinate": "fmtlib:fmt:11.1.4",
+        "sha256": "49b039601196e1a765e81c5c9a05a61ed3d33f23b3961323d7322e4fe213d3e6",
+        "resolvedCoordinate": "https://github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "mod",
+      "artifact": "takaro-ark-ascended-windows-26515168-{version}.zip",
+      "installDir": "ShooterGame/Binaries/Win64"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "ShooterGame/Saved/",
+    "ShooterGame/Binaries/Win64/BanList.txt",
+    "ShooterGame/Binaries/Win64/config.json",
+    "ShooterGame/Binaries/Win64/ArkApi/Cache/",
+    "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/TakaroConfig.txt",
+    "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/takaro.log",
+    "ShooterGame/Binaries/Win64/ArkApi/Plugins/TakaroAsa/state/"
+  ],
+  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. TakaroAsa.dll is compiled with MSVC toolset 14.44 on GitHub's windows-2022 runner, because AsaApi's headers and AsaApi.lib target MSVC; that toolset is selected by native/build.bat but the runner image is not pinned by digest. The Debian image runs the unit tests. Game 97 moved to Unreal Engine 5.8, so this target needs AsaApi 2.11 or later: 2.03 has the old object table layout and no class lookup for this build. The headers come from the commit the 2.11 release was built from, and AsaApi.lib from that release. Depot 1004 is Valve's redistributable depot, listed by the server app."
+}
