@@ -46,16 +46,18 @@ test('the bridge logs one identify line per Takaro session and one line when the
 
   try {
     client.connect();
-    await waitFor(() => info.length === 1);
-    assert.equal(info[0], `${IDENTIFIED_PREFIX} (gameServerId=gs_terraria)`);
+    const identifiedLines = () => info.filter((line) => line.startsWith(IDENTIFIED_PREFIX));
+    await waitFor(() => identifiedLines().length === 1);
+    assert.equal(identifiedLines()[0], `${IDENTIFIED_PREFIX} (gameServerId=gs_terraria)`);
 
     // Takaro going away, and the bridge coming back: the second identify line is what the
     // reconnect check counts.
     for (const socket of server.clients) socket.close(1001, 'going away');
-    await waitFor(() => warn.length === 1);
-    assert.equal(warn[0], DISCONNECTED_LINE);
-    await waitFor(() => info.length === 2);
-    assert.match(info[1], new RegExp(`^${IDENTIFIED_PREFIX}`));
+    await waitFor(() => warn.includes(DISCONNECTED_LINE));
+    assert.equal(warn.filter((line) => line === DISCONNECTED_LINE).length, 1);
+    assert.match(warn[0], /^Takaro socket closed \(code 1001, going away, before the session was stable\)$/);
+    await waitFor(() => identifiedLines().length === 2);
+    assert.ok(info.some((line) => /^Takaro reconnect in \d+ ms \(failure streak 1\)$/.test(line)), info.join('\n'));
   } finally {
     client.shutdown();
     for (const socket of server.clients) {

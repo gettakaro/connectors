@@ -200,7 +200,7 @@ Checked on TShock 6.2.1 (Terraria 1.4.5.8), 2026-10-22. ✅ works, ⚠️ works 
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects by itself after a server or bridge restart. |
+| Connection | ✅ | Reconnects by itself after a server or bridge restart. A dropped connection is back within about 2 s; a dead link is noticed within 50 s. |
 | Player list | ✅ | Character names. |
 | Player location | ✅ | In world pixels (16 per tile). |
 | Teleport | ✅ | To world pixel coordinates; a player put in the air falls to the ground. |
