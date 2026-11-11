@@ -44,7 +44,8 @@ server. On a server still on build 1024233 the new DLL turns the item/creature c
    file when they are set (a changed variable needs a restart). `caFile`/`TAKARO_CA_FILE` is only
    for a Takaro behind your own certificate authority; certificate and host-name checks always stay
    on, and a CA file that cannot be read stops the connection instead of falling back.
-5. Under Wine/Proton set `WINEDLLOVERRIDES=dbghelp=n,b` on the game server process. The Docker
+5. Under Wine/Proton set `WINEDLLOVERRIDES=dbghelp=n,b` on the game server process (see
+   "Linux: Wine and Proton" below; without it the connector is never loaded). The Docker
    example in the repository does this, pins the image by digest, and mounts
    `server/enshrouded-updater` over the image's updater so the game is never updated underneath the
    plugin. Turn automatic game updates off however you host the server.
@@ -82,6 +83,58 @@ The connector keeps its state in `takaro/connector-state/` (`TAKARO_STATE_DIR` m
 outbox, the online and known players, timed bans and the ban journal. Keep that folder across
 restarts and upgrades. A file there that is damaged is never overwritten or treated as empty: the
 affected feature reports itself degraded until you fix or remove the file.
+
+## Linux: Wine and Proton
+
+`enshrouded_server.exe` imports `dbghelp.dll`. On Windows the copy next to the program loads before
+the system one, which is how the connector gets in. Wine and Proton ship their own `dbghelp.dll` and
+by default prefer it over a file of the same name in the game folder, so the connector is skipped:
+no `takaro/plugin.log`, no `[Takaro]` lines in the console, and the server runs as if nothing were
+installed. It is the same for any `dbghelp.dll` mod.
+
+**Fix: tell Wine to load the connector first.** Set this on the game server process:
+
+```text
+WINEDLLOVERRIDES=dbghelp=n,b
+```
+
+`n,b` means native (the connector) first, Wine's own copy after it. When the game writes a crash
+dump, the connector passes it on to Wine's own dbghelp, so crash reporting keeps working.
+
+| How the server runs | Where to set it |
+|---|---|
+| Docker Compose | `environment:` of the game service (the [Docker example](docker-compose.example.yml) does this). |
+| `docker run` | `-e WINEDLLOVERRIDES="dbghelp=n,b"` |
+| Unraid template | Edit the container, add a Variable: key `WINEDLLOVERRIDES`, value `dbghelp=n,b`. |
+| Pterodactyl, AMP or another panel | The server's environment variables / startup variables. |
+| Your own script | `export WINEDLLOVERRIDES="dbghelp=n,b"` before `wine enshrouded_server.exe` or `proton run`. |
+
+If the image or script already sets `WINEDLLOVERRIDES`, add the connector to that value with a
+semicolon instead of replacing it, for example `dbghelp=n,b;mscoree,mshtml=`. Under Proton the
+variable works the same way; it is how the connector is tested.
+
+**When the variable cannot be set** (some images overwrite it in their start script), store the same
+setting once in the server's Wine prefix. Run it as the user the server runs as, with the server's
+`WINEPREFIX` (for Docker: `docker exec -it -u <user> <container> ...` with the image's prefix),
+then restart the server:
+
+```bash
+WINEPREFIX=/path/to/prefix wine reg add 'HKCU\Software\Wine\AppDefaults\enshrouded_server.exe\DllOverrides' /v dbghelp /d native,builtin /f
+```
+
+The `AppDefaults` key applies to `enshrouded_server.exe` only. A prefix that is recreated (a new
+container volume, a reinstall) loses it; the variable does not have that problem.
+
+**Check that it loaded.** Start the server once with `WINEDEBUG=+loaddll` (added to the same
+environment). A `Loaded` line for the `dbghelp.dll` in the server folder ending in `: native` means
+the connector loaded. A line for `C:\windows\system32\dbghelp.dll` ending in `: builtin` instead
+means Wine used its own copy: the setting did not reach the server process. Remove `WINEDEBUG` again afterwards; it makes the log large.
+
+**Wine versions.** Wine development releases from 11.8 on usually load a `dbghelp.dll` like this one
+without the setting (Wine now prefers a DLL in the game folder that does not claim to be from
+Microsoft). Older Wine, including stable Wine 11.0, needs it. Set it on every Wine and Proton
+version; it does no harm. The connector is tested under GE-Proton11-9; plain Wine is set up the
+same way but is not part of the test run.
 
 ## Map
 

@@ -1,6 +1,6 @@
 # Takaro Enshrouded Connector
 
-Connects an Enshrouded dedicated server (Windows, or Linux under Proton) to Takaro with one file:
+Connects an Enshrouded dedicated server (Windows, or Linux under Wine or Proton) to Takaro with one file:
 `dbghelp.dll`, placed next to `enshrouded_server.exe`. Players do not install anything.
 
 ## Install
@@ -11,8 +11,9 @@ Connects an Enshrouded dedicated server (Windows, or Linux under Proton) to Taka
   **1287369** (Enshrouded 1.0, Steam build 26430253), **1285601** (Steam build 26404334) or **1283531** (Steam build 26319703). On the earlier 1.0 builds 1273043 and 1267041
   everything except the item and creature lists and giving items still works. Build 1024233 is no
   longer supported.
-- Windows, or Linux under Proton. With Docker, use `mornedhels/enshrouded-server:dev-proton`
-  (GE-Proton11-9); the older GE-Proton10-30 image cannot start Enshrouded 1.0 (`No SteamUtils011`).
+- Windows, or Linux under Wine or Proton (Linux needs one environment variable, see step 3). With
+  Docker, use `mornedhels/enshrouded-server:dev-proton` (GE-Proton11-9); the older GE-Proton10-30
+  image cannot start Enshrouded 1.0 (`No SteamUtils011`).
 - The game files already in place. The connector does not install or update the game, and SteamCMD
   downloads only Steam's current build.
 - A Takaro game server of type **Generic** and its registration token.
@@ -44,8 +45,31 @@ Stop the game server (a running server holds `dbghelp.dll` open). The zip holds 
         plugin.json              <- created by the connector; your settings
 ```
 
-Under Wine/Proton, set `WINEDLLOVERRIDES=dbghelp=n,b` on the game server so it loads this DLL. A
-Windows server loads it already.
+**On Linux (Wine or Proton)** one more setting is required; a Windows server loads the DLL already. Wine
+and Proton ship their own `dbghelp.dll` and use it instead of the one next to
+`enshrouded_server.exe`, so without it the connector never starts: no `takaro/plugin.log`, no
+`[Takaro]` lines in the console, and the server runs as if nothing were installed. Tell Wine to
+load the connector first by setting this environment variable on the game server:
+
+```text
+WINEDLLOVERRIDES=dbghelp=n,b
+```
+
+- **Docker or a hosting panel** (Unraid, Pterodactyl, AMP and the like): add it as an environment
+  variable of the container or server. If the image already sets `WINEDLLOVERRIDES`, add yours to
+  that value with a semicolon, for example `dbghelp=n,b;mscoree,mshtml=`.
+- **Your own start script**: `export WINEDLLOVERRIDES="dbghelp=n,b"` before it runs
+  `wine enshrouded_server.exe` (or `proton run`).
+- **If you cannot set the variable** (some images replace it in their start script), store the
+  same setting once in the server's Wine prefix instead. Run this as the user the server runs as,
+  with the server's `WINEPREFIX` (inside the container for Docker), then restart the server:
+
+  ```bash
+  wine reg add 'HKCU\Software\Wine\AppDefaults\enshrouded_server.exe\DllOverrides' /v dbghelp /d native,builtin /f
+  ```
+
+Recent Wine development releases (11.8 and later) usually load the connector without the setting;
+set it anyway, it does no harm. Plain Wine and Proton are set up the same way.
 
 **With Docker**, use [`docker-compose.example.yml`](docker-compose.example.yml),
 [`.env.example`](.env.example) and [`server/enshrouded-updater`](server/enshrouded-updater) (keep it
@@ -121,6 +145,13 @@ and the game server shows as online in Takaro. Otherwise a block of `*` lines sa
 `registrationToken not set` (token missing), `Takaro refused this server` (token wrong), or
 `Takaro refused the server name` (another server in your Takaro already has that name).
 
+No `takaro/plugin.log` and no `[Takaro]` lines at all means the server never loaded the connector.
+On Windows, check that `dbghelp.dll` sits next to `enshrouded_server.exe`. On Linux, set
+`WINEDLLOVERRIDES` (step 3). To see which `dbghelp.dll` Wine loaded, start the server once with
+`WINEDEBUG=+loaddll`: a `Loaded` line for the `dbghelp.dll` next to `enshrouded_server.exe` ending
+in `: native` means the connector loaded. A line for `C:\windows\system32\dbghelp.dll` ending in
+`: builtin` instead means Wine used its own copy.
+
 `takaro/plugin.log` also names the game build (`game build: <n>|…`) and lists every feature as `ok`
 or `degraded` in its `capabilities:` line. A `degraded` feature does not work on this build; an
 unknown build logs `gamedata: no section for build <n>`.
@@ -175,5 +206,7 @@ Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ wo
 - Only builds 1287369, 1285601 and 1283531 are fully supported. On 1273043 and 1267041 the item and creature lists and giving
   items switch off; on any other build they do too, and other features may as well.
 - Teleport lands exactly on the coordinates, so a spot in the ground or the air is unsafe.
+- Under Wine or Proton the server ignores the connector unless `WINEDLLOVERRIDES=dbghelp=n,b` (or
+  the Wine prefix setting) is in place; see Install, step 3.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).

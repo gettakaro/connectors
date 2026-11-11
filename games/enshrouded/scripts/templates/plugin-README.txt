@@ -24,9 +24,17 @@ Install (full steps, upgrade and rollback: INSTALL.md):
    Leave "identityToken" empty: the connector writes a unique one in. Environment
    variables TAKARO_REGISTRATION_TOKEN and TAKARO_IDENTITY_TOKEN, when set, win over
    the file.
-4. Under Wine/Proton (for example the mornedhels/enshrouded-server image) set
-   WINEDLLOVERRIDES="dbghelp=n,b" so the server prefers this DLL; a Windows server
-   loads the local file already.
+4. Linux (Wine or Proton, any Docker image or panel): REQUIRED. Wine uses its own
+   dbghelp.dll instead of this one unless you set this environment variable on the
+   game server:
+     WINEDLLOVERRIDES=dbghelp=n,b
+   Without it the connector never starts: no takaro\plugin.log and no [Takaro] lines.
+   If the image already sets WINEDLLOVERRIDES, add it with a semicolon, for example
+     dbghelp=n,b;mscoree,mshtml=
+   If you cannot set the variable, run once in the server's Wine prefix, then restart:
+     wine reg add "HKCU\Software\Wine\AppDefaults\enshrouded_server.exe\DllOverrides" /v dbghelp /d native,builtin /f
+   Details: "Linux: Wine and Proton" in INSTALL.md. A Windows server loads the local
+   file already.
 5. Start the server. The server console shows
      [Takaro] connected to Takaro as "..."
    and the game server turns online in Takaro. A block of * lines says what to fix.
