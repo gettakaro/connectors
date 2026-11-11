@@ -4,7 +4,8 @@
 # Capability Manifest, identifyResponse in both versions, response and error frames, and the
 # numbered event stream with acks, resend and overflow; and the Game Profile: the identify
 # identity, the game.profile capability and getGameIcon against the shipped icon, and the
-# reported connector version against version.txt.
+# reported connector version against version.txt; and the reconnect policy (fast first retry
+# after a stable session, streak backoff with jitter capped at 60 s, the dead-link timeouts).
 #
 # The regions in mod/TakaroConnector.cs depend only on Newtonsoft.Json, so they compile as a
 # plain console project inside the catalog target's pinned .NET SDK image, against the
@@ -41,9 +42,11 @@ mkdir -p "${WORK}"
     sed -n '/\/\/ takaro:config-begin/,/\/\/ takaro:config-end/p' mod/TakaroConnector.cs
     sed -n '/\/\/ takaro:protocol-begin/,/\/\/ takaro:protocol-end/p' mod/TakaroConnector.cs
     sed -n '/\/\/ takaro:icon-begin/,/\/\/ takaro:icon-end/p' mod/TakaroConnector.cs
+    sed -n '/\/\/ takaro:reconnect-begin/,/\/\/ takaro:reconnect-end/p' mod/TakaroConnector.cs
     echo '}'
 } > "${WORK}/Connector.cs"
 grep -q 'takaro:protocol-begin' "${WORK}/Connector.cs" || { echo "error: the protocol region markers are gone from mod/TakaroConnector.cs" >&2; exit 5; }
+grep -q 'takaro:reconnect-begin' "${WORK}/Connector.cs" || { echo "error: the reconnect region markers are gone from mod/TakaroConnector.cs" >&2; exit 5; }
 
 cp tests/protocol/Program.cs "${WORK}/Program.cs"
 cp assets/icon-256.png "${WORK}/icon-256.png"
