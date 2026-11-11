@@ -69,3 +69,6 @@ bool JsonParse(const std::string& text, JsonValue& out);
 // else (not numeric, fractional, out of range, wrong JSON type).
 bool ParseItemLevel(const std::string& text, uint8_t& level);
 bool ParseItemLevel(const JsonValue* v, uint8_t& level);
+// Item rarity for give (console `give ... [level] [rarity]`): common, uncommon, rare, epic or legendary, any case, as
+// AdminInventoryCreateAction.rarity 0-4. Returns false on anything else.
+bool ParseItemRarity(const std::string& text, int& rarity);
