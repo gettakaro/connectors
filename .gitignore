@@ -68,3 +68,5 @@ games/scum/mod/TakaroSCUM/dlls/
 # Empyrion: local build output and the fetched reference assemblies
 games/empyrion/bin/
 games/empyrion/_data/
+games/starrupture/_data/
+games/starrupture/mod/build/
