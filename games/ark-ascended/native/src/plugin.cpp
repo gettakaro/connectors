@@ -222,6 +222,12 @@ using QueryCallback = void(__cdecl*)(const QueryInfo*);
 using FromStringFn = EosPuid(__cdecl*)(const char*);
 using QueryFn = void(__cdecl*)(EosConnect, const QueryOptions*, void*, QueryCallback);
 using MappingFn = int32_t(__cdecl*)(EosConnect, const MappingOptions*, char*, int32_t*);
+struct CopyOptions { int32_t ApiVersion; EosPuid TargetUserId; int32_t AccountIdType; };
+struct ExternalAccount { int32_t ApiVersion; EosPuid ProductUserId; const char* DisplayName; const char* AccountId; int32_t AccountIdType; int64_t LastLoginTime; };
+using CopyFn = int32_t(__cdecl*)(EosConnect, const CopyOptions*, ExternalAccount**);
+using ReleaseFn = void(__cdecl*)(ExternalAccount*);
+struct CountOptions { int32_t ApiVersion; EosPuid TargetUserId; };
+using CountFn = uint32_t(__cdecl*)(EosConnect, const CountOptions*);
 constexpr int32_t kSteam = 1;  // EOS_EAT_STEAM
 constexpr auto kSteamWait = std::chrono::seconds(5);
 
@@ -231,6 +237,9 @@ std::vector<Pending> g_pending;
 FromStringFn g_fromString = nullptr;
 QueryFn g_query = nullptr;
 MappingFn g_mapping = nullptr;
+CopyFn g_copy = nullptr;
+ReleaseFn g_release = nullptr;
+CountFn g_count = nullptr;
 bool g_loaded = false, g_warned = false;
 
 bool Load() {
@@ -241,6 +250,9 @@ bool Load() {
     g_fromString = reinterpret_cast<FromStringFn>(GetProcAddress(sdk, "EOS_ProductUserId_FromString"));
     g_query = reinterpret_cast<QueryFn>(GetProcAddress(sdk, "EOS_Connect_QueryProductUserIdMappings"));
     g_mapping = reinterpret_cast<MappingFn>(GetProcAddress(sdk, "EOS_Connect_GetProductUserIdMapping"));
+    g_copy = reinterpret_cast<CopyFn>(GetProcAddress(sdk, "EOS_Connect_CopyProductUserExternalAccountByAccountType"));
+    g_release = reinterpret_cast<ReleaseFn>(GetProcAddress(sdk, "EOS_Connect_ExternalAccountInfo_Release"));
+    g_count = reinterpret_cast<CountFn>(GetProcAddress(sdk, "EOS_Connect_GetProductUserExternalAccountCount"));
     if (g_fromString == nullptr || g_query == nullptr || g_mapping == nullptr) {
         g_query = nullptr;
         LogLine("steam: EOS Connect functions missing, players carry the EOS id only");
@@ -306,11 +318,32 @@ void __cdecl OnQueried(const QueryInfo* info) {
     if (info->ResultCode != 0) { LogLine("steam: lookup failed for " + *eos + " (EOS result " + std::to_string(info->ResultCode) + ")"); return; }
     EosConnect connect = Connect();
     if (connect == nullptr) return;
-    MappingOptions options{1, nullptr, kSteam, g_fromString(eos->c_str())};
-    char buffer[129] = {};
-    int32_t length = sizeof(buffer);
-    const int32_t result = g_mapping(connect, &options, buffer, &length);
-    const std::string id = result == 0 ? std::string(buffer) : std::string();
+    EosPuid target = g_fromString(eos->c_str());
+    std::string id;
+    int32_t result = -1;
+    // A game server has no logged-in user, so read the account the query cached; the mapping call needs one.
+    if (g_copy != nullptr && g_release != nullptr) {
+        CopyOptions copy{1, target, kSteam};
+        ExternalAccount* account = nullptr;
+        result = g_copy(connect, &copy, &account);
+        if (result == 0 && account != nullptr) {
+            if (account->AccountId != nullptr) id = account->AccountId;
+            g_release(account);
+        }
+    }
+    if (id.empty()) {
+        MappingOptions options{1, nullptr, kSteam, target};
+        char buffer[129] = {};
+        int32_t length = sizeof(buffer);
+        const int32_t mapped = g_mapping(connect, &options, buffer, &length);
+        if (mapped == 0) id = buffer;
+        else LogLine("steam: copy result " + std::to_string(result) + ", mapping result " + std::to_string(mapped));
+        result = mapped;
+    }
+    if (g_count != nullptr) {
+        CountOptions count{1, target};
+        LogLine("steam: " + *eos + " has " + std::to_string(g_count(connect, &count)) + " linked accounts, Steam id '" + id + "'");
+    }
     if (IsSteamId64(id)) {
         g_ids[*eos] = id;
         LogLine("steam: " + *eos + " is Steam " + id);
