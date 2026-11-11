@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-26593814",
+  "game": "scum",
+  "platform": "windows",
+  "revision": "26593814",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-11",
+    "evidence": [],
+    "notes": "Steam pin of the public branch head observed 2026-11-11: build 26593814, game 1.3.6.0.177121. Game clients updated to 1.3.6.0 the same day."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 3792580,
+      "branch": "public",
+      "buildid": 26593814,
+      "os": "windows",
+      "arch": "64",
+      "depots": {
+        "1004": {
+          "manifest": "7604377918839582995",
+          "size": 67863136,
+          "files": 8
+        },
+        "3792581": {
+          "manifest": "4510314708728724923",
+          "size": 15600997405,
+          "files": 200
+        }
+      },
+      "files": {
+        "SCUM/Binaries/Win64/EOSSDK-Win64-Shipping.dll": {
+          "sha256": "49c2dfcaa1b07248f77885475a67aa7ea745b2e19d8b1e7c6433600a5493668d",
+          "size": 19521464
+        },
+        "SCUM/Binaries/Win64/SCUMServer.exe": {
+          "sha256": "805396516e64d17f1713f24ce97a7d525a6d761db46ce069f40cf63114add6d9",
+          "size": 130652160
+        },
+        "SCUM/Binaries/Win64/steam_api64.dll": {
+          "sha256": "ca1fa9a7609ab10b7926400559cf073e5888423cc156af72c6027d72a89eea73",
+          "size": 265504
+        }
+      },
+      "credentials": null
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/scum/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "debian",
+      "tag": "13.7",
+      "digest": "sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5"
+    },
+    "deps": {
+      "xwin": {
+        "coordinate": "Jake-Shadle:xwin:0.10.0",
+        "sha256": "d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88",
+        "resolvedCoordinate": "https://github.com/Jake-Shadle/xwin/releases/download/0.10.0/xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz"
+      },
+      "msvc-sysroot": {
+        "coordinate": "microsoft:msvc-crt-14.44.17.14+winsdk:10.0.26100",
+        "sha256": "694def6174b9f54faaf6a656cedb8a424b2b3fecfc2fb4e9e19d4a1bd1e47a1e"
+      },
+      "ue4ss": {
+        "coordinate": "UE4SS-RE:RE-UE4SS:v3.0.1-1181-g83330635",
+        "sha256": "b9a166a756605b21058a64cde93bcaab1a855dba3553e5c7e6ce0fa8fdfad7b9",
+        "resolvedCoordinate": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/UE4SS_v3.0.1-1181-g83330635.zip"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "mod",
+      "artifact": "takaro-scum-windows-26593814-{version}.zip",
+      "installDir": "SCUM/Binaries/Win64"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "SCUM/Saved/",
+    "SCUM/Binaries/Win64/ue4ss/Mods/TakaroSCUM/TakaroConfig.txt",
+    "SCUM/Binaries/Win64/ue4ss/Mods/TakaroSCUM/TakaroIdentity.txt",
+    "SCUM/Binaries/Win64/ue4ss/Mods/TakaroSCUM/known-players.json",
+    "SCUM/Binaries/Win64/ue4ss/Mods/TakaroSCUM/takaro-bans.json"
+  ],
+  "notes": "The Windows server is not run in a container anywhere in this repository: the runtime image is recorded only because the schema requires one, and runtime verification is off for this connector. main.dll is cross-compiled on Linux (clang-cl and lld-link 1:19.1.7-3+b1 from the pinned Debian 13.7 image, installed at that exact version by the build script; MSVC CRT 14.44.17.14 and Windows SDK 10.0.26100 fetched by the pinned xwin and checked against a tree digest). UE4SS is bundled because its experimental-latest release moves; the zip is pinned by sha256. Depot 1004 is Valve's redistributable depot, pinned because the proven install carried it."
+}

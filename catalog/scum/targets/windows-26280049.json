@@ -4,7 +4,7 @@
   "game": "scum",
   "platform": "windows",
   "revision": "26280049",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-29",
