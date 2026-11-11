@@ -49,8 +49,8 @@ struct Config {
   unsigned max_missed_pongs = 2;
   // Reconnect policy (reconnect_policy.hpp): fast retry after a stable session,
   // jittered exponential backoff on consecutive failures.
-  std::chrono::milliseconds reconnect_fast{500};
-  std::chrono::milliseconds reconnect_fast_jitter{1000};
+  std::chrono::milliseconds reconnect_fast{250};
+  std::chrono::milliseconds reconnect_fast_jitter{750};
   std::chrono::milliseconds reconnect_base{2000};
   std::chrono::milliseconds reconnect_max{60000};
   std::chrono::milliseconds connection_stable_after{10000};

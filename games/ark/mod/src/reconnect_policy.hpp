@@ -1,7 +1,8 @@
 #pragma once
 // When to reconnect to Takaro (gettakaro/connectors#858):
 //  - a connection that was identified and stayed up for `stable_after` drops:
-//    the first retry comes after `fast` plus up to `fast_jitter` (about 0.5-1.5 s);
+//    the first retry comes after `fast` plus up to `fast_jitter` (0.25-1 s), so the
+//    reconnect and identify finish within about 2 s;
 //  - every further failure in a row (connect failed, identify refused, or a
 //    connection that dropped before it was stable) backs off exponentially from
 //    `base`, with equal jitter, never above `max`;
@@ -20,8 +21,8 @@ class ReconnectPolicy {
   using ms = std::chrono::milliseconds;
 
   struct Settings {
-    ms fast{500};
-    ms fast_jitter{1000};
+    ms fast{250};
+    ms fast_jitter{750};
     ms base{2000};
     ms max{60000};
     ms stable_after{10000};

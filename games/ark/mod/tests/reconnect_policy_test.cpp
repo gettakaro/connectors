@@ -22,7 +22,7 @@ const auto t0 = ReconnectPolicy::clock::time_point{} + 1h;
 
 void test_defaults() {
   const ReconnectPolicy::Settings s;
-  CHECK(s.fast == 500ms && s.fast_jitter == 1000ms);
+  CHECK(s.fast == 250ms && s.fast_jitter == 750ms);
   CHECK(s.base == 2000ms && s.max == 60000ms);
   CHECK(s.stable_after == 10000ms);
 }
@@ -32,7 +32,7 @@ void test_fast_retry_after_stable_session() {
     ReconnectPolicy p({}, [u] { return u; });
     p.identified(t0);
     const auto d = p.dropped(t0 + 10s);
-    CHECK(d >= 500ms && d <= 1500ms);
+    CHECK(d >= 250ms && d <= 1000ms);
     CHECK(p.streak() == 0);
   }
   // Real jitter: spread over the window, never outside it.
@@ -41,7 +41,7 @@ void test_fast_retry_after_stable_session() {
   for (int i = 0; i < 200; ++i) {
     p.identified(t0);
     const auto d = p.dropped(t0 + 1h);
-    CHECK(d >= 500ms && d <= 1500ms);
+    CHECK(d >= 250ms && d <= 1000ms);
     seen.insert(d.count());
   }
   CHECK(seen.size() > 50);
@@ -91,7 +91,7 @@ void test_stable_session_resets_streak() {
   CHECK(p.dropped(t0 + 2s) == 30000ms);
   CHECK(p.streak() == 7);
   p.identified(t0 + 1min);
-  CHECK(p.dropped(t0 + 1min + 10s) == 500ms);
+  CHECK(p.dropped(t0 + 1min + 10s) == 250ms);
   CHECK(p.streak() == 0);
   CHECK(p.failed() == 1000ms);  // a new streak starts from the base
 }
