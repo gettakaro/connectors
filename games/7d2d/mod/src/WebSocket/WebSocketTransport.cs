@@ -843,14 +843,58 @@ namespace Takaro.WebSocket
             try
             {
                 // Async: a close handshake on a blackholed link would block this
-                // timer thread until the TCP send buffer drains. OnClose still
-                // fires, so ScheduleReconnect() runs as usual.
+                // timer thread until the TCP send buffer drains.
                 socket.CloseAsync(CloseStatusCode.Away, "No inbound traffic");
             }
             catch (Exception ex)
             {
                 LogService.Instance.Info(
                     $"Error closing a dead socket: {ex.GetType().FullName}: {ex.Message}"
+                );
+            }
+
+            // websocket-sharp only raises OnClose once its close handshake times
+            // out (5 s on a blackholed link), so the reconnect does not wait for it.
+            ThreadPool.QueueUserWorkItem(_ => AbandonDeadSocket(socket));
+        }
+
+        /// <summary>
+        /// Detaches a socket already found dead and reconnects at once; its own
+        /// OnClose arrives later and is ignored as stale (HandleClose).
+        /// </summary>
+        private void AbandonDeadSocket(WebSocketSharp.WebSocket socket)
+        {
+            try
+            {
+                lock (_connectLock)
+                {
+                    if (_shuttingDown || !ReferenceEquals(socket, _webSocket))
+                        return;
+
+                    int uptimeSeconds = _session.MarkClosed(out bool wasConfirmed);
+                    _webSocket = null;
+                    LogService.Instance.Info(
+                        "Dead WebSocket connection abandoned without waiting for its close "
+                            + $"handshake (confirmed={wasConfirmed}, uptime={uptimeSeconds}s, "
+                            + $"buffered={_ledger.PendingCount}, unconfirmed={_ledger.InFlightCount})"
+                    );
+
+                    StopTimers();
+                    if (
+                        ReconnectPolicy.ClosedSessionWasStable(
+                            wasConfirmed,
+                            uptimeSeconds,
+                            CONNECTION_STABLE_SECONDS
+                        )
+                    )
+                        _reconnectAttempts = 0;
+                    ScheduleReconnect();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Error(
+                    $"Error abandoning a dead connection: {ex.GetType().FullName}: {ex.Message}"
                 );
             }
         }
