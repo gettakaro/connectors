@@ -9,7 +9,7 @@
     "status": "candidate",
     "since": "2026-11-11",
     "evidence": [
-      "Live on 2026-11-11 on a Linux server installed from Steam at this build (all declared files match the pins) with this target's zip: the plugin loads under SourceMod 1.13 on server version 11191711, registers as a new game server with hosted Takaro on protocol 1, and a real Steam client (build 26334388) joins; getPlayers carries the Steam ids the server status shows, the join lands on the player's existing Takaro player, connect, disconnect, a console command and a server message work, again after a server restart and a client reconnect",
+      "Live on 2026-11-11 on a Linux server installed from Steam at this build (all declared files match the pins) with this target's zip: the plugin loads under SourceMod 1.13 on server version 11191711, registers as a new game server with hosted Takaro on protocol 1, and a real Steam client (build 26334388) joins; getPlayers carries the Steam ids the server status shows, the join lands on the player's existing Takaro player, connect, disconnect, chat from the game, a console command and a server message work, again after a server restart and a client reconnect",
       "srcds_linux, srcds_run, bin/engine_srv.so and tf/bin/server_srv.so are byte-identical to the linux-25995664 pin; only tf/steam.inf (the version string) changed",
       "games/tf2/tests/validate-static.mjs (contract level, every build: action, event, cvar and wire-shape checks over the plugin source)"
     ],
