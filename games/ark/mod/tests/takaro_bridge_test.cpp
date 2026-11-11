@@ -987,6 +987,57 @@ void test_server_chat_name() {
   bridge2.stop();
 }
 
+// gettakaro/connectors#858: a stable, identified session that drops reconnects after the
+// short fast delay; a drop right after identify counts as a failure and backs off; the
+// buffered event survives both drops.
+void test_reconnect_policy() {
+  FakeTakaro takaro;
+  gate::Server gate("boot-reconnect");
+  FakeGame game(gate);
+  auto config = config_for(takaro, temp_dir());
+  config.reconnect_fast = 50ms;
+  config.reconnect_fast_jitter = 50ms;
+  config.reconnect_base = 1200ms;
+  config.reconnect_max = 2400ms;
+  config.connection_stable_after = 300ms;
+  std::mutex lines_mutex;
+  std::vector<std::string> lines;
+  takaro::Bridge bridge(config, gate, [&](const std::string& line) {
+    std::lock_guard<std::mutex> lock(lines_mutex);
+    lines.push_back(line);
+  });
+  auto last_delay = [&]() -> long long {
+    std::lock_guard<std::mutex> lock(lines_mutex);
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it)
+      if (it->starts_with("takaro-ws-reconnect-in-ms ")) return std::stoll(it->substr(26));
+    return -1;
+  };
+  bridge.start();
+  CHECK(eventually([&] { return bridge.identified(); }));
+  std::this_thread::sleep_for(400ms);  // stable
+
+  const auto cut = std::chrono::steady_clock::now();
+  takaro.drop_client();
+  CHECK(eventually([&] { return takaro.connections.load() >= 2 && bridge.identified(); }, 3000ms));
+  CHECK(std::chrono::steady_clock::now() - cut < 1000ms);
+  const auto fast = last_delay();
+  CHECK(fast >= 50 && fast <= 100);
+
+  // Unstable: dropped again right after identify, so it backs off (600..1200 ms).
+  gate.record_login(kId, "Limon");
+  gate.record_chat(kId, "Limon", "across reconnects");
+  takaro.drop_client();
+  CHECK(eventually([&] { return last_delay() != fast; }, 2000ms));
+  const auto slow = last_delay();
+  CHECK(slow >= 600 && slow <= 1200);
+  CHECK(eventually([&] { return takaro.connections.load() >= 3 && bridge.identified(); }, 3000ms));
+  CHECK(takaro.wait_for([](const json::Value& m) {
+    return is_type(m, "gameEvent") && m.get("payload")->get("data")->get("msg") &&
+           m.get("payload")->get("data")->get("msg")->as_string() == "across reconnects";
+  }, 3000ms));
+  bridge.stop();
+}
+
 int main() {
   test_redaction_and_codec();
   test_identify_and_wire();
@@ -999,6 +1050,7 @@ int main() {
   test_game_profile();
   test_identify_waits_for_game();
   test_server_chat_name();
+  test_reconnect_policy();
   if (failures) { std::cerr << failures << " check(s) failed\n"; return 1; }
   std::cout << "takaro_bridge_test passed\n";
   return 0;
