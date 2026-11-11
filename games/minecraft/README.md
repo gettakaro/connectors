@@ -87,9 +87,9 @@ when you move or copy the server, it is how Takaro knows this server.
   },
   "reconnect": {
     "enabled": true,
-    "delay": 5000,
-    "max_delay": 300000,
-    "backoff_multiplier": 1.5
+    "delay": 1000,
+    "max_delay": 60000,
+    "backoff_multiplier": 2.0
   },
   "settings": {
     "debug": false,
@@ -106,9 +106,9 @@ takaro.websocket.url=wss://connect.takaro.io/
 takaro.authentication.identity_token=
 takaro.authentication.registration_token=
 takaro.reconnect.enabled=true
-takaro.reconnect.delay=5000
-takaro.reconnect.max_delay=300000
-takaro.reconnect.backoff_multiplier=1.5
+takaro.reconnect.delay=1000
+takaro.reconnect.max_delay=60000
+takaro.reconnect.backoff_multiplier=2.0
 takaro.debug=false
 # World map in Takaro. Needs a Takaro that speaks protocol v1.
 takaro.map=false
@@ -127,9 +127,9 @@ takaro:
     registration_token: ""
   reconnect:
     enabled: true
-    delay: 5000
-    max_delay: 300000
-    backoff_multiplier: 1.5
+    delay: 1000
+    max_delay: 60000
+    backoff_multiplier: 2.0
   debug: false
   # World map in Takaro. Needs a Takaro that speaks protocol v1.
   map: false
@@ -188,7 +188,7 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects on its own after a restart. |
+| Connection | ✅ | Reconnects on its own after a restart. A dropped connection is back within about 2 s; a dead link is noticed within 45 s. |
 | Player list | ✅ | Name, id and ping. |
 | Player location | ✅ | Rounded to whole blocks. |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground or the player falls. |

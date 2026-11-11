@@ -15,9 +15,9 @@ public class TakaroConfig {
     private volatile String identityToken;
     private volatile String registrationToken;
     private volatile boolean reconnectEnabled = true;
-    private volatile long reconnectDelay = 5000;
-    private volatile long maxReconnectDelay = 300000;
-    private volatile double backoffMultiplier = 1.5;
+    private volatile long reconnectDelay = 1000;
+    private volatile long maxReconnectDelay = 60000;
+    private volatile double backoffMultiplier = 2.0;
     private volatile boolean debugEnabled = false;
     private volatile String targetPolicy = "enforce";
     private volatile boolean mapEnabled = false;

@@ -30,7 +30,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         t.setDaemon(true);
         return t;
     });
-    private volatile long currentReconnectDelay;
+    private final ReconnectPolicy reconnectPolicy;
+    private final java.util.Random jitter = new java.util.Random();
     private volatile boolean shouldReconnect = true;
     private volatile boolean closed;
     private final String configPath;
@@ -40,12 +41,22 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // The protocol Takaro chose in the last identifyResponse; 0 until then and on every reconnect.
     private volatile int protocol;
 
-    // Takaro polls every connected server several times a minute. A socket that stays open
-    // but goes quiet has been dropped on Takaro's side (seen on staging 2026-10-12: no close
-    // frame, the ingress kept answering pings), so reconnect instead of waiting forever.
-    static final long SILENCE_LIMIT_MILLIS = 180_000;
+    // Takaro answers every app-level ping with a pong, so an identified socket with no inbound
+    // frame for this long is dead even though it still reads open: a blackholed path never sends
+    // a reset, and Takaro can drop its side without a close frame (staging 2026-10-12).
+    static final long SILENCE_LIMIT_MILLIS = ReconnectPolicy.INBOUND_TIMEOUT_MILLIS;
     private volatile long silenceLimitMillis = SILENCE_LIMIT_MILLIS;
+    private volatile long pingIntervalMillis = ReconnectPolicy.PING_INTERVAL_MILLIS;
+    private volatile long handshakeTimeoutMillis = ReconnectPolicy.HANDSHAKE_TIMEOUT_MILLIS;
     private volatile long lastInboundMillis = System.currentTimeMillis();
+    private volatile long lastPingMillis = System.currentTimeMillis();
+    // When the current attempt started, and when Takaro accepted identify on it (0 until then).
+    private volatile long attemptStartedMillis = System.currentTimeMillis();
+    private volatile long identifiedAtMillis;
+    // Set once the current socket was dropped as dead, so the watchdog drops it only once.
+    private volatile boolean droppedAsDead;
+    // True from connect() until the socket opens or closes.
+    private volatile boolean attemptInFlight;
     private volatile boolean watchdogStarted;
 
     /** The v1 action capabilities this connector implements; testReachability needs none. */
@@ -76,34 +87,95 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
                                  EventOutbox outbox, WorldMap worldMap, ItemIconCatalog itemIcons) {
-        super(serverUri);
+        this(serverUri, adapter, config, configPath, outbox, worldMap, itemIcons, new ReconnectPolicy());
+    }
+
+    /** The policy outlives this client when a config change replaces it without a drop. */
+    TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
+                          EventOutbox outbox, WorldMap worldMap, ItemIconCatalog itemIcons,
+                          ReconnectPolicy reconnectPolicy) {
+        super(serverUri, new org.java_websocket.drafts.Draft_6455(), null,
+                (int) ReconnectPolicy.HANDSHAKE_TIMEOUT_MILLIS);
         this.adapter = adapter;
         this.config = config;
         this.configPath = configPath;
         this.outbox = outbox;
         this.worldMap = worldMap;
         this.itemIcons = itemIcons;
-        this.currentReconnectDelay = config.getReconnectDelay();
+        this.reconnectPolicy = reconnectPolicy;
     }
 
     private synchronized void startWatchdog() {
         if (watchdogStarted) return;
         watchdogStarted = true;
-        long period = Math.max(1000, Math.min(15_000, silenceLimitMillis / 4));
-        scheduler.scheduleWithFixedDelay(this::checkSilence, period, period, TimeUnit.MILLISECONDS);
+        scheduler.scheduleWithFixedDelay(this::checkSilence, 1000, 1000, TimeUnit.MILLISECONDS);
     }
 
-    /** One watchdog tick: drops a connection Takaro has not spoken on for too long. */
+    /**
+     * One watchdog tick: pings Takaro on an identified socket, and drops a socket that has been
+     * silent past the inbound timeout or has not been identified within the handshake deadline.
+     */
     void checkSilence() {
         try {
-            long quiet = System.currentTimeMillis() - lastInboundMillis;
-            if (closed || !identified || !isOpen() || quiet < silenceLimitMillis) return;
-            adapter.logWarning("No message from Takaro for " + quiet / 1000 + " s on an open connection; reconnecting");
-            identified = false;
+            if (closed || droppedAsDead) return;
+            long now = System.currentTimeMillis();
+            String why = null;
+            if (!isOpen()) {
+                // A TLS or HTTP upgrade that hangs (a blackholed path behind a TCP accept) would
+                // otherwise never end: the library sets no read timeout before the socket opens.
+                if (attemptInFlight && now - attemptStartedMillis > handshakeTimeoutMillis) {
+                    droppedAsDead = true;
+                    adapter.logWarning("Connecting to Takaro took more than " + handshakeTimeoutMillis / 1000
+                            + " s; abandoning the attempt");
+                    abortHandshake();
+                }
+                return;
+            }
+            if (!identified) {
+                if (now - attemptStartedMillis > handshakeTimeoutMillis) {
+                    why = "Takaro did not accept identify within " + handshakeTimeoutMillis / 1000 + " s";
+                }
+            } else if (now - lastInboundMillis >= silenceLimitMillis) {
+                why = "No message from Takaro for " + (now - lastInboundMillis) / 1000 + " s on an open connection";
+            } else if (now - lastPingMillis >= pingIntervalMillis) {
+                lastPingMillis = now;
+                sendAppPing();
+            }
+            if (why == null) return;
+            droppedAsDead = true;
+            adapter.logWarning(why + "; treating the connection as dead and reconnecting");
             dropConnection();
         } catch (RuntimeException e) {
             adapter.logWarning("Connection watchdog failed: " + e);
         }
+    }
+
+    /** Closes the half-built socket; the read thread then fails and onClose schedules the next attempt. */
+    private void abortHandshake() {
+        try {
+            java.net.Socket socket = getSocket();
+            if (socket != null) socket.close();
+        } catch (java.io.IOException e) {
+            adapter.logWarning("Closing the stalled connection failed: " + e);
+        }
+    }
+
+    @Override
+    public void connect() {
+        attemptStartedMillis = System.currentTimeMillis();
+        droppedAsDead = false;
+        attemptInFlight = true;
+        startWatchdog();
+        super.connect();
+    }
+
+    private void sendAppPing() {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("timestamp", java.time.Instant.now().toString());
+        JsonObject ping = new JsonObject();
+        ping.addProperty("type", "ping");
+        ping.add("payload", payload);
+        send(ping.toString());
     }
 
     /** Closes the socket at once, without waiting for a close handshake a dead peer never sends. */
@@ -113,6 +185,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     void setSilenceLimitMillis(long millis) {
         this.silenceLimitMillis = millis;
+    }
+
+    void setPingIntervalMillis(long millis) {
+        this.pingIntervalMillis = millis;
+    }
+
+    void setHandshakeTimeoutMillis(long millis) {
+        this.handshakeTimeoutMillis = millis;
+    }
+
+    ReconnectPolicy reconnectPolicy() {
+        return reconnectPolicy;
     }
 
     /** True once Takaro accepted protocol v1 on this connection. */
@@ -134,7 +218,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         protocol = 0;
         identified = false;
+        identifiedAtMillis = 0;
+        attemptInFlight = false;
         lastInboundMillis = System.currentTimeMillis();
+        lastPingMillis = lastInboundMillis;
         startWatchdog();
         adapter.logInfo("WebSocket connected, sending identify...");
         sendIdentify();
@@ -164,7 +251,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                     break;
                 case "authenticated":
                     adapter.logInfo("Authentication confirmed");
-                    currentReconnectDelay = config.getReconnectDelay();
+                    break;
+                case "pong":
                     break;
                 case "request":
                     handleRequest(json);
@@ -212,6 +300,10 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
+        long identifiedAt = identifiedAtMillis;
+        long identifiedFor = identified && identifiedAt > 0 ? System.currentTimeMillis() - identifiedAt : -1;
+        identifiedAtMillis = 0;
+        attemptInFlight = false;
         identified = false;
         protocol = 0;
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
@@ -225,7 +317,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
 
         if (shouldReconnect && config.isReconnectEnabled()) {
-            scheduleReconnect();
+            scheduleReconnect(identifiedFor);
         }
     }
 
@@ -505,8 +597,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             return;
         }
 
-        currentReconnectDelay = config.getReconnectDelay();
         protocol = optInt(payload, "protocolVersion", 0);
+        identifiedAtMillis = System.currentTimeMillis();
         identified = true;
 
         JsonObject server = optObject(payload, "server");
@@ -1040,20 +1132,34 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         send(msg.toString());
     }
 
-    private void scheduleReconnect() {
-        adapter.logInfo("Reconnecting in " + (currentReconnectDelay / 1000) + "s...");
-        scheduler.schedule(() -> {
-            if (!shouldReconnect) return;
-            try {
-                reconnectBlocking();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }, currentReconnectDelay, TimeUnit.MILLISECONDS);
+    private void scheduleReconnect(long identifiedForMillis) {
+        double r;
+        synchronized (jitter) {
+            r = jitter.nextDouble();
+        }
+        long delay = reconnectPolicy.onConnectionEnded(identifiedForMillis, config.getReconnectDelay(),
+                config.getBackoffMultiplier(), config.getMaxReconnectDelay(), r);
+        int failures = reconnectPolicy.failures();
+        adapter.logInfo("Reconnecting in " + delay + " ms ("
+                + (failures <= 1 ? "fast retry" : "failure streak " + (failures - 1)) + ")");
+        try {
+            scheduler.schedule(this::attemptReconnect, delay, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // shut down while the socket was closing
+        }
+    }
 
-        currentReconnectDelay = Math.min(
-                (long) (currentReconnectDelay * config.getBackoffMultiplier()),
-                config.getMaxReconnectDelay()
-        );
+    /**
+     * Not reconnectBlocking(): it waits without a limit, and a blackholed TLS handshake would then
+     * stall the watchdog that shares this thread. connect() returns at once; the watchdog enforces
+     * the handshake deadline and a failed attempt closes, which schedules the next one.
+     */
+    private void attemptReconnect() {
+        if (!shouldReconnect || closed) return;
+        try {
+            reconnect();
+        } catch (RuntimeException e) {
+            adapter.logWarning("Reconnect attempt failed to start: " + e);
+        }
     }
 }

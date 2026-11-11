@@ -10,9 +10,9 @@ takaro:
     registration_token: ""
   reconnect:
     enabled: true
-    delay: 5000
-    max_delay: 300000
-    backoff_multiplier: 1.5
+    delay: 1000
+    max_delay: 60000
+    backoff_multiplier: 2.0
   debug: false
   # World map in Takaro. Needs a Takaro that speaks protocol v1.
   map: false
