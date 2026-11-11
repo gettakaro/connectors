@@ -25,8 +25,10 @@ class ReconnectContractTest {
     static final class FakeTakaro extends WebSocketServer {
         final List<Long> identifiedAt = new CopyOnWriteArrayList<>();
         final List<WebSocket> conns = new CopyOnWriteArrayList<>();
+        final List<JsonObject> events = new CopyOnWriteArrayList<>();
         volatile int pings;
         volatile boolean silent;
+        volatile int protocol;
 
         FakeTakaro(int port) {
             super(new InetSocketAddress("127.0.0.1", port));
@@ -47,7 +49,13 @@ class ReconnectContractTest {
                 if (!silent) conn.send("{\"type\":\"pong\"}");
             } else if ("identify".equals(type) && !silent) {
                 identifiedAt.add(System.currentTimeMillis());
-                conn.send("{\"type\":\"identifyResponse\",\"payload\":{\"server\":{\"id\":\"gs-1\"}}}");
+                conn.send("{\"type\":\"identifyResponse\",\"payload\":{\"server\":{\"id\":\"gs-1\"},\"protocolVersion\":"
+                        + protocol + "}}");
+            } else if ("gameEvent".equals(type) && !silent) {
+                JsonObject payload = msg.getAsJsonObject("payload");
+                events.add(payload);
+                conn.send("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"" + payload.get("streamId").getAsString()
+                        + "\",\"upTo\":" + payload.get("seq").getAsLong() + "}}");
             }
         }
     }
@@ -79,11 +87,15 @@ class ReconnectContractTest {
     }
 
     private TakaroWebSocketClient start(int port, ReconnectPolicy policy) throws Exception {
+        return start(port, policy, new EventOutbox());
+    }
+
+    private TakaroWebSocketClient start(int port, ReconnectPolicy policy, EventOutbox outbox) throws Exception {
         TakaroConfig config = new TakaroConfig();
         config.setIdentityToken("id");
         config.setRegistrationToken("good");
         client = new TakaroWebSocketClient(new URI("ws://127.0.0.1:" + port + "/"), adapter, config, "config",
-                new EventOutbox(), null, null, policy);
+                outbox, null, null, policy);
         return client;
     }
 
@@ -178,5 +190,56 @@ class ReconnectContractTest {
         assertTrue(previousCeiling > 59_000, "the cap is reached: " + previousCeiling);
         start(port, new ReconnectPolicy()).connect();
         await("retry scheduled", 5000, () -> adapter.infos.stream().anyMatch(l -> l.contains("Reconnecting in")));
+    }
+
+    @Test
+    void anEventWrittenIntoADeadLinkReachesTakaroAfterTheReconnect() throws Exception {
+        int port = freePort();
+        takaro = new FakeTakaro(port);
+        takaro.protocol = 1;
+        takaro.start();
+        EventOutbox outbox = new EventOutbox("stream-gap");
+        TakaroWebSocketClient c = start(port, new ReconnectPolicy(300), outbox);
+        c.setPingIntervalMillis(300);
+        c.setSilenceLimitMillis(1500);
+        c.connect();
+        await("first identify", 5000, () -> takaro.identifiedAt.size() == 1 && c.isV1());
+        c.emitChatMessage("uuid-1", "Steve", "global", "before the gap");
+        await("first event acked", 3000, () -> outbox.size() == 0 && takaro.events.size() == 1);
+
+        takaro.silent = true; // blackhole: the event below goes into a socket nobody reads
+        c.emitChatMessage("uuid-1", "Steve", "global", "during the gap");
+        Thread.sleep(200);
+        assertEquals(1, outbox.size(), "an unacked event stays buffered");
+        await("dead link noticed", 6000, () -> adapter.warnings.stream().anyMatch(l -> l.contains("treating the connection as dead")));
+        takaro.silent = false;
+
+        await("event resent after the reconnect", 5000, () -> takaro.events.size() == 2);
+        JsonObject resent = takaro.events.get(1);
+        assertEquals("during the gap", resent.getAsJsonObject("data").get("msg").getAsString());
+        assertEquals("stream-gap", resent.get("streamId").getAsString());
+        assertEquals(takaro.events.get(0).get("seq").getAsLong() + 1, resent.get("seq").getAsLong(),
+                "the same stream continues without a hole");
+        await("acked", 3000, () -> outbox.size() == 0);
+        assertEquals(2, takaro.identifiedAt.size());
+    }
+
+    @Test
+    void anEventEmittedWhileDisconnectedIsSentOnTheNextIdentify() throws Exception {
+        int port = freePort();
+        takaro = new FakeTakaro(port);
+        takaro.protocol = 1;
+        takaro.start();
+        EventOutbox outbox = new EventOutbox("stream-down");
+        TakaroWebSocketClient c = start(port, new ReconnectPolicy(300), outbox);
+        c.connect();
+        await("first identify", 5000, () -> takaro.identifiedAt.size() == 1 && c.isV1());
+        Thread.sleep(400);
+        takaro.conns.get(0).closeConnection(1006, "reset");
+        await("closed", 3000, () -> !c.isOpen());
+        c.emitChatMessage("uuid-1", "Steve", "global", "while down");
+        await("resent", 5000, () -> takaro.events.size() == 1);
+        assertEquals("while down", takaro.events.get(0).getAsJsonObject("data").get("msg").getAsString());
+        await("acked", 3000, () -> outbox.size() == 0);
     }
 }
