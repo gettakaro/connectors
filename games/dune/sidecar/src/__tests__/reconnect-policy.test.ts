@@ -11,7 +11,7 @@ const DEFAULTS = { fastMs: 1000, baseMs: 2000, maxMs: 60_000 };
 const at = (r: number) => ({ ...DEFAULTS, random: () => r });
 
 describe('reconnectDelay', () => {
-  it('retries a dropped stable session within 0.5-1.5 s, never a fixed wait', () => {
+  it('retries a dropped stable session at 0.5x-1.5x of fastMs, never a fixed wait', () => {
     expect(reconnectDelay(0, at(0))).toBe(500);
     expect(reconnectDelay(0, at(0.5))).toBe(1000);
     expect(reconnectDelay(0, at(0.999999))).toBe(1500);
