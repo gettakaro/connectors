@@ -239,7 +239,7 @@ export function loadConfig(env: Env = process.env): SidecarConfig {
     reconnectBaseMs: int(env.TAKARO_RECONNECT_BASE_MS, 2000),
     reconnectMaxMs: int(env.TAKARO_RECONNECT_MAX_MS, 60000),
     // First retry after a stable session dropped (jittered 0.5x-1.5x); BASE/MAX only shape repeated failures.
-    reconnectFastMs: int(env.TAKARO_RECONNECT_FAST_MS, 1000),
+    reconnectFastMs: int(env.TAKARO_RECONNECT_FAST_MS, 300),
 
     pgUrl: pgUrlOf(env),
     pgStatementTimeoutMs: int(env.DUNE_PG_STATEMENT_TIMEOUT_MS, 5000),

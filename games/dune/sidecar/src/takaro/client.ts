@@ -18,7 +18,7 @@ export interface TakaroClientOptions {
   baseReconnectMs?: number;
   /** Backoff cap (default 60s). */
   maxReconnectMs?: number;
-  /** Centre of the first retry after a stable session dropped (default 1s; jittered to 0.5x-1.5x). */
+  /** Centre of the first retry after a stable session dropped (default 300 ms; jittered to 0.5x-1.5x, so 150-450 ms). */
   fastReconnectMs?: number;
   /** An identified connection that stays up this long counts as stable and resets the failure streak (default 5s). */
   stableAfterMs?: number;
@@ -102,7 +102,7 @@ export class TakaroWsClient extends EventEmitter {
     super();
     this.baseReconnectMs = options.baseReconnectMs ?? 2000;
     this.maxReconnectMs = options.maxReconnectMs ?? 60000;
-    this.fastReconnectMs = options.fastReconnectMs ?? 1000;
+    this.fastReconnectMs = options.fastReconnectMs ?? 300;
     this.stableAfterMs = options.stableAfterMs ?? 5000;
     this.random = options.random ?? Math.random;
     this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? 10_000;
@@ -522,14 +522,14 @@ export interface ReconnectPolicy {
 /**
  * Reconnect delay (gettakaro/connectors#858). `failures` = consecutive attempts that ended before the connection was
  * stable. 0 means a stable, identified session just dropped: retry almost at once (fastMs x 0.5-1.5, so a Takaro
- * deploy does not get every server back in the same millisecond). Every further failure doubles from baseMs with
- * +-25% jitter, never above maxMs.
+ * deploy does not get every server back in the same millisecond). Every further failure doubles from baseMs, capped at
+ * maxMs, and waits a random 50-100% of that ("equal jitter"), so the waits stay spread out at the cap too.
  */
 export function reconnectDelay(failures: number, p: ReconnectPolicy): number {
   const r = Math.min(Math.max(p.random(), 0), 1);
   if (failures <= 0) return Math.round(Math.min(p.maxMs, p.fastMs * (0.5 + r)));
   const exp = Math.min(p.maxMs, p.baseMs * 2 ** Math.min(failures - 1, 30));
-  return Math.round(Math.min(p.maxMs, exp * (0.75 + 0.5 * r)));
+  return Math.round(exp * (0.5 + 0.5 * r));
 }
 
 export interface ConfigHint {

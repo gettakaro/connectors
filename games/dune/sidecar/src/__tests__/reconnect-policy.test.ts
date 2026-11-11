@@ -25,14 +25,24 @@ describe('reconnectDelay', () => {
     expect(seen.size).toBeGreaterThan(20);
   });
 
-  it('backs off exponentially on consecutive failures', () => {
-    const mid = [1, 2, 3, 4, 5, 6].map((n) => reconnectDelay(n, at(0.5)));
-    expect(mid).toEqual([2000, 4000, 8000, 16000, 32000, 60000]);
+  it('the client default retries a dropped stable session in 150-450 ms, so identify lands well inside 2 s', () => {
+    const at0 = new TakaroWsClient('ws://x', { identityToken: 'a', registrationToken: 'r' }, { random: () => 0 });
+    const at1 = new TakaroWsClient('ws://x', { identityToken: 'a', registrationToken: 'r' }, { random: () => 0.999999 });
+    expect(at0.nextReconnectDelay()).toBe(150);
+    expect(at1.nextReconnectDelay()).toBe(450);
   });
 
-  it('jitters each backoff step by +-25%', () => {
-    expect(reconnectDelay(3, at(0))).toBe(6000);
-    expect(reconnectDelay(3, at(0.999999))).toBe(10000);
+  it('backs off exponentially on consecutive failures', () => {
+    const top = [1, 2, 3, 4, 5, 6, 7].map((n) => reconnectDelay(n, at(0.999999)));
+    expect(top).toEqual([2000, 4000, 8000, 16000, 32000, 60000, 60000]);
+  });
+
+  it('waits a random 50-100% of each backoff step, also at the cap', () => {
+    expect(reconnectDelay(3, at(0))).toBe(4000);
+    expect(reconnectDelay(3, at(0.999999))).toBe(8000);
+    expect(reconnectDelay(20, at(0))).toBe(30_000);
+    const atCap = new Set(Array.from({ length: 100 }, () => reconnectDelay(20, { ...DEFAULTS, random: Math.random })));
+    expect(atCap.size).toBeGreaterThan(50);
   });
 
   it('never exceeds the 60 s cap, also with jitter and huge streaks', () => {
@@ -45,8 +55,8 @@ describe('reconnectDelay', () => {
   it('keeps honouring operator overrides of the old base/max keys', () => {
     const p = { fastMs: 1000, baseMs: 10_000, maxMs: 30_000, random: () => 0.5 };
     expect(reconnectDelay(0, p)).toBe(1000);
-    expect(reconnectDelay(1, p)).toBe(10_000);
-    expect(reconnectDelay(5, p)).toBe(30_000);
+    expect(reconnectDelay(1, p)).toBe(7500);
+    expect(reconnectDelay(5, p)).toBe(22_500);
   });
 });
 
@@ -131,13 +141,12 @@ describe('TakaroWsClient reconnect timing', () => {
     );
     cleanups.push(() => takaro.shutdown());
     takaro.connect();
-    await waitFor(() => state.sockets.length >= 5 || undefined, 3000);
-    const gaps = state.connectedAt.slice(1, 5).map((t, i) => t - state.connectedAt[i]);
-    // 40, 80, 160, 160 (capped) plus the round trip
-    expect(gaps[1]).toBeGreaterThan(gaps[0]);
-    expect(gaps[2]).toBeGreaterThan(gaps[1]);
-    expect(gaps[3]).toBeLessThan(160 + 100);
-    expect(lines.some((l) => l.includes('failure streak'))).toBe(true);
+    await waitFor(() => state.sockets.length >= 6 || undefined, 3000);
+    const delays = lines.flatMap((l) => /Reconnecting to Takaro in (\d+)ms/.exec(l)?.[1] ?? []).map(Number);
+    // a fresh process gets one fast retry, then 75% of 40, 80, 160 and the 160 cap (jitter pinned to its midpoint)
+    expect(delays.slice(0, 5)).toEqual([20, 30, 60, 120, 120]);
+    expect(lines.some((l) => l.includes('failure streak 4'))).toBe(true);
+    expect(state.connectedAt[5] - state.connectedAt[0]).toBeGreaterThanOrEqual(20 + 30 + 60 + 120 + 120 - 20);
 
     accept = true;
     await waitFor(() => takaro.identified() || undefined, 2000);
@@ -160,8 +169,8 @@ describe('TakaroWsClient reconnect timing', () => {
       state.sockets[i].terminate();
       await waitFor(() => !takaro.identified() || undefined);
     }
-    // drops 1..3: fast (attempt 0), then 40, then 80 → next is 160
-    expect(takaro.nextReconnectDelay()).toBe(160);
+    // drops 1..3: fast (attempt 0), then 40, then 80 → next step is 160, waited at 75%
+    expect(takaro.nextReconnectDelay()).toBe(120);
   });
 
   it('detects a half-open socket (no pongs) within the bounded heartbeat window and reconnects fast', async () => {
@@ -178,7 +187,8 @@ describe('TakaroWsClient reconnect timing', () => {
     const start = Date.now();
     await waitFor(() => state.sockets.length >= 2 || undefined, 2000);
     // 2 missed pongs + the tick that notices = 3 ping intervals, plus the fast retry
-    expect(Date.now() - start).toBeLessThan(3 * 50 + 300);
+    // far below the 10 s idle timeout: the pong count, not the idle timer, closed it
+    expect(Date.now() - start).toBeLessThan(3 * 50 + 1000);
     expect(lines.some((l) => l.includes('heartbeat ping(s) unanswered'))).toBe(true);
     expect(lines.some((l) => l.includes('fast first retry'))).toBe(true);
   });
