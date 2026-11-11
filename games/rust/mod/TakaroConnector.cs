@@ -905,8 +905,9 @@ namespace Oxide.Plugins
         // takaro:reconnect-begin
         //
         // When to reconnect and when a socket is dead. A connection that was identified and
-        // stayed up for StableSeconds is back within 0.5-1.5 s of dropping, well inside
-        // Takaro's reachability check, so a mid-path TCP reset never shows the server offline.
+        // stayed up for StableSeconds starts its next attempt 0.05-0.35 s after dropping; the
+        // TLS and identify round trip adds about a second, so it is identified again within
+        // about 2 s and a mid-path TCP reset rarely overlaps one of Takaro's reachability polls.
         // Only consecutive failures back off (1-2 s, 2-4 s, 4-8 s, ... with jitter, never past
         // 60 s), and the streak resets once a connection has been stable again. A socket with
         // no inbound frame for InboundTimeoutSeconds (Takaro answers every ping) is treated as
@@ -914,8 +915,8 @@ namespace Oxide.Plugins
         // tests/protocol runs it.
         internal sealed class ReconnectPolicy
         {
-            internal const long FastMinMs = 500;
-            internal const long FastSpreadMs = 1000;
+            internal const long FastMinMs = 50;
+            internal const long FastSpreadMs = 300;
             internal const long BackoffBaseMs = 1000;
             internal const long MaxDelayMs = 60000;
             internal const int StableSeconds = 10;
@@ -984,7 +985,7 @@ namespace Oxide.Plugins
         private const string ConfigFileName = "TakaroConnector.json";
         private const int ConfigCheckEverySeconds = 5;
         // The tick also starts due reconnects, so it runs often enough for a sub-second retry.
-        private const int TicksPerSecond = 4;
+        private const int TicksPerSecond = 10;
 
         private volatile ConnectorSettings _settings = new ConnectorSettings();
         private string _configPath;
@@ -999,7 +1000,7 @@ namespace Oxide.Plugins
 
         // --- WebSocket State ---
         //
-        // Connections are started on the main thread only (Init, the 1 s tick). Every
+        // Connections are started on the main thread only (Init, the 0.1 s tick). Every
         // connection carries the generation it was started under; a socket task, close or
         // reconnect request from an older generation is stale and changes nothing.
 
@@ -1247,7 +1248,10 @@ namespace Oxide.Plugins
                 return;
             }
             if (_shouldReconnect && !string.IsNullOrEmpty(_settings.RegistrationToken))
+            {
+                LogDebug($"Reconnect due {(DateTime.UtcNow.Ticks - request.DueTicks) / TimeSpan.TicksPerMillisecond} ms ago; connecting to {_settings.WsUrl}");
                 StartConnection();
+            }
         }
 
         // Compares the whole text: a timestamp can miss a same-length edit. A file that is

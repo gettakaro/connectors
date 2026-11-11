@@ -253,8 +253,8 @@ internal static class Program
     private static void Reconnect()
     {
         // Fast first retry: 0.5-1.5 s, jittered, never a fixed wait.
-        Check(Connector.ReconnectPolicy.DelayMs(0, 0.0) == 500, "reconnect: first retry floor is 0.5 s");
-        Check(Connector.ReconnectPolicy.DelayMs(0, 0.999999) <= 1500, "reconnect: first retry is at most 1.5 s");
+        Check(Connector.ReconnectPolicy.DelayMs(0, 0.0) == 50, "reconnect: first retry floor is 0.05 s");
+        Check(Connector.ReconnectPolicy.DelayMs(0, 0.999999) <= 350, "reconnect: first retry is at most 0.35 s");
         Check(Connector.ReconnectPolicy.DelayMs(0, 0.2) != Connector.ReconnectPolicy.DelayMs(0, 0.8), "reconnect: first retry is jittered");
 
         // Streak backoff: each failure doubles the window, jitter inside it, cap 60 s.
@@ -277,7 +277,7 @@ internal static class Program
         // The stateful policy: stable session -> fast; failures in a row -> back off; stable again -> reset.
         var policy = new Connector.ReconnectPolicy();
         var first = policy.OnConnectionEnded(TimeSpan.FromMinutes(5), 0.5);
-        Check(first >= 500 && first <= 1500 && policy.Failures == 1, "policy: drop after a stable session retries within 1.5 s");
+        Check(first >= 50 && first <= 350 && policy.Failures == 1, "policy: drop after a stable session retries within 0.35 s");
         var second = policy.OnConnectionEnded(null, 0.5);
         Check(second >= 1000 && second <= 2000 && policy.Failures == 2, "policy: a failed retry backs off");
         var third = policy.OnConnectionEnded(null, 0.5);
@@ -287,9 +287,9 @@ internal static class Program
         for (var i = 0; i < 20; i++) policy.OnConnectionEnded(null, 0.999999);
         Check(policy.OnConnectionEnded(null, 0.999999) <= 60000, "policy: long outage capped at 60 s");
         var recovered = policy.OnConnectionEnded(TimeSpan.FromSeconds(Connector.ReconnectPolicy.StableSeconds), 0.5);
-        Check(recovered <= 1500, "policy: a stable connection resets the streak");
+        Check(recovered <= 350, "policy: a stable connection resets the streak");
         policy.Reset();
-        Check(policy.Failures == 0 && policy.OnConnectionEnded(null, 0.0) == 500, "policy: Reset (config change) starts fast");
+        Check(policy.Failures == 0 && policy.OnConnectionEnded(null, 0.0) == 50, "policy: Reset (config change) starts fast");
 
         // Dead-link detection.
         var t0 = DateTime.UtcNow.Ticks;
