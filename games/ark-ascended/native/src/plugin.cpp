@@ -21,6 +21,7 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -750,6 +751,38 @@ bool OnChat(AShooterPlayerController* pc, FString* message, int mode, int, bool 
     return false;
 }
 
+// Identity probe: what the server knows about a player's Steam account.
+void ProbeSteamId(AShooterGameMode* mode, AShooterPlayerController* pc, const std::string& eos) {
+    if (mode == nullptr || pc == nullptr) return;
+    const int pid = static_cast<int>(pc->LinkedPlayerIDField());
+    const unsigned long long sid = mode->GetSteamIDForPlayerID(pid);
+    FString sidStr;
+    mode->GetSteamIDStringForPlayerID(&sidStr, pid);
+    std::string line = "probe steam eos=" + eos + " pid=" + std::to_string(pid) + " GetSteamIDForPlayerID=" + std::to_string(sid) +
+                       " GetSteamIDStringForPlayerID=" + Utf8(sidStr) + " SteamIds.size=" + std::to_string(mode->SteamIdsField().Num());
+    int shown = 0;
+    for (const auto& kv : mode->SteamIdsField()) {
+        if (shown++ >= 8) break;
+        line += " [" + std::to_string(kv.Key) + "->" + std::to_string(kv.Value) + "]";
+    }
+    LogLine(line);
+}
+
+DECLARE_HOOK(AShooterGameMode_PreLogin, void, AShooterGameMode*, const FString&, const FString&, const FUniqueNetIdRepl*, FString&);
+void Hook_PreLogin(AShooterGameMode* mode, const FString& options, const FString& address, const FUniqueNetIdRepl* id, FString& error)
+{
+    std::string o = Utf8(options);
+    for (const char* key : {"Password=", "password="}) {
+        for (size_t at = o.find(key); at != std::string::npos; at = o.find(key, at + 1)) {
+            const size_t start = at + strlen(key);
+            const size_t end = o.find('?', start);
+            o.replace(start, (end == std::string::npos ? o.size() : end) - start, "<x>");
+        }
+    }
+    LogLine("probe prelogin options=" + o);
+    AShooterGameMode_PreLogin_original(mode, options, address, id, error);
+}
+
 DECLARE_HOOK(AShooterGameMode_HandleNewPlayer_Implementation, bool, AShooterGameMode*, AShooterPlayerController*, UPrimalPlayerData*, AShooterCharacter*, bool);
 bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, UPrimalPlayerData* data, AShooterCharacter* character, bool fromLogin)
 {
@@ -757,6 +790,7 @@ bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, 
     if (g_client && pc != nullptr) {
         const std::string eos = EosId(pc);
         LogLine("login eos=" + eos + " fromLogin=" + std::to_string(fromLogin));
+        ProbeSteamId(mode, pc, eos);
         // A banned player reaches this hook before the game turns them away; they never really joined.
         if (!eos.empty() && !IsBanned(eos)) {
             Roster& r = Refresh(eos, pc);
@@ -1012,6 +1046,7 @@ void TailLog(fs::path file) {
     }
 }
 
+constexpr char kHookPreLogin[] = "AShooterGameMode.PreLogin(FString&,FString&,FUniqueNetIdRepl&,FString&)";
 constexpr char kHookNewPlayer[] = "AShooterGameMode.HandleNewPlayer_Implementation(AShooterPlayerController*,UPrimalPlayerData*,AShooterCharacter*,bool)";
 constexpr char kHookLogout[] = "AShooterGameMode.Logout(AController*)";
 constexpr char kHookPrintMessage[] = "UShooterCheatManager.PrintMessageOut(FString&)";
@@ -1060,6 +1095,7 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     g_client->SetLocalAction(LocalAction);
 
     auto& hooks = AsaApi::GetHooks();
+    hooks.SetHook(kHookPreLogin, Hook_PreLogin, &AShooterGameMode_PreLogin_original);
     hooks.SetHook(kHookNewPlayer, Hook_HandleNewPlayer, &AShooterGameMode_HandleNewPlayer_Implementation_original);
     hooks.SetHook(kHookLogout, Hook_Logout, &AShooterGameMode_Logout_original);
     hooks.SetHook(kHookPrintMessage, Hook_PrintMessageOut, &UShooterCheatManager_PrintMessageOut_original);
@@ -1079,6 +1115,7 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     commands.RemoveOnTickCallback(kCallbackId);
     commands.RemoveOnChatMessageCallback(kCallbackId);
     auto& hooks = AsaApi::GetHooks();
+    hooks.DisableHook(kHookPreLogin, Hook_PreLogin);
     hooks.DisableHook(kHookNewPlayer, Hook_HandleNewPlayer);
     hooks.DisableHook(kHookLogout, Hook_Logout);
     hooks.DisableHook(kHookPrintMessage, Hook_PrintMessageOut);
