@@ -42,6 +42,19 @@ event resend with `seq`), every action and event against the fake game, the cata
 map renderer and `capabilities.json` drift against `Coverage.cs`. A status in `Coverage.cs` moves to
 `live-supported` only after a live run against a real server.
 
+## Reconnect
+
+`Protocol/ReconnectPolicy.cs` decides the wait before each attempt, and `ReconnectTests.cs` covers it.
+- A connection that stayed identified for 10 s (`StableAfter`) and then drops retries after 0.05-0.35 s.
+  With TLS and identify it is back within about 1-2 s.
+- Only consecutive failures back off: 1-2 s, 2-4 s, 4-8 s, ... with jitter, capped at 60 s (`MaxBackoff`).
+  The streak resets after the next stable connection.
+- The heartbeat pings every 10 s, and Takaro answers each ping. With no inbound frame for 30 s
+  (`InboundTimeout`), the link counts as dead and is closed, and the client then reconnects like after any
+  other drop. The check runs every second, so detection takes at most 31 s.
+- Events raised while the link is down wait in the outbox. Unacknowledged v1 events are resent with the
+  same `seq` after identify.
+
 ## Release build
 
 ```
