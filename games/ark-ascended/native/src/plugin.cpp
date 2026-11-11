@@ -248,13 +248,42 @@ bool Load() {
     return true;
 }
 
-// The server's EOS Connect handle, read from the game's own EOS subsystem once it has ticked.
+// Reads one pointer, false instead of a crash when the address is not readable.
+bool SafeRead(const void* address, void** out) {
+    __try {
+        *out = *static_cast<void* const*>(address);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The server's EOS Connect handle, read from the game's own EOS subsystem. Tick is a virtual of a secondary base, so
+// the pointer the hook sees is inside the subsystem, not at its start: try the bases in front of it and keep the one
+// whose identity interface points back at it. Found once, then cached for the server's lifetime.
+EosConnect g_connect = nullptr;
+bool g_searched = false;
 EosConnect Connect() {
-    void* subsystem = g_subsystem.load();
-    if (subsystem == nullptr) return nullptr;
-    void* identity = *GetNativePointerField<void**>(subsystem, "FOnlineSubsystemEOS.IdentityImpl");  // TSharedPtr: object first
-    if (identity == nullptr) return nullptr;
-    return *GetNativePointerField<EosConnect*>(identity, "FOnlineIdentityInterfaceEOS.EOSConnect");
+    if (g_connect != nullptr || g_searched) return g_connect;
+    auto* seen = static_cast<char*>(g_subsystem.load());
+    if (seen == nullptr) return nullptr;
+    g_searched = true;
+    const auto identityAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineSubsystemEOS.IdentityImpl"));
+    const auto connectAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.EOSConnect"));
+    const auto ownerAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.SubsystemEOS"));
+    if (identityAt <= 0 || connectAt <= 0 || ownerAt <= 0) { LogLine("steam: EOS subsystem fields unknown"); return nullptr; }
+    for (ptrdiff_t back = 0; back <= 0x400; back += 8) {
+        char* base = seen - back;
+        void *identity = nullptr, *owner = nullptr, *connect = nullptr;
+        if (!SafeRead(base + identityAt, &identity) || identity == nullptr) continue;
+        if (!SafeRead(static_cast<char*>(identity) + ownerAt, &owner) || owner != base) continue;
+        if (!SafeRead(static_cast<char*>(identity) + connectAt, &connect) || connect == nullptr) continue;
+        g_connect = connect;
+        LogLine("steam: EOS Connect found (subsystem starts " + std::to_string(back) + " bytes before the tick pointer)");
+        return g_connect;
+    }
+    LogLine("steam: EOS Connect not found, players carry the EOS id only");
+    return nullptr;
 }
 
 bool IsSteamId64(const std::string& id) {
