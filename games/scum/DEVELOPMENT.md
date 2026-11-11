@@ -10,6 +10,7 @@ native/src/                    main.dll, a UE4SS C++ mod: the Takaro WebSocket (
 native/ue4ss/                  UE4SS.def (the UE4SS.dll exports main.dll links against) and the required hook settings
 native/check-imports.py        every UE4SS import of main.dll must be exported by the pinned UE4SS.dll
 native/build.bat               local MSVC v143 build (main.dll + takaro-smoke.exe, a WebSocket smoke test)
+native/tests/                  host tests (g++) for the platform-independent transport code
 tests/                         Lua tests against a fake UE4SS and a fake Takaro
 scripts/build-release.sh       the release build, driven by catalog/scum/targets/<target>.json
 ```
@@ -18,6 +19,7 @@ scripts/build-release.sh       the release build, driven by catalog/scum/targets
 
 ```
 LUA=lua5.4 tests/run.sh
+CXX=g++ native/tests/run.sh
 ```
 
 The tests cover the wire protocol (identify, request/response, reconnect, event resend), every action
@@ -27,6 +29,20 @@ with a stub game, the log parsers, config handling and `capabilities.json` drift
 ```
 LUA_PATH="mod/TakaroSCUM/Scripts/?.lua;;" lua5.4 scripts/gen-capabilities.lua > capabilities.json
 ```
+
+## Reconnect
+
+The native transport (`native/src/transport_winhttp.cpp`, delay policy in `ReconnectPolicy`,
+`native/src/transport.cpp`) treats a dropped session differently from a failing connect:
+
+- A connection that was identified and stayed up for 5 s is retried 0.3 to 1.0 s after it ends (random),
+  so a cut mid-session is back before Takaro notices.
+- Only consecutive failures back off: 2 s doubling, each delay random between half and all of the step,
+  capped at 60 s. The streak resets when a connection has been identified and stable for 5 s, not
+  when a socket merely opens.
+- An application ping goes out every 5 s; no frame from Takaro for 20 s closes the link as dead and
+  takes the fast retry.
+- Unacknowledged events stay queued in Lua and are resent after identify (`takaro/protocol.lua`).
 
 ## Release build
 

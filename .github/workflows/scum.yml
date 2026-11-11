@@ -67,6 +67,15 @@ jobs:
               apt-get install -y -qq --no-install-recommends lua5.4=5.4.7-1+b2 >/dev/null
               cp -r /scum /tmp/scum
               LUA=lua5.4 bash /tmp/scum/tests/run.sh'
+      # The platform-independent native transport code (reconnect policy, heartbeat) on the host.
+      - name: Native transport tests (g++)
+        run: |
+          docker run --rm -v "$PWD/games/scum:/scum:ro" \
+            debian:13.7@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 \
+            bash -c 'set -euo pipefail
+              apt-get update -qq >/dev/null
+              apt-get install -y -qq --no-install-recommends g++ >/dev/null
+              bash /scum/native/tests/run.sh'
 
   params:
     runs-on: ubuntu-24.04

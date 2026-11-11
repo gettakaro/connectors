@@ -137,7 +137,7 @@ int LuaClose(const Lua& L) {
     return 0;
 }
 
-// takaro_identified(epoch): identify succeeded, reset the reconnect backoff
+// takaro_identified(epoch): identify succeeded; a drop after it has been stable retries at once
 int LuaIdentified(const Lua& L) {
     try {
         Args a{L};

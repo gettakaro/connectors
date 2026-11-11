@@ -14,6 +14,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <random>
 #include <string>
 #include <thread>
 
@@ -24,7 +25,7 @@ public:
     struct Options {
         std::string url;
         std::string caFile;
-        unsigned reconnectBaseMs = 2000, reconnectMaxMs = 60000;
+        int64_t reconnectBaseMs = ReconnectPolicy::kBaseMs, reconnectMaxMs = ReconnectPolicy::kMaxMs;
         Heartbeat::Params heartbeat;
     };
     explicit WinHttpTransport(Options o);
@@ -60,7 +61,10 @@ private:
     Epoch* cur_ = nullptr;
     bool open_ = false;
     uint64_t epoch_ = 0;
-    unsigned attempts_ = 0;
+    unsigned attempts_ = 0;        // under mu_: connection attempts that failed since the last stable session
+    int64_t identifiedAtMs_ = 0;   // under mu_: when the current epoch was identified (0: not yet)
+    int64_t endedAtMs_ = 0;        // under mu_: when the current epoch was found dead
+    std::mt19937_64 rng_{std::random_device{}()};  // supervisor thread only: reconnect jitter
     std::string url_;        // under mu_; o_.url is only the initial value
     bool connect_ = true;    // under mu_
     uint64_t generation_ = 0;  // under mu_: bumped by Retarget, so an epoch opened with old settings is dropped

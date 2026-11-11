@@ -45,7 +45,8 @@ public:
     virtual void Stop() = 0;
     virtual QueueStatus Queue(OutFrame frame) = 0;
     virtual void RequestClose(uint64_t epoch, const std::string& reason) = 0;
-    // Identify succeeded on this epoch: reset the reconnect backoff.
+    // Identify succeeded on this epoch. Once it has also stayed up for ReconnectPolicy::kStableMs, its
+    // drop resets the reconnect failure streak.
     virtual void MarkIdentified(uint64_t epoch) = 0;
     // New connection settings: drop the current connection and, when `connect`, open a new one to
     // `url` at once (no backoff); otherwise stay idle until the next Retarget.
@@ -78,6 +79,25 @@ private:
     std::deque<OutFrame> q_[4];
     size_t bytes_[4] = {0, 0, 0, 0};
     uint64_t rejected_ = 0;
+};
+
+// Delay before the next connection attempt (gettakaro/connectors#858). A connection that was identified
+// and stayed up for kStableMs is retried almost at once, so a cut mid-session is back before Takaro's
+// reachability check notices. Only consecutive failures back off: exponentially from baseMs, capped at
+// kMaxMs. Every delay is jittered so a Takaro deploy does not bring every server back in the same instant.
+// Pure (no clock, no randomness of its own), so the host tests cover it.
+struct ReconnectPolicy {
+    static constexpr int64_t kFastMinMs = 300;
+    static constexpr int64_t kFastJitterMs = 700;
+    static constexpr int64_t kBaseMs = 2000;
+    static constexpr int64_t kMaxMs = 60000;
+    static constexpr int64_t kStableMs = 5000;
+    // streak: attempts that failed since the last stable connection; 0 means the connection that just ended
+    // was stable, or this is the first attempt. random: a value in [0, 1).
+    static int64_t NextDelayMs(unsigned streak, double random, int64_t baseMs = kBaseMs, int64_t maxMs = kMaxMs);
+    // Whether an ended connection resets the streak: identified, and up for stableMs after that. A peer that
+    // accepts and then drops every socket keeps backing off.
+    static bool SessionWasStable(bool identified, int64_t identifiedForMs, int64_t stableMs = kStableMs);
 };
 
 // Application heartbeat and delivery confirmation, shared by every transport. Takaro answers each
