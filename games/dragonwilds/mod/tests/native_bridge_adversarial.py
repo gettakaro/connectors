@@ -292,6 +292,31 @@ def basic(cert, key):
         run.close()
 
 
+def request_before_identify_response(cert, key):
+    # Takaro can send its first testReachability a few ms before the identifyResponse of the same
+    # socket (seen on staging after every fast reconnect). Refusing it made Takaro mark the server
+    # offline for one sweep, so a request on the current socket is served whatever the order.
+    run = Run(cert, key, identify_now=False)
+    try:
+        index = run.peer.connections.get(timeout=5)
+        while True:
+            i, opcode, data = run.peer.frames.get(timeout=5)
+            if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
+                break
+        run.index = index
+        run.request('early', 'testReachability', {})
+        response = run.response('early')
+        assert 'error' not in response and 'payload' in response, response
+        run.request('early-other', 'echo', {'early': True})
+        assert run.response('early-other').get('error') == 'invalid request'
+        run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+        run.request('after', 'echo', {'after': True})
+        assert run.response('after').get('payload') == {'after': True}
+        print('testReachability before identifyResponse is served, other actions wait for identify: pass', flush=True)
+    finally:
+        run.close()
+
+
 def config_semantics(cert, key):
     # No name in the environment: the unique one the connector wrote into the takaro.cfg it created.
     run = Run(cert, key, env_overrides={'TAKARO_SERVER_NAME': ''})
@@ -626,6 +651,7 @@ def main():
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         basic(cert, key)
+        request_before_identify_response(cert, key)
         config_semantics(cert, key)
         config_reload(cert, key)
         overload(cert, key, False)

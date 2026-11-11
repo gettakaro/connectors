@@ -29,7 +29,7 @@ RSDragonwildsServer-Linux-Shipping (UE 5.6.1, Linux dedicated server)
        ├─ hooks PostLogin / OnNetCleanup / PreLogout / Logout / ProcessEvent by vtable slot swap
        ├─ marshals all UObject work onto the engine tick (bounded job queue, TAKARO_TICK_BUDGET_US)
        ├─ native Takaro connector on background threads:
-       │    TLS WebSocket (identify, heartbeat, reconnect), action dispatch, durable event outbox,
+       │    TLS WebSocket (identify, heartbeat, fast reconnect, see mod/docs/API.md), action dispatch, durable event outbox,
        │    online-player reconciliation, timed-ban expiry, server-log tail (secrets redacted)
        └─ optional authenticated diagnostics on 127.0.0.1:18890 (TAKARO_PLUGIN_TOKEN)
 ```

@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 int main(int argc, char** argv) {
     if (argc != 4) return 2;
@@ -20,9 +21,14 @@ int main(int argc, char** argv) {
     NativeTransport::Config config;
     config.url = argv[1];
     config.caFile = argv[2];
+    // fast: failure backoff starts at 100 ms so a late dial (the old 1 s service tick) shows up.
+    if (mode == "fast") config.reconnectBaseMs = 100;
+    std::vector<std::chrono::steady_clock::time_point> openAt, closeAt;
     if (!NativeTransport::Start(config, [&](NativeTransport::Notice n) {
         std::lock_guard<std::mutex> lock(mutex);
         if (std::getenv("TAKARO_TLS_TRACE")) std::cerr << "notice=" << static_cast<int>(n.type) << " seq=" << n.eventSeq << " " << n.text << '\n';
+        if (n.type == NativeTransport::NoticeType::Open) openAt.push_back(std::chrono::steady_clock::now());
+        if (n.type == NativeTransport::NoticeType::Closed) closeAt.push_back(std::chrono::steady_clock::now());
         if (n.type == NativeTransport::NoticeType::Open) {
             ++opens; epoch = n.epoch;
             if (mode == "prune") {
@@ -44,7 +50,19 @@ int main(int argc, char** argv) {
     bool passed = false;
     {
         std::unique_lock<std::mutex> lock(mutex);
-        if (mode == "reject") {
+        if (mode == "fast") {
+            // Peer: socket 1 identifies and stays up 10.5 s, sockets 2-4 close before identify, 5 stays.
+            changed.wait_for(lock, std::chrono::seconds(25), [&] { return opens >= 5; });
+            passed = opens >= 5 && closeAt.size() >= 4;
+            const long limitMs[] = {700, 450, 550, 750}; // fast 100-500; failures 50-100, 100-200, 200-400
+            for (size_t i = 0; passed && i < 4; ++i) {
+                const long ms = static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    openAt[i + 1] - closeAt[i]).count());
+                std::cout << "fast: close " << i + 1 << " -> open " << i + 2 << " in " << ms << " ms (limit "
+                          << limitMs[i] << ")" << std::endl;
+                passed = ms <= limitMs[i];
+            }
+        } else if (mode == "reject") {
             changed.wait_for(lock, std::chrono::seconds(8), [&] { return opens || errors; });
             passed = !opens && errors;
         } else {

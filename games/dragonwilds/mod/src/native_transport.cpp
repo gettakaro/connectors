@@ -1,4 +1,5 @@
 #include "native_transport.h"
+#include "reconnect_policy.h"
 
 #include <libwebsockets.h>
 #include <openssl/x509_vfy.h>
@@ -36,6 +37,10 @@ bool connected = false;
 std::string lastError;
 struct Target { std::string url; bool connect = true; uint64_t generation = 0; };
 Target target; // protected by mu; written by Retarget, applied by the service thread
+ReconnectPolicy policy; // protected by mu
+int64_t NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+}
 bool Notify(NoticeType type, uint64_t atEpoch, uint64_t outboxId = 0, std::string text = {},
             uint64_t writeId = 0, bool pingAfterWrite = false) {
     // The bridge sink is a bounded, nonblocking queue insertion.
@@ -56,12 +61,17 @@ struct Session {
     bool open = false;
     bool timeoutSet = false;
     bool immediatePing = false;
+    bool identifySeen = false;
 };
 Session session;
 lws_sorted_usec_list serviceTimer;
 void ServiceTimer(lws_sorted_usec_list* sul) {
     lws_sul_schedule(context, 0, sul, ServiceTimer, LWS_US_PER_SEC);
 }
+// lws_service() sleeps until the next scheduled timer, so without this one a reconnect would wait
+// for the next 1 s service tick after its delay ran out. It only wakes the loop.
+lws_sorted_usec_list connectTimer;
+void ConnectTimer(lws_sorted_usec_list*) {}
 
 bool Pop(Outbound& out) {
     std::lock_guard<std::mutex> g(mu);
@@ -107,6 +117,14 @@ int Callback(lws* wsi, lws_callback_reasons reason, void* /*user*/, void* in, si
         }
         session.inbound.append(static_cast<const char*>(in), len);
         if (lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0) {
+            // The reconnect policy needs the identify time even when the bridge drains this socket's
+            // Closed notice before its frames. A refused identify is closed at once by the bridge,
+            // so it never reaches the stable window.
+            if (!session.identifySeen && session.inbound.find("\"identifyResponse\"") != std::string::npos) {
+                session.identifySeen = true;
+                std::lock_guard<std::mutex> g(mu);
+                policy.OnIdentified(NowMs());
+            }
             if (!Notify(NoticeType::Frame, session.id, 0, std::move(session.inbound))) return -1;
             session.inbound.clear();
         }
@@ -185,6 +203,22 @@ int Callback(lws* wsi, lws_callback_reasons reason, void* /*user*/, void* in, si
         lws_callback_on_writable(wsi);
         return 0;
     }
+    case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE: {
+        // Name the close in plugin.log: a Takaro-side close otherwise looks like any other drop.
+        std::string why = "Takaro closed the connection";
+        if (in && len >= 2) {
+            const auto* b = static_cast<const unsigned char*>(in);
+            why += " (code " + std::to_string((b[0] << 8) | b[1]);
+            if (len > 2) {
+                std::string reason(reinterpret_cast<const char*>(b) + 2, std::min<size_t>(len - 2, 120));
+                for (char& c : reason) if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f) c = ' ';
+                why += ": " + reason; // the bridge redacts secrets before logging
+            }
+            why += ")";
+        }
+        Notify(NoticeType::Error, session.id, 0, std::move(why));
+        return 0;
+    }
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
         if (session.wsi && wsi != session.wsi) return 0;
         if (in) Notify(NoticeType::Error, session.id, 0, static_cast<const char*>(in));
@@ -259,7 +293,13 @@ void Run() {
         if (target.generation) { cfg.url = target.url; cfg.connect = target.connect; appliedGeneration = target.generation; }
     }
     applyUrl(cfg.url, cfg.connect);
-    unsigned delay = cfg.reconnectBaseMs;
+    {
+        ReconnectPolicy::Params params;
+        params.baseMs = cfg.reconnectBaseMs;
+        params.maxMs = cfg.reconnectMaxMs;
+        std::lock_guard<std::mutex> g(mu);
+        policy = ReconnectPolicy(params, 0);
+    }
     auto nextConnect = Clock::now();
     bool awaiting = false, redialNow = false;
     while (!stopping) {
@@ -270,7 +310,7 @@ void Run() {
         }
         if (retarget) {
             applyUrl(retarget->url, retarget->connect);
-            delay = cfg.reconnectBaseMs;
+            { std::lock_guard<std::mutex> g(mu); policy.Reset(); }
             nextConnect = Clock::now();
             // The old socket's own CLOSED callback resets `session`; only then does the loop dial
             // again, so a late callback of the old socket can never touch the new connection.
@@ -289,18 +329,33 @@ void Run() {
             if (!session.wsi) Notify(NoticeType::Error, 0, 0, "Takaro connection initiation failed");
             awaiting = true;
         }
+        if (connectEnabled && !session.wsi) {
+            // Re-armed every pass: the timer can fire a little before nextConnect, and a missed
+            // dial would otherwise sleep until the next 1 s service tick.
+            const auto left = std::chrono::duration_cast<std::chrono::microseconds>(nextConnect - Clock::now()).count();
+            if (left > 0) lws_sul_schedule(local, 0, &connectTimer, ConnectTimer, static_cast<lws_usec_t>(left) + 1000);
+        }
         lws_service(local, 100);
         if (redialNow && !session.wsi) {
             nextConnect = Clock::now();
-            delay = cfg.reconnectBaseMs;
             awaiting = redialNow = false;
         } else if (awaiting && !session.wsi) {
+            bool established = false;
+            unsigned delay = 0, streak = 0;
+            {
+                std::lock_guard<std::mutex> g(mu);
+                delay = policy.NextDelayMs(NowMs(), &established);
+                streak = policy.Streak();
+            }
             nextConnect = Clock::now() + std::chrono::milliseconds(delay);
-            delay = std::min(cfg.reconnectMaxMs, delay * 2);
             awaiting = false;
+            if (cfg.log)
+                cfg.log(established ? "native: reconnecting to Takaro in " + std::to_string(delay) +
+                                          "ms (established connection lost)"
+                                    : "native: reconnecting to Takaro in " + std::to_string(delay) +
+                                          "ms (failure " + std::to_string(streak) + " in a row)");
         }
         if (session.open) {
-            delay = cfg.reconnectBaseMs;
             const auto now = Clock::now();
             if (!session.timeoutSet &&
                 ((session.pings.size() >= 2 && now - session.lastPing >= std::chrono::seconds(5)) ||
@@ -319,6 +374,7 @@ void Run() {
     }
     { std::lock_guard<std::mutex> g(mu); context = nullptr; connected = false; }
     lws_sul_cancel(&serviceTimer);
+    lws_sul_cancel(&connectTimer);
     lws_context_destroy(local);
     session = Session{};
     transientBytes = 0;

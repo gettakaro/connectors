@@ -62,6 +62,8 @@ class Peer:
         self.stop = threading.Event()
         self.errors = []
         self.sessions = []
+        self.fast_lock = threading.Lock()
+        self.fast_sessions = 0
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
 
@@ -93,6 +95,18 @@ class Peer:
                 if 'sec-websocket-protocol' in fields:
                     reply += b'\r\nSec-WebSocket-Protocol: ' + fields['sec-websocket-protocol'].encode()
                 sock.sendall(reply + b'\r\n\r\n')
+                if self.mode == 'fast':
+                    with self.fast_lock:
+                        self.fast_sessions += 1
+                        number = self.fast_sessions
+                    if number == 1:
+                        frame(sock, 1, b'{"type":"identifyResponse","payload":{}}')
+                        self.stop.wait(10.5)
+                        return
+                    if number <= 4:
+                        return
+                    self.stop.wait(30)
+                    return
                 if self.mode == 'blackhole':
                     self.stop.wait(35)
                     return
@@ -157,6 +171,7 @@ def main():
             ('unknown pong must not acknowledge; reconnect', key, cert, 'localhost', str(cert), 'bad-pong'),
             ('peer stops reading; watchdog reconnects without writability', key, cert, 'localhost', str(cert), 'blackhole'),
             ('fragmented incoming message above 1 MiB', key, cert, 'localhost', str(cert), 'oversize'),
+            ('reconnect timing: fast after a stable identified socket, then jittered failure backoff', key, cert, 'localhost', str(cert), 'fast'),
         ]
         for label, private_key, public_cert, host, ca, mode in cases:
             print(label, flush=True)
