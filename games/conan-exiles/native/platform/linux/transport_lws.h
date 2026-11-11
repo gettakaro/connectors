@@ -6,9 +6,10 @@
 // Heartbeat: a WebSocket ping every 5 s whose payload is the ping number; the matching pong
 // confirms every event written before that ping (core Heartbeat). No inbound frame for 20 s, or two
 // pings unanswered for 5 s, closes the link; the bridge replays the unconfirmed outbox after the
-// next identify. Reconnect backoff doubles from reconnectBaseMs to reconnectMaxMs and resets only
-// after a successful identify, so a server that accepts the socket but rejects identify is not
-// hammered.
+// next identify. Reconnect timing is core ReconnectPolicy: a stable identified session that drops
+// is redialled within about 0.5-1.25 s; failed attempts back off from reconnectBaseMs to
+// reconnectMaxMs with jitter, and only a stable identified session clears that streak, so a server
+// that accepts the socket but rejects identify is not hammered.
 #pragma once
 #include "takaro/transport.h"
 

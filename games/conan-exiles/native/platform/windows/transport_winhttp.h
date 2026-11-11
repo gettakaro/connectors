@@ -9,6 +9,7 @@
 // order with Heartbeat::OnPong()). TLS uses the Windows system store, or only caFile when set (pinned root,
 // hostname and dates checked); an unusable CA file fails closed. There is no insecure fallback.
 #pragma once
+#include "takaro/reconnect.h"
 #include "takaro/transport.h"
 
 #include <atomic>
@@ -62,7 +63,7 @@ private:
     Epoch* cur_ = nullptr;
     bool open_ = false;
     uint64_t epoch_ = 0;
-    unsigned attempts_ = 0;
+    ReconnectPolicy policy_;
     // o_.url and o_.connect change under mu_ (Retarget); RunEpoch copies the URL when it dials.
     uint64_t generation_ = 0, retargets_ = 0;
     FrameQueues queues_;

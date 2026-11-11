@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "takaro/json_util.h"
+#include "takaro/reconnect.h"
 
 #include <libwebsockets.h>
 #include <sys/socket.h>
@@ -41,7 +42,9 @@ struct LwsTransport::Impl {
     std::string lastError;
     uint64_t connects = 0, connectFailures = 0, framesSent = 0, bytesSent = 0, framesReceived = 0;
     int64_t backoffMs = 0;
+    unsigned failureStreak = 0;
     Heartbeat hb;
+    ReconnectPolicy policy;
     // Retarget: written by any thread, applied by the service thread.
     std::string targetUrl;
     bool targetConnect = true;
@@ -324,7 +327,7 @@ void LwsTransport::Impl::Run() {
         context = local;
     }
     lws_sul_schedule(local, 0, &serviceTimer.sul, ServiceTimer, 250 * LWS_US_PER_MS);
-    int64_t delay = cfg.reconnectBaseMs, nextConnect = 0;
+    int64_t nextConnect = 0;
     bool awaiting = false, redialNow = false;
     while (!stopping) {
         int64_t now = SteadyMs();
@@ -343,7 +346,10 @@ void LwsTransport::Impl::Run() {
         }
         if (retarget) {
             applyUrl(url, connect);
-            delay = cfg.reconnectBaseMs;
+            {
+                std::lock_guard<std::mutex> g(mu);
+                policy.Reset();
+            }
             nextConnect = now;
             // The old socket's own CLOSED callback clears `wsi`; only then does the loop dial
             // again, so a late callback can never touch the new connection.
@@ -376,29 +382,37 @@ void LwsTransport::Impl::Run() {
         now = SteadyMs();
         if (redialNow && !wsi) {  // dropped for new settings: dial again at once
             nextConnect = now;
-            delay = cfg.reconnectBaseMs;
-            awaiting = redialNow = false;
-        } else if (awaiting && !wsi) {  // the attempt (or the connection) ended: back off
             {
                 std::lock_guard<std::mutex> g(mu);
-                if (identifiedEpoch && identifiedEpoch == epoch) delay = cfg.reconnectBaseMs;
-                backoffMs = delay;
+                policy.Reset();
             }
-            nextConnect = now + delay;
-            delay = std::min<int64_t>(cfg.reconnectMaxMs, delay * 2);
+            awaiting = redialNow = false;
+        } else if (awaiting && !wsi) {  // the attempt (or the connection) ended: fast retry or back off
+            ReconnectPolicy::Delay d;
+            {
+                std::lock_guard<std::mutex> g(mu);
+                d = policy.OnEnded(now);
+                backoffMs = d.ms;
+                failureStreak = d.streak;
+            }
+            nextConnect = now + d.ms;
             awaiting = false;
+            if (d.fast)
+                NativeLog("native: Takaro reconnect in %lld ms (fast retry after a stable session)", (long long)d.ms);
+            else
+                NativeLog("native: Takaro reconnect in %lld ms (failure streak %u)", (long long)d.ms, d.streak);
         }
         if (open && wsi) {
             bool wantWrite, dead;
             {
                 std::lock_guard<std::mutex> g(mu);
-                if (identifiedEpoch == epoch) delay = cfg.reconnectBaseMs;
                 dead = hb.Dead(now) || hb.Stalled(now);
                 wantWrite = closeEpoch == epoch || queues.TotalFrames() > 0 ||
                             hb.PingDue(now, queues.Frames(FrameKind::Event) == 0);
             }
             if (dead && !timeoutSet) {
                 // Set on the service thread: it closes even when the socket never becomes writable again.
+                NativeLog("native: Takaro link silent (no frame or pong); closing it as dead");
                 Error(epoch, "heartbeat timeout: no frame or pong from Takaro");
                 // Abortive close: the kernel drops what is still unsent instead of retransmitting
                 // it once the route is back. Those frames are replayed on the next connection
@@ -432,6 +446,7 @@ void LwsTransport::Impl::Run() {
 LwsTransport::LwsTransport(LwsConfig cfg) : impl_(new Impl) {
     impl_->cfg = std::move(cfg);
     impl_->hb = Heartbeat(impl_->cfg.heartbeat);
+    impl_->policy = ReconnectPolicy(ReconnectPolicy::FromConfig(impl_->cfg.reconnectBaseMs, impl_->cfg.reconnectMaxMs));
 }
 
 LwsTransport::~LwsTransport() { Stop(); }
@@ -482,6 +497,7 @@ void LwsTransport::Retarget(const std::string& url, bool connect) {
 void LwsTransport::MarkIdentified(uint64_t epoch) {
     std::lock_guard<std::mutex> g(impl_->mu);
     impl_->identifiedEpoch = epoch;
+    if (epoch == impl_->epoch && impl_->connected) impl_->policy.OnIdentified(SteadyMs());
 }
 
 std::string LwsTransport::StatsJson() {
@@ -505,6 +521,7 @@ std::string LwsTransport::StatsJson() {
         .Raw("eventsWritten", std::to_string(i.hb.Written()))
         .Raw("eventsConfirmed", std::to_string(i.hb.Confirmed()))
         .N("backoffMs", (double)i.backoffMs)
+        .N("failureStreak", (double)i.failureStreak)
         .N("retargets", (double)i.retargets)
         .S("lastError", i.lastError)
         .Done();

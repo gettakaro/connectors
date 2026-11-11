@@ -14,6 +14,7 @@
 #include "elfscan.h"
 #include "pins/pins.h"
 #include "takaro/config.h"
+#include "takaro/reconnect.h"
 #include "takaro/config_watch.h"
 #include "takaro/fileio.h"
 #include "takaro/json_util.h"
@@ -1107,6 +1108,97 @@ static void TestServerChatName() {
     EQ(w.ServerChatName(), "");
 }
 
+// Reconnect policy (gettakaro/connectors#858): fast jittered retry after a stable session, jittered
+// streak backoff to a 60 s cap, streak cleared only by a stable identified session.
+static void TestReconnectPolicy() {
+    using namespace takaro;
+    using P = ReconnectPolicy;
+    P::Params d = P::FromConfig(2000, 60000);  // the defaults
+    CHECK(d.fastMinMs == 500 && d.fastJitterMs == 750 && d.baseMs == 2000 && d.maxMs == 60000 && d.stableMs == 10000,
+          "default policy: fast 0.5-1.25 s, base 2 s, cap 60 s, stable after 10 s");
+
+    // First retry after a stable session: within [500, 1250] ms, and actually jittered.
+    {
+        P p(d, 42);
+        int64_t lo = 1 << 30, hi = 0, t = 0;
+        bool allFast = true;
+        for (int i = 0; i < 200; i++) {
+            p.OnIdentified(t);
+            t += 10000;  // exactly stableMs
+            P::Delay r = p.OnEnded(t);
+            allFast = allFast && r.fast && r.streak == 0 && p.Streak() == 0;
+            lo = std::min(lo, r.ms);
+            hi = std::max(hi, r.ms);
+            t += r.ms;
+        }
+        CHECK(allFast, "a stable identified session that drops gets the fast retry");
+        CHECK(lo >= 500 && hi <= 1250, "fast retry within 0.5-1.25 s (max 2 s)");
+        CHECK(hi - lo >= 500, "fast retry is jittered across the window");
+    }
+    // Identified but dropped before stable: a failure step, not a fast retry.
+    {
+        P p(d, 7);
+        p.OnIdentified(0);
+        P::Delay r = p.OnEnded(9999);
+        CHECK(!r.fast && r.streak == 1 && r.ms >= 1000 && r.ms <= 2000, "drop before 10 s is streak step 1 (1-2 s)");
+    }
+    // Consecutive failures: step n in [step/2, step], step = 2 s * 2^(n-1), capped at 60 s; jittered.
+    {
+        P p(d, 99);
+        bool ok = true;
+        for (unsigned n = 1; n <= 12; n++) {
+            P::Delay r = p.OnEnded(0);
+            int64_t step = std::min<int64_t>(60000, 2000LL << (n - 1));
+            ok = ok && !r.fast && r.streak == n && r.ms >= step / 2 && r.ms <= step;
+        }
+        CHECK(ok, "failure streak doubles from 2 s with half-step jitter");
+        int64_t lo = 1 << 30, hi = 0;
+        for (int i = 0; i < 200; i++) {
+            P::Delay r = p.OnEnded(0);
+            lo = std::min(lo, r.ms);
+            hi = std::max(hi, r.ms);
+        }
+        CHECK(hi <= 60000 && lo >= 30000, "backoff capped at 60 s (30-60 s band)");
+        CHECK(hi - lo >= 10000, "capped backoff is still jittered");
+        // A socket that opens but never identifies does not reset the streak.
+        unsigned before = p.Streak();
+        CHECK(p.OnEnded(5).streak == before + 1, "an attempt without identify extends the streak");
+        // Recovery: a stable session clears it.
+        p.OnIdentified(100);
+        P::Delay r = p.OnEnded(100 + 10000);
+        CHECK(r.fast && p.Streak() == 0, "a stable session resets the streak");
+        r = p.OnEnded(200000);
+        CHECK(r.streak == 1 && r.ms <= 2000, "after the reset the next failure starts again at step 1");
+    }
+    // Retarget clears the streak and a pending identify.
+    {
+        P p(d, 1);
+        p.OnEnded(0);
+        p.OnEnded(0);
+        p.OnIdentified(0);
+        p.Reset();
+        P::Delay r = p.OnEnded(20000);
+        CHECK(p.Streak() == 1 && !r.fast, "Reset clears streak and identify");
+    }
+    // Operator overrides keep working: TAKARO_RECONNECT_BASE_MS / _MAX_MS drive the streak, and a small
+    // base also bounds the fast window.
+    {
+        P::Params o = P::FromConfig(30000, 120000);
+        P p(o, 3);
+        p.OnIdentified(0);
+        P::Delay r = p.OnEnded(60000);
+        CHECK(r.fast && r.ms <= 1250, "an operator's old 30 s base keeps the fast first retry");
+        r = p.OnEnded(60000);
+        CHECK(r.streak == 1 && r.ms >= 15000 && r.ms <= 30000, "an operator's base drives the streak");
+        for (int i = 0; i < 10; i++) r = p.OnEnded(60000);
+        CHECK(r.ms <= 120000 && r.ms >= 60000, "an operator's cap holds");
+        P::Params t = P::FromConfig(200, 4000);
+        CHECK(t.fastMinMs == 200 && t.fastJitterMs == 200, "a test base below 500 ms shrinks the fast window");
+        P::Params bad = P::FromConfig(5000, 1000);
+        CHECK(bad.maxMs == 5000, "a cap below the base is raised to the base");
+    }
+}
+
 int main() {
     TestProtocol();
     TestProtocolV1();
@@ -1116,6 +1208,7 @@ int main() {
     TestConfigWatcher();
     TestOutbox();
     TestQueuesAndHeartbeat();
+    TestReconnectPolicy();
     TestPins();
     TestMaps();
     TestAdapter();

@@ -112,7 +112,7 @@ Checked on server build 25792439 (Linux and Windows), 2026-10-09. ✅ works, ⚠
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects after server restarts and network drops; events from an outage are queued on disk and delivered once. |
+| Connection | ✅ | Reconnects within about a second after an established connection drops (so Takaro does not flag the server offline), backs off up to 60 s while Takaro stays unreachable, and closes a silently dead link itself; events from an outage are queued on disk and delivered once. |
 | Player list | ✅ | Steam64 id (also for Funcom-account logins), name, IP and ping. |
 | Player location | ✅ | |
 | Teleport | ✅ | Module teleports included. |
