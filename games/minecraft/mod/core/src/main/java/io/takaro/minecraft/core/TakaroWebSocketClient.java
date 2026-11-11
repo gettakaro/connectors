@@ -358,13 +358,17 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     private void sendGameEvent(String eventType, JsonObject data) {
         // v1 is always on offer: keep every event until Takaro acks it, and send it once identified.
-        JsonObject payload = outbox.add(eventType, data);
-        if (isV1() && isOpen()) {
-            sendEventPayload(payload);
-            return;
-        }
-        if (protocol == 0 && isOpen() && identified) {
-            sendPlainEvent(payload);
+        // Events come from several threads. Takaro drops a seq at or below one it has already
+        // seen, so numbering and sending share one lock and leave in seq order.
+        synchronized (outbox) {
+            JsonObject payload = outbox.add(eventType, data);
+            if (isV1() && isOpen()) {
+                sendEventPayload(payload);
+                return;
+            }
+            if (protocol == 0 && isOpen() && identified) {
+                sendPlainEvent(payload);
+            }
         }
     }
 
@@ -518,23 +522,26 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
 
         currentReconnectDelay = config.getReconnectDelay();
-        protocol = optInt(payload, "protocolVersion", 0);
-        identified = true;
-
         JsonObject server = optObject(payload, "server");
         String serverId = server != null && hasValue(server, "id") ? optString(server, "id", "")
                 : optString(payload, "gameServerId", null);
-        adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
-                + ", protocol v" + protocol);
-        List<JsonObject> backlog = outbox.unacked();
-        if (!backlog.isEmpty()) {
-            adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
-        }
-        for (JsonObject event : backlog) {
-            if (isV1()) {
-                sendEventPayload(event);
-            } else {
-                sendPlainEvent(event);
+        // Switching protocol and resending the backlog under the outbox lock keeps a new event from
+        // leaving ahead of older unacked ones.
+        synchronized (outbox) {
+            protocol = optInt(payload, "protocolVersion", 0);
+            identified = true;
+            adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
+                    + ", protocol v" + protocol);
+            List<JsonObject> backlog = outbox.unacked();
+            if (!backlog.isEmpty()) {
+                adapter.logInfo("Resending " + backlog.size() + " events Takaro has not acknowledged");
+            }
+            for (JsonObject event : backlog) {
+                if (isV1()) {
+                    sendEventPayload(event);
+                } else {
+                    sendPlainEvent(event);
+                }
             }
         }
     }

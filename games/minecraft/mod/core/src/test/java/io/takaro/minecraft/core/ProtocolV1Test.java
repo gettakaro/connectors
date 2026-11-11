@@ -262,6 +262,94 @@ class ProtocolV1Test {
     }
 
     @Test
+    void eventsFromManyThreadsLeaveInSeqOrder() throws Exception {
+        // Takaro drops any seq at or below one it has seen, so an event that is overtaken is lost.
+        TakaroConfig config = new TakaroConfig();
+        config.setIdentityToken("id");
+        config.setRegistrationToken("reg");
+        TakaroWebSocketClient client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter,
+                config, "config", new EventOutbox("stream-t"), null) {
+            @Override
+            public void send(String text) {
+                Thread.yield();
+                sent.add(text);
+            }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        int threads = 8;
+        int each = 400;
+        List<Thread> workers = new ArrayList<>();
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        for (int t = 0; t < threads; t++) {
+            Thread w = new Thread(() -> {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    return;
+                }
+                for (int i = 0; i < each; i++) client.emitLog("line " + i);
+            });
+            workers.add(w);
+            w.start();
+        }
+        go.countDown();
+        for (Thread w : workers) w.join();
+        List<JsonObject> events = sentOfType("gameEvent");
+        assertEquals(threads * each, events.size());
+        long last = 0;
+        for (JsonObject e : events) {
+            long seq = e.getAsJsonObject("payload").get("seq").getAsLong();
+            assertTrue(seq > last, "seq " + seq + " sent after " + last);
+            last = seq;
+        }
+    }
+
+    @Test
+    void anEventRaisedDuringIdentifyWaitsForTheBacklog() throws Exception {
+        TakaroConfig config = new TakaroConfig();
+        config.setIdentityToken("id");
+        config.setRegistrationToken("reg");
+        TakaroWebSocketClient[] holder = new TakaroWebSocketClient[1];
+        TakaroConnectorTest.TestAdapter racing = new TakaroConnectorTest.TestAdapter() {
+            @Override
+            public void logInfo(String msg) {
+                super.logInfo(msg);
+                if (!msg.startsWith("Identified successfully")) return;
+                // Another thread raises an event just as the protocol switches to v1.
+                Thread other = new Thread(() -> holder[0].emitLog("raced"));
+                other.start();
+                try {
+                    other.join(300);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        TakaroWebSocketClient client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), racing,
+                config, "config", new EventOutbox("stream-r"), null) {
+            @Override
+            public void send(String text) { sent.add(text); }
+
+            @Override
+            public boolean isOpen() { return open; }
+        };
+        holder[0] = client;
+        client.onOpen(null);
+        client.emitLog("held 1");
+        client.emitLog("held 2");
+        client.onMessage(identifyResponse(1));
+        long deadline = System.currentTimeMillis() + 5000;
+        while (sentOfType("gameEvent").size() < 3 && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        List<Long> seqs = sentOfType("gameEvent").stream()
+                .map(e -> e.getAsJsonObject("payload").get("seq").getAsLong()).collect(Collectors.toList());
+        assertEquals(List.of(1L, 2L, 3L), seqs);
+    }
+
+    @Test
     void whenTakaroPicksV0EventsStayPlain() throws Exception {
         EventOutbox outbox = new EventOutbox("stream-b");
         TakaroWebSocketClient client = client(true, outbox);
