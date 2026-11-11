@@ -28,9 +28,9 @@ public final class PropertiesConfigFormat implements ConfigFormat {
         config.setIdentityToken(props.getProperty(IDENTITY_KEY, ""));
         config.setRegistrationToken(props.getProperty(REGISTRATION_KEY, ""));
         config.setReconnectEnabled(Boolean.parseBoolean(props.getProperty("takaro.reconnect.enabled", "true").trim()));
-        config.setReconnectDelay(Long.parseLong(props.getProperty("takaro.reconnect.delay", "5000").trim()));
-        config.setMaxReconnectDelay(Long.parseLong(props.getProperty("takaro.reconnect.max_delay", "300000").trim()));
-        config.setBackoffMultiplier(Double.parseDouble(props.getProperty("takaro.reconnect.backoff_multiplier", "1.5").trim()));
+        config.setReconnectDelay(Long.parseLong(props.getProperty("takaro.reconnect.delay", "1000").trim()));
+        config.setMaxReconnectDelay(Long.parseLong(props.getProperty("takaro.reconnect.max_delay", "60000").trim()));
+        config.setBackoffMultiplier(Double.parseDouble(props.getProperty("takaro.reconnect.backoff_multiplier", "2.0").trim()));
         config.setDebugEnabled(Boolean.parseBoolean(props.getProperty("takaro.debug", "false").trim()));
         config.setMapEnabled(Boolean.parseBoolean(props.getProperty("takaro.map", "false").trim()));
         config.setServerChatName(props.getProperty("takaro.server_chat_name", ""));
@@ -47,9 +47,9 @@ public final class PropertiesConfigFormat implements ConfigFormat {
                 + "# Paste the registration token from Takaro here.\n"
                 + REGISTRATION_KEY + "=\n"
                 + "takaro.reconnect.enabled=true\n"
-                + "takaro.reconnect.delay=5000\n"
-                + "takaro.reconnect.max_delay=300000\n"
-                + "takaro.reconnect.backoff_multiplier=1.5\n"
+                + "takaro.reconnect.delay=1000\n"
+                + "takaro.reconnect.max_delay=60000\n"
+                + "takaro.reconnect.backoff_multiplier=2.0\n"
                 + "takaro.debug=false\n"
                 + "# World map in Takaro. Needs a Takaro that speaks protocol v1.\n"
                 + "takaro.map=false\n"

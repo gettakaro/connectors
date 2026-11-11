@@ -21,7 +21,21 @@ final class ReconnectPolicy {
     /** Connect plus identify. */
     static final long HANDSHAKE_TIMEOUT_MILLIS = 20_000;
 
+    private final long stableMillis;
     private int failures;
+
+    ReconnectPolicy() {
+        this(STABLE_MILLIS);
+    }
+
+    /** Tests shorten how long a session must stay up to count as stable. */
+    ReconnectPolicy(long stableMillis) {
+        this.stableMillis = stableMillis;
+    }
+
+    long stableMillis() {
+        return stableMillis;
+    }
 
     /**
      * The wait before the next attempt after {@code failures} attempts in a row that did not reach
@@ -43,7 +57,7 @@ final class ReconnectPolicy {
      */
     synchronized long onConnectionEnded(long identifiedForMillis, long baseMillis, double multiplier,
                                         long maxMillis, double random01) {
-        if (identifiedForMillis >= STABLE_MILLIS) failures = 0;
+        if (identifiedForMillis >= stableMillis) failures = 0;
         long delay = delayMillis(failures, baseMillis, multiplier, maxMillis, random01);
         failures++;
         return delay;

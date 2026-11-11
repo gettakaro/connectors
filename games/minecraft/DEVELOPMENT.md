@@ -211,6 +211,19 @@ the Paper module):
   A config change shuts the old client down (its timer, close callback and late answers are
   ignored) before the new one starts, under the connector's lock that `shutdown()` also takes.
   Closing waits at most 2 s; `closeBlocking()` hangs on a client between reconnect attempts.
+- **Reconnect** (`core/ReconnectPolicy.java`, gettakaro/connectors#858). A connection that was
+  identified and stayed up for 10 s resets the failure streak; when it drops, the next attempt
+  starts 0.2-0.7 s later, so it is identified again within about 2 s. Every attempt that does not
+  reach a stable connection (refused, closed early, identify rejected, handshake past 20 s) adds to
+  the streak: `reconnect.delay` times `reconnect.backoff_multiplier` per failure (1, 2, 4, 8 s ... by
+  default), each wait randomly between half and all of its step, never past 60 s or a lower
+  `reconnect.max_delay`. Older files that still say 5000/300000/1.5 keep working: the fast retry
+  ignores them and their backoff starts at 5 s, still capped at 60 s. On an identified socket the
+  client sends `{"type":"ping"}` every 15 s; no inbound frame for 45 s drops the socket as dead (a
+  blackholed path never sends a reset) and follows the fast retry. A connect plus identify that
+  takes more than 20 s is abandoned and retried. Unacked v1 events are resent after every
+  identify. Log lines: `Reconnecting in N ms (fast retry | failure streak N)`,
+  `... treating the connection as dead and reconnecting`, `... abandoning the attempt`.
 - No `registration_token` (or no identity): no connection, a banner names the file. Identify
   rejected, or a close with 1008/4001/4003: a banner names the file; saving a corrected token
   reconnects. HTTP 409 (Takaro names a new server after its identity, and names are unique per
@@ -236,9 +249,9 @@ takaro:
     registration_token: "your-registration-token"
   reconnect:
     enabled: true
-    delay: 5000
-    max_delay: 300000
-    backoff_multiplier: 1.5
+    delay: 1000
+    max_delay: 60000
+    backoff_multiplier: 2.0
   debug: false
 ```
 

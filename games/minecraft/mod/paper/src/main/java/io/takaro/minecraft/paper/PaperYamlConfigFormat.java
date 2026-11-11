@@ -25,9 +25,9 @@ final class PaperYamlConfigFormat implements ConfigFormat {
         config.setIdentityToken(yaml.getString("takaro.authentication.identity_token", ""));
         config.setRegistrationToken(yaml.getString("takaro.authentication.registration_token", ""));
         config.setReconnectEnabled(yaml.getBoolean("takaro.reconnect.enabled", true));
-        config.setReconnectDelay(yaml.getLong("takaro.reconnect.delay", 5000));
-        config.setMaxReconnectDelay(yaml.getLong("takaro.reconnect.max_delay", 300000));
-        config.setBackoffMultiplier(yaml.getDouble("takaro.reconnect.backoff_multiplier", 1.5));
+        config.setReconnectDelay(yaml.getLong("takaro.reconnect.delay", 1000));
+        config.setMaxReconnectDelay(yaml.getLong("takaro.reconnect.max_delay", 60000));
+        config.setBackoffMultiplier(yaml.getDouble("takaro.reconnect.backoff_multiplier", 2.0));
         config.setDebugEnabled(yaml.getBoolean("takaro.debug", false));
         config.setMapEnabled(yaml.getBoolean("takaro.map", false));
         config.setServerChatName(yaml.getString("takaro.server_chat_name", ""));
