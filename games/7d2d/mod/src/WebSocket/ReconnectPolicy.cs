@@ -16,10 +16,11 @@ namespace Takaro.WebSocket
     /// </summary>
     public static class ReconnectPolicy
     {
-        // Kept under a second: the TLS handshake and the identify round trip
-        // add about another second before Takaro sees the server again.
-        public const double FastRetryMinSeconds = 0.25;
-        public const double FastRetryJitterSeconds = 0.5;
+        // Kept to half a second: the TLS handshake and the identify round trip
+        // add one to one and a half seconds before Takaro sees the server again,
+        // and the whole gap has to stay under two.
+        public const double FastRetryMinSeconds = 0.1;
+        public const double FastRetryJitterSeconds = 0.4;
         public const int MaxSeconds = 60;
 
         /// <summary>
