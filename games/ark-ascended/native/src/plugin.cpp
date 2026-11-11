@@ -23,6 +23,7 @@
 #include <sstream>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <thread>
 #include <vector>
 
@@ -206,11 +207,98 @@ tj::Value PositionJson(double x, double y, double z) {
     return p;
 }
 
+// Steam ids. The game knows players only by their EOS id, which is different in every EOS product, so it can never
+// match a player across games. EOS keeps the Steam account a Steam player logged in with; the server asks for it at
+// login and holds player-connected back for at most kSteamWait, so the first event already carries the Steam id.
+namespace steamlink {
+using EosPuid = void*;
+using EosConnect = void*;
+struct QueryOptions { int32_t ApiVersion; EosPuid LocalUserId; int32_t AccountIdTypeDeprecated; const EosPuid* ProductUserIds; uint32_t ProductUserIdCount; };
+struct MappingOptions { int32_t ApiVersion; EosPuid LocalUserId; int32_t AccountIdType; EosPuid TargetProductUserId; };
+struct QueryInfo { int32_t ResultCode; void* ClientData; EosPuid LocalUserId; };
+using QueryCallback = void(__cdecl*)(const QueryInfo*);
+using FromStringFn = EosPuid(__cdecl*)(const char*);
+using QueryFn = void(__cdecl*)(EosConnect, const QueryOptions*, void*, QueryCallback);
+using MappingFn = int32_t(__cdecl*)(EosConnect, const MappingOptions*, char*, int32_t*);
+constexpr int32_t kSteam = 1;  // EOS_EAT_STEAM
+constexpr auto kSteamWait = std::chrono::seconds(5);
+
+struct Pending { std::string eos; std::chrono::steady_clock::time_point deadline; bool asked = false, done = false; };
+std::unordered_map<std::string, std::string> g_ids;  // EOS id -> SteamID64
+std::vector<Pending> g_pending;
+std::atomic<void*> g_subsystem{nullptr};
+FromStringFn g_fromString = nullptr;
+QueryFn g_query = nullptr;
+MappingFn g_mapping = nullptr;
+bool g_loaded = false, g_warned = false;
+
+bool Load() {
+    if (g_loaded) return g_query != nullptr;
+    g_loaded = true;
+    HMODULE sdk = GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll");
+    if (sdk == nullptr) { LogLine("steam: EOS SDK not loaded, players carry the EOS id only"); return false; }
+    g_fromString = reinterpret_cast<FromStringFn>(GetProcAddress(sdk, "EOS_ProductUserId_FromString"));
+    g_query = reinterpret_cast<QueryFn>(GetProcAddress(sdk, "EOS_Connect_QueryProductUserIdMappings"));
+    g_mapping = reinterpret_cast<MappingFn>(GetProcAddress(sdk, "EOS_Connect_GetProductUserIdMapping"));
+    if (g_fromString == nullptr || g_query == nullptr || g_mapping == nullptr) {
+        g_query = nullptr;
+        LogLine("steam: EOS Connect functions missing, players carry the EOS id only");
+        return false;
+    }
+    return true;
+}
+
+// The server's EOS Connect handle, read from the game's own EOS subsystem once it has ticked.
+EosConnect Connect() {
+    void* subsystem = g_subsystem.load();
+    if (subsystem == nullptr) return nullptr;
+    void* identity = *GetNativePointerField<void**>(subsystem, "FOnlineSubsystemEOS.IdentityImpl");  // TSharedPtr: object first
+    if (identity == nullptr) return nullptr;
+    return *GetNativePointerField<EosConnect*>(identity, "FOnlineIdentityInterfaceEOS.EOSConnect");
+}
+
+bool IsSteamId64(const std::string& id) {
+    return id.size() == 17 && id.rfind("7656119", 0) == 0 && id.find_first_not_of("0123456789") == std::string::npos;
+}
+
+void __cdecl OnQueried(const QueryInfo* info) {
+    std::unique_ptr<std::string> eos(static_cast<std::string*>(info->ClientData));
+    for (auto& p : g_pending) if (p.eos == *eos) p.done = true;
+    if (info->ResultCode != 0) { LogLine("steam: lookup failed for " + *eos + " (EOS result " + std::to_string(info->ResultCode) + ")"); return; }
+    EosConnect connect = Connect();
+    if (connect == nullptr) return;
+    MappingOptions options{1, nullptr, kSteam, g_fromString(eos->c_str())};
+    char buffer[129] = {};
+    int32_t length = sizeof(buffer);
+    const int32_t result = g_mapping(connect, &options, buffer, &length);
+    const std::string id = result == 0 ? std::string(buffer) : std::string();
+    if (IsSteamId64(id)) {
+        g_ids[*eos] = id;
+        LogLine("steam: " + *eos + " is Steam " + id);
+    } else {
+        LogLine("steam: no Steam account for " + *eos + " (EOS result " + std::to_string(result) + ")");
+    }
+}
+
+void Ask(Pending& p) {
+    EosConnect connect = Connect();
+    if (connect == nullptr) return;
+    EosPuid id = g_fromString(p.eos.c_str());
+    QueryOptions options{2, nullptr, 0, &id, 1};  // a game server queries without a local user
+    p.asked = true;
+    g_query(connect, &options, new std::string(p.eos), OnQueried);
+}
+}  // namespace steamlink
+
 tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     tj::Value p = tj::Value::object();
     p.set("gameId", tj::str(eos));
     p.set("name", tj::str(r.name.empty() ? eos : r.name));
     p.set("epicOnlineServicesId", tj::str(eos));
+    if (const auto steam = steamlink::g_ids.find(eos); steam != steamlink::g_ids.end()) {
+        p.set("steamId", tj::str(steam->second));
+        p.set("platformId", tj::str("steam:" + steam->second));
+    }
     if (!r.ip.empty()) p.set("ip", tj::str(r.ip));
     if (r.ping >= 0) p.set("ping", tj::num(r.ping));
     if (r.survivor) p.set("character", takaro::SurvivorJson(*r.survivor));
@@ -725,6 +813,7 @@ void OnTick(float) {
         AsaApi::GetApiUtils().GetCheatManager()->DoExit();
         return;
     }
+    if (!steamlink::g_pending.empty()) FlushConnects();
     SweepBans();
     SweepSurvivors();
     const auto stop = std::chrono::steady_clock::now() + kTickBudget;
@@ -751,36 +840,28 @@ bool OnChat(AShooterPlayerController* pc, FString* message, int mode, int, bool 
     return false;
 }
 
-// Identity probe: what the server knows about a player's Steam account.
-void ProbeSteamId(AShooterGameMode* mode, AShooterPlayerController* pc, const std::string& eos) {
-    if (mode == nullptr || pc == nullptr) return;
-    const int pid = static_cast<int>(pc->LinkedPlayerIDField());
-    const unsigned long long sid = mode->GetSteamIDForPlayerID(pid);
-    FString sidStr;
-    mode->GetSteamIDStringForPlayerID(&sidStr, pid);
-    std::string line = "probe steam eos=" + eos + " pid=" + std::to_string(pid) + " GetSteamIDForPlayerID=" + std::to_string(sid) +
-                       " GetSteamIDStringForPlayerID=" + Utf8(sidStr) + " SteamIds.size=" + std::to_string(mode->SteamIdsField().Num());
-    int shown = 0;
-    for (const auto& kv : mode->SteamIdsField()) {
-        if (shown++ >= 8) break;
-        line += " [" + std::to_string(kv.Key) + "->" + std::to_string(kv.Value) + "]";
+// Sends the held-back player-connected once the Steam lookup answered or timed out; `force` sends it now (logout).
+void FlushConnects(const std::string& only = std::string()) {
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = steamlink::g_pending.begin(); it != steamlink::g_pending.end();) {
+        const bool forced = !only.empty() && it->eos == only;
+        if (!forced && !it->done && now < it->deadline) {
+            if (!it->asked) steamlink::Ask(*it);
+            ++it;
+            continue;
+        }
+        if (!it->done) LogLine("steam: no answer for " + it->eos + ", connecting without a Steam id");
+        if (const auto r = g_players.find(it->eos); r != g_players.end() && r->second.online)
+            g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(it->eos, r->second)}}));
+        it = steamlink::g_pending.erase(it);
     }
-    LogLine(line);
 }
 
-DECLARE_HOOK(AShooterGameMode_PreLogin, void, AShooterGameMode*, const FString&, const FString&, const FUniqueNetIdRepl*, FString&);
-void Hook_PreLogin(AShooterGameMode* mode, const FString& options, const FString& address, const FUniqueNetIdRepl* id, FString& error)
+DECLARE_HOOK(FOnlineSubsystemEOS_Tick, bool, void*, float);
+bool Hook_EosTick(void* subsystem, float delta)
 {
-    std::string o = Utf8(options);
-    for (const char* key : {"Password=", "password="}) {
-        for (size_t at = o.find(key); at != std::string::npos; at = o.find(key, at + 1)) {
-            const size_t start = at + strlen(key);
-            const size_t end = o.find('?', start);
-            o.replace(start, (end == std::string::npos ? o.size() : end) - start, "<x>");
-        }
-    }
-    LogLine("probe prelogin options=" + o);
-    AShooterGameMode_PreLogin_original(mode, options, address, id, error);
+    steamlink::g_subsystem = subsystem;
+    return FOnlineSubsystemEOS_Tick_original(subsystem, delta);
 }
 
 DECLARE_HOOK(AShooterGameMode_HandleNewPlayer_Implementation, bool, AShooterGameMode*, AShooterPlayerController*, UPrimalPlayerData*, AShooterCharacter*, bool);
@@ -790,14 +871,17 @@ bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, 
     if (g_client && pc != nullptr) {
         const std::string eos = EosId(pc);
         LogLine("login eos=" + eos + " fromLogin=" + std::to_string(fromLogin));
-        ProbeSteamId(mode, pc, eos);
         // A banned player reaches this hook before the game turns them away; they never really joined.
         if (!eos.empty() && !IsBanned(eos)) {
             Roster& r = Refresh(eos, pc);
             ReadSurvivor(eos, pc, r);
             if (!r.online) {
                 r.online = true;
-                g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(eos, r)}}));
+                if (steamlink::g_ids.count(eos) != 0 || !steamlink::Load()) {
+                    g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(eos, r)}}));
+                } else {
+                    steamlink::g_pending.push_back({eos, std::chrono::steady_clock::now() + steamlink::kSteamWait});
+                }
             }
         }
     }
@@ -888,6 +972,7 @@ void Hook_Logout(AShooterGameMode* mode, AController* controller)
         auto* pc = static_cast<AShooterPlayerController*>(controller);
         const std::string eos = EosId(pc);
         if (!eos.empty()) {
+            FlushConnects(eos);
             Roster& r = Refresh(eos, pc);
             if (r.online) {
                 r.online = false;
@@ -1046,7 +1131,7 @@ void TailLog(fs::path file) {
     }
 }
 
-constexpr char kHookPreLogin[] = "AShooterGameMode.PreLogin(FString&,FString&,FUniqueNetIdRepl&,FString&)";
+constexpr char kHookEosTick[] = "FOnlineSubsystemEOS.Tick(float)";
 constexpr char kHookNewPlayer[] = "AShooterGameMode.HandleNewPlayer_Implementation(AShooterPlayerController*,UPrimalPlayerData*,AShooterCharacter*,bool)";
 constexpr char kHookLogout[] = "AShooterGameMode.Logout(AController*)";
 constexpr char kHookPrintMessage[] = "UShooterCheatManager.PrintMessageOut(FString&)";
@@ -1095,7 +1180,7 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     g_client->SetLocalAction(LocalAction);
 
     auto& hooks = AsaApi::GetHooks();
-    hooks.SetHook(kHookPreLogin, Hook_PreLogin, &AShooterGameMode_PreLogin_original);
+    hooks.SetHook(kHookEosTick, Hook_EosTick, &FOnlineSubsystemEOS_Tick_original);
     hooks.SetHook(kHookNewPlayer, Hook_HandleNewPlayer, &AShooterGameMode_HandleNewPlayer_Implementation_original);
     hooks.SetHook(kHookLogout, Hook_Logout, &AShooterGameMode_Logout_original);
     hooks.SetHook(kHookPrintMessage, Hook_PrintMessageOut, &UShooterCheatManager_PrintMessageOut_original);
@@ -1115,7 +1200,7 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     commands.RemoveOnTickCallback(kCallbackId);
     commands.RemoveOnChatMessageCallback(kCallbackId);
     auto& hooks = AsaApi::GetHooks();
-    hooks.DisableHook(kHookPreLogin, Hook_PreLogin);
+    hooks.DisableHook(kHookEosTick, Hook_EosTick);
     hooks.DisableHook(kHookNewPlayer, Hook_HandleNewPlayer);
     hooks.DisableHook(kHookLogout, Hook_Logout);
     hooks.DisableHook(kHookPrintMessage, Hook_PrintMessageOut);
