@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.10.0...7d2d-v0.10.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **7d2d:** leave the per-game EOS id out for Steam and Xbox players ([#902](https://github.com/gettakaro/connectors/issues/902)) ([8d61713](https://github.com/gettakaro/connectors/commit/8d61713aed9029ac99f477f16aa6cf5161a8d318))
+
 ## [0.10.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.9.0...7d2d-v0.10.0) (2026-11-12)
 
 
