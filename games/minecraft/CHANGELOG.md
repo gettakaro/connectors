@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.7.0...minecraft-v0.8.0) (2026-11-12)
+
+
+### Features
+
+* **minecraft:** reconnect within about 2 s after an established connection drops ([#886](https://github.com/gettakaro/connectors/issues/886)) ([847f539](https://github.com/gettakaro/connectors/commit/847f53900d891b3e70fb9c8f921e526c5b400593))
+* **minecraft:** serve modded item icons from mod jars ([#846](https://github.com/gettakaro/connectors/issues/846)) ([15387ac](https://github.com/gettakaro/connectors/commit/15387ac4b0ef3b07155c2639a21c81a708d66896))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.6.0...minecraft-v0.7.0) (2026-10-30)
 
 
