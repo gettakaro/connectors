@@ -231,7 +231,9 @@ using CountFn = uint32_t(__cdecl*)(EosConnect, const CountOptions*);
 constexpr int32_t kSteam = 1;  // EOS_EAT_STEAM
 constexpr auto kSteamWait = std::chrono::seconds(5);
 
-struct Pending { std::string eos; std::chrono::steady_clock::time_point deadline; bool asked = false, done = false; };
+// announce: send player-connected when the lookup ends. Players found online when the plugin loads were never
+// announced by this instance and are only looked up.
+struct Pending { std::string eos; std::chrono::steady_clock::time_point deadline; bool announce = true, asked = false, done = false; };
 std::unordered_map<std::string, std::string> g_ids;  // EOS id -> SteamID64
 std::vector<Pending> g_pending;
 FromStringFn g_fromString = nullptr;
@@ -352,6 +354,10 @@ void __cdecl OnQueried(const QueryInfo* info) {
     }
 }
 
+bool IsPending(const std::string& eos) {
+    return std::any_of(g_pending.begin(), g_pending.end(), [&](const Pending& p) { return p.eos == eos; });
+}
+
 void Ask(Pending& p) {
     EosConnect connect = Connect();
     if (connect == nullptr) return;
@@ -363,6 +369,7 @@ void Ask(Pending& p) {
 }  // namespace steamlink
 
 void FlushConnects(const std::string& only = std::string());
+void AdoptOnlinePlayers();
 
 tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     tj::Value p = tj::Value::object();
@@ -370,10 +377,11 @@ tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     p.set("name", tj::str(r.name.empty() ? eos : r.name));
     // An EOS id is issued per EOS product and Takaro keeps one per player, so for a Steam player it would fight the
     // EOS id of every other EOS game. The Steam id names the account everywhere; the EOS id stays the gameId.
+    // While the lookup runs the player carries no platform id: an EOS id sent now would stick to the Steam player.
     if (const auto steam = steamlink::g_ids.find(eos); steam != steamlink::g_ids.end()) {
         p.set("steamId", tj::str(steam->second));
         p.set("platformId", tj::str("steam:" + steam->second));
-    } else {
+    } else if (!steamlink::IsPending(eos)) {
         p.set("epicOnlineServicesId", tj::str(eos));
     }
     if (!r.ip.empty()) p.set("ip", tj::str(r.ip));
@@ -457,7 +465,10 @@ takaro::Outcome GetPlayers() {
         if (pc == nullptr) continue;
         const std::string eos = EosId(pc);
         if (eos.empty()) continue;
-        out.push(PlayerJson(eos, Refresh(eos, pc)));
+        Roster& r = Refresh(eos, pc);
+        // Takaro creates the player from this row if it does not know the gameId yet, so wait for the Steam id.
+        if (steamlink::IsPending(eos)) continue;
+        out.push(PlayerJson(eos, r));
     }
     return takaro::Outcome::Ok(std::move(out));
 }
@@ -882,6 +893,7 @@ void OnTick(float) {
     TickCost cost;
     if (!g_gameReady.load() && AsaApi::GetApiUtils().GetStatus() == AsaApi::ServerStatus::Ready) {
         OnWorldReady();
+        AdoptOnlinePlayers();
         g_gameReady = true;
         LogLine("game ready");
         // Takaro reads the catalogues only in the first seconds after a server registers, so connecting while the
@@ -922,6 +934,23 @@ bool OnChat(AShooterPlayerController* pc, FString* message, int mode, int, bool 
     return false;
 }
 
+// A plugin loaded into a running server finds players already online. Look up their Steam ids like at login, or the
+// first getPlayers would send them with the EOS id.
+void AdoptOnlinePlayers() {
+    for (auto& weak : AsaApi::GetApiUtils().GetWorld()->PlayerControllerListField()) {
+        auto* pc = static_cast<AShooterPlayerController*>(weak.Get());
+        if (pc == nullptr) continue;
+        const std::string eos = EosId(pc);
+        if (eos.empty() || IsBanned(eos)) continue;
+        Roster& r = Refresh(eos, pc);
+        ReadSurvivor(eos, pc, r);
+        r.online = true;
+        LogLine("adopted online player eos=" + eos);
+        if (steamlink::g_ids.count(eos) == 0 && !steamlink::IsPending(eos) && steamlink::Load())
+            steamlink::g_pending.push_back({eos, std::chrono::steady_clock::now() + steamlink::kSteamWait, false});
+    }
+}
+
 // Sends the held-back player-connected once the Steam lookup answered or timed out; `force` sends it now (logout).
 void FlushConnects(const std::string& only) {
     const auto now = std::chrono::steady_clock::now();
@@ -933,7 +962,7 @@ void FlushConnects(const std::string& only) {
             continue;
         }
         if (!it->done) LogLine("steam: no answer for " + it->eos + ", connecting without a Steam id");
-        if (const auto r = g_players.find(it->eos); r != g_players.end() && r->second.online)
+        if (const auto r = g_players.find(it->eos); it->announce && r != g_players.end() && r->second.online)
             g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(it->eos, r->second)}}));
         it = steamlink::g_pending.erase(it);
     }
