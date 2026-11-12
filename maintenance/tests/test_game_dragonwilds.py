@@ -24,7 +24,8 @@ from takaro_maint.exit_codes import ConflictError
 from takaro_maint.games import adapter_for
 
 GAME = "dragonwilds"
-TARGET = "linux-26419371"
+TARGET = "linux-26574459"
+FORMER = "linux-26419371"
 LAST = "linux-26161880"
 PRIOR = "linux-26087591"
 RECENT = "linux-25991736"
@@ -34,7 +35,8 @@ PREVIOUS = "linux-25501739"
 OLDEST = "linux-25465077"
 APP = 4019830
 DEPOT = "3501791"
-MANIFEST = "6050969373678868724"
+MANIFEST = "2859782711558521341"
+FORMER_MANIFEST = "6050969373678868724"
 LAST_MANIFEST = "1991230221118269239"
 PRIOR_MANIFEST = "113722607402346931"
 RECENT_MANIFEST = "7566118055392661601"
@@ -49,6 +51,7 @@ NATIVE_DEPS = {"openssl", "libwebsockets", "pcre2", "nlohmann-json"}
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{TARGET}.json"
+FORMER_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{FORMER}.json"
 LAST_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{LAST}.json"
 PRIOR_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{PRIOR}.json"
 RECENT_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{RECENT}.json"
@@ -58,6 +61,7 @@ PREVIOUS_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{PREVIOUS}.json"
 OLDEST_PATH = REPO_ROOT / "catalog" / GAME / "targets" / f"{OLDEST}.json"
 ALL_PATHS = [
     TARGET_PATH,
+    FORMER_PATH,
     LAST_PATH,
     PRIOR_PATH,
     RECENT_PATH,
@@ -87,7 +91,7 @@ def test_catalog_validate_accepts_the_dragonwilds_target(run: Any) -> None:
     code, payload, _ = run("catalog", "validate")
 
     assert code == 0, payload
-    for target in (TARGET, LAST, PRIOR, RECENT, CANDIDATE, MAINTAINED, PREVIOUS, OLDEST):
+    for target in (TARGET, FORMER, LAST, PRIOR, RECENT, CANDIDATE, MAINTAINED, PREVIOUS, OLDEST):
         rows = [check for check in payload["checks"] if check["file"].endswith(f"{target}.json")]
         assert rows, f"the dragonwilds target {target} produced no checks"
         assert {check["id"] for check in rows} >= {
@@ -103,7 +107,8 @@ def test_catalog_validate_accepts_the_dragonwilds_target(run: Any) -> None:
 @pytest.mark.parametrize(
     ("path", "buildid", "manifest"),
     [
-        (TARGET_PATH, 26419371, MANIFEST),
+        (TARGET_PATH, 26574459, MANIFEST),
+        (FORMER_PATH, 26419371, FORMER_MANIFEST),
         (LAST_PATH, 26161880, LAST_MANIFEST),
         (PRIOR_PATH, 26087591, PRIOR_MANIFEST),
         (RECENT_PATH, 25991736, RECENT_MANIFEST),
@@ -126,6 +131,7 @@ def test_the_steam_pin_is_exact_and_anonymous(path: Path, buildid: int, manifest
 
 def test_the_newest_build_is_the_one_default() -> None:
     assert record()["default"] is True
+    assert record(FORMER_PATH)["default"] is False
     assert record(LAST_PATH)["default"] is False
     assert record(PRIOR_PATH)["default"] is False
     assert record(RECENT_PATH)["default"] is False
@@ -199,7 +205,7 @@ def test_targets_resolve_env_for_dragonwilds(run: Any) -> None:
     env = resolved["env"]
 
     assert env["DRAGONWILDS_TARGET"] == TARGET
-    assert env["DRAGONWILDS_REVISION"] == "26419371"
+    assert env["DRAGONWILDS_REVISION"] == "26574459"
     assert env["DRAGONWILDS_STEAM_APP"] == str(APP)
     assert env["DRAGONWILDS_STEAM_DEPOTS"] == f"{DEPOT}:{MANIFEST}"
     assert env["DRAGONWILDS_ARTIFACT_PLUGIN"] == f"takaro-dragonwilds-plugin-{TARGET}-{{version}}.tar.gz"
@@ -223,6 +229,7 @@ def test_the_default_target_resolves_to_the_newest_build(run: Any) -> None:
 
     assert code == 0, err
     assert payload["env"]["DRAGONWILDS_TARGET"] == TARGET
+    assert resolve(run, FORMER)["env"]["DRAGONWILDS_REVISION"] == "26419371"
     assert resolve(run, LAST)["env"]["DRAGONWILDS_REVISION"] == "26161880"
     assert resolve(run, PRIOR)["env"]["DRAGONWILDS_REVISION"] == "26087591"
     assert resolve(run, RECENT)["env"]["DRAGONWILDS_REVISION"] == "25991736"
