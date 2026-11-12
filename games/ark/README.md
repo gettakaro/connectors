@@ -102,6 +102,8 @@ Checked on server build 21241282 (game version 361.7). ✅ works, ⚠️ works w
 | Player location | ✅ | Matches the in-game GPS. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | Character level, experience and progress to the next level. The level rises when the player spends the point, as in the game. ARK has no separate skill levels. |
+| Characters | ✅ | Each survivor is its own character, with its own level. Create New Survivor starts a new one. |
 | Item list | ✅ | Player-facing names. |
 | Entity list | ✅ | Player-facing creature names. |
 | Locations | ⚠️ | Spawn points. Not checked on takaro.io yet. |

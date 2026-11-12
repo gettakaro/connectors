@@ -66,6 +66,12 @@ struct Player {
   std::optional<int32_t> ping; // milliseconds, absent until the game thread measured it
 };
 
+// A survivor as the game identifies it. An empty id means none is known.
+struct Character {
+  std::string id;
+  std::string name;
+};
+
 struct Position {
   float x;
   float y;
@@ -73,6 +79,13 @@ struct Position {
   std::chrono::steady_clock::time_point sampled;
   int32_t actor_index = -1;
   int32_t actor_serial = 0;
+};
+
+// One verified game-thread reading of a player's character level.
+struct Progression {
+  int32_t level = 0;
+  double experience = 0;
+  std::optional<double> progress;
 };
 
 struct InventoryItem {
@@ -109,6 +122,7 @@ struct Event {
   std::string weapon; // entity-killed: held weapon display name, empty when unarmed or unverified
   std::string ip;              // player-connected: the connection's verified remote address
   std::optional<int32_t> ping; // player-connected: milliseconds, when already measured
+  Character character;         // the survivor the player had at this event
   std::string timestamp;
   // Actual game-thread position captured at the event, retained exactly as
   // long as this bounded event remains replayable.
@@ -210,6 +224,7 @@ class Server {
     auto& player = players_[id];
     player.id = id;
     player.name = event.name;  // keep the sampled ip/ping of an online player
+    event.character = character_of(id);
     event.seq = ++sequence_;
     events_.push_back(std::move(event));
     while (events_.size() > 4096) events_.pop_front();
@@ -226,6 +241,7 @@ class Server {
     event.timestamp = utc_now();
     std::lock_guard<std::mutex> lock(mutex_);
     if (!players_.contains(id)) return;
+    event.character = character_of(id);
     if (auto position = death_positions_.find(id); position != death_positions_.end()) {
       if (std::chrono::steady_clock::now() - position->second.sampled < std::chrono::seconds(2))
         event.position = position->second;
@@ -262,6 +278,7 @@ class Server {
     event.entity_code = code;
     event.entity_name = entity_name;
     event.weapon = weapon.size() <= 128 ? weapon : std::string();
+    event.character = character_of(killer_id);
     event.timestamp = utc_now();
     event.seq = ++sequence_;
     events_.push_back(std::move(event));
@@ -298,7 +315,7 @@ class Server {
   }
 
   void record_login(const std::string& id, const std::string& name, const std::string& ip = {},
-                    std::optional<int32_t> ping = std::nullopt) {
+                    std::optional<int32_t> ping = std::nullopt, const Character& character = {}) {
     if (id.empty()) return;
     std::lock_guard<std::mutex> lock(mutex_);
     departed_positions_.erase(id);
@@ -307,16 +324,61 @@ class Server {
     const std::string display = name.empty() ? id : name;
     if (players_.find(id) != players_.end()) return;
     players_[id] = Player{id, display, ip, ping};
+    if (!character.id.empty()) remember_character(id, character);
     Event event{};
     event.id = id;
     event.name = display;
     event.ip = ip;
     event.ping = ping;
     event.type = "player-connected";
+    event.character = character_of(id);
     event.timestamp = utc_now();
     event.seq = ++sequence_;
     events_.push_back(std::move(event));
     while (events_.size() > 4096) events_.pop_front();
+  }
+
+  // Game-thread sample of the player's survivor. Takaro only changes a player's
+  // active Character on a connect, and ARK replaces a survivor without a relog,
+  // so a new survivor is reported the way Takaro defines a switch: the old one
+  // disconnects and the new one connects. Returns true on such a switch.
+  bool record_character(const std::string& id, const Character& character) {
+    if (id.empty() || character.id.empty()) return false;
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto player = players_.find(id);
+    if (player == players_.end()) return false;
+    const Character previous = character_of(id);
+    if (previous.id == character.id) {
+      if (!character.name.empty()) characters_[id].name = character.name;
+      return false;
+    }
+    remember_character(id, character);
+    Event leaving{};
+    leaving.id = id;
+    leaving.name = player->second.name;
+    leaving.type = "player-disconnected";
+    leaving.character = previous;
+    leaving.timestamp = utc_now();
+    leaving.seq = ++sequence_;
+    events_.push_back(std::move(leaving));
+    Event joining{};
+    joining.id = id;
+    joining.name = player->second.name;
+    joining.ip = player->second.ip;
+    joining.ping = player->second.ping;
+    joining.type = "player-connected";
+    joining.character = character;
+    joining.timestamp = utc_now();
+    joining.seq = ++sequence_;
+    events_.push_back(std::move(joining));
+    while (events_.size() > 4096) events_.pop_front();
+    return true;
+  }
+
+  // Kept after logout, like the level: Takaro may still ask about an offline player.
+  Character character(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return character_of(id);
   }
 
   void record_logout(const std::string& id) {
@@ -328,6 +390,7 @@ class Server {
     event.id = id;
     event.name = it->second.name;
     event.type = "player-disconnected";
+    event.character = character_of(id);
     event.timestamp = utc_now();
     // A direct pre-Logout capture wins. A recent live game-thread sample is
     // the fallback when the engine has already detached the pawn.
@@ -406,6 +469,19 @@ class Server {
     if (it == players_.end()) return;
     if (ip && !ip->empty()) it->second.ip = *ip;
     if (ping && *ping >= 0) it->second.ping = ping;
+  }
+
+  // Kept after logout: Takaro may still ask, and the level does not change offline.
+  void record_progression(const std::string& id, const Progression& reading) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (players_.contains(id)) progressions_[id] = reading;
+  }
+
+  std::optional<Progression> progression(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = progressions_.find(id);
+    if (it == progressions_.end()) return std::nullopt;
+    return it->second;
   }
 
   void clear_position(const std::string& id) {
@@ -691,6 +767,26 @@ class Server {
   std::map<std::string, Position> positions_;
   std::map<std::string, Position> departed_positions_;
   std::map<std::string, Position> death_positions_;
+  std::map<std::string, Progression> progressions_;
+  std::map<std::string, Character> characters_;
+
+  // Callers hold mutex_.
+  Character character_of(const std::string& id) const {
+    auto it = characters_.find(id);
+    return it == characters_.end() ? Character{} : it->second;
+  }
+
+  // A new survivor starts over: its predecessor's level and position are not its own.
+  void remember_character(const std::string& id, const Character& character) {
+    auto& known = characters_[id];
+    if (!known.id.empty() && known.id != character.id) {
+      progressions_.erase(id);
+      positions_.erase(id);
+      death_positions_.erase(id);
+      death_event_seq_.erase(id);
+    }
+    known = character;
+  }
   std::map<std::string, uint64_t> death_event_seq_;
   std::map<std::string, InventorySnapshot> inventories_;
   std::vector<CatalogItem> catalog_items_;

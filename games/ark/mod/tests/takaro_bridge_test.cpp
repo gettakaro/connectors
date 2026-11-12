@@ -353,6 +353,9 @@ void test_identify_and_wire() {
         listed->get("payload")->as_array()[0].get("ip")->as_string() == "192.0.2.10" &&
         listed->get("payload")->as_array()[0].get("ping")->as_number() == 48);
 
+  // Progression is protocol v1 only: a v0 connection gets no frame.
+  CHECK(!takaro.request("v0-progression", "getPlayerProgression", json::obj({{"gameId", json::str(kId)}}), 600ms));
+
   // getPlayer for an offline player: a real IGamePlayer, never null.
   gate.record_logout(kId);
   auto offline = takaro.request("gp-offline", "getPlayer", json::obj({{"gameId", json::str(kId)}}));
@@ -652,6 +655,26 @@ void test_identify_rejected_backs_off() {
   bridge.stop();
 }
 
+void test_character_payloads() {
+  takaro::KnownPlayers known;
+  gate::Event event{};
+  event.seq = 1;
+  event.type = "chat-message";
+  event.id = kId;
+  event.name = "Limon";
+  event.message = "hi";
+  auto plain = takaro::map_event(event, known);
+  CHECK(plain && !plain->get("player")->get("character"));  // never invented
+  event.character = {"92463960", "Human"};
+  auto chat = takaro::map_event(event, known);
+  CHECK(chat && chat->get("player")->get("character")->get("id")->as_string() == "92463960");
+  CHECK(chat && chat->get("player")->get("character")->get("name")->as_string() == "Human");
+  event.type = "player-connected";
+  event.character = {"92463960", ""};  // an unreadable survivor name falls back to the player's
+  auto connected = takaro::map_event(event, known);
+  CHECK(connected && connected->get("player")->get("character")->get("name")->as_string() == "Limon");
+}
+
 void test_redaction_and_codec() {
   const std::string frame = R"({"type":"identify","payload":{"identityToken":"abc","registrationToken":"sekret"}})";
   const std::string redacted = takaro::redact_frame(frame);
@@ -703,10 +726,14 @@ void test_protocol_v1() {
   bridge.start();
   auto identify = takaro.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
   CHECK(identify && identify->get("payload")->get("protocolVersions"));
-  bool locations = false, map = false;
+  bool locations = false, map = false, progression = false, characters = false;
   if (identify)
     for (const auto& c : identify->get("payload")->get("capabilities")->as_array()) {
       locations |= c.get("name")->as_string() == "locations.list";
+      if (c.get("name")->as_string() == "players.progression")
+        progression = c.get("parameters")->get("source")->as_string() == "server";
+      if (c.get("name")->as_string() == "players.characters")
+        characters = c.get("parameters")->get("held")->as_string() == "server" && !c.get("parameters")->get("ends");
       if (c.get("name")->as_string() != "map") continue;
       const auto& dim = c.get("parameters")->get("dimensions")->as_array()[0];
       map = dim.get("id")->as_string() == "TheIsland" &&
@@ -715,7 +742,7 @@ void test_protocol_v1() {
             dim.get("axes")->get("vertical")->get("direction")->as_string() == "down" &&
             dim.get("source")->get("type")->as_string() == "none";
     }
-  CHECK(locations && map);
+  CHECK(locations && map && progression && characters);
   CHECK(!takaro::map_dimension("Ragnarok"));  // no declared map without a verified calibration
   CHECK(eventually([&] { return bridge.identified(); }));
   // Structured errors instead of silence.
@@ -737,6 +764,33 @@ void test_protocol_v1() {
         connected->get("payload")->get("seq")->as_number() == 1);
   CHECK(connected && connected->get("payload")->get("data")->get("player")->get("ip")->as_string() == "198.51.100.7" &&
         connected->get("payload")->get("data")->get("player")->get("ping")->as_number() == 35);
+  // Progression: null for a player the game never saw, [] until the first
+  // reading, one track after it, and the reading outlives the session.
+  auto progression_of = [&](const std::string& request, const std::string& id) {
+    return takaro.request(request, "getPlayerProgression", json::obj({{"gameId", json::str(id)}}), 2000ms);
+  };
+  auto stranger = progression_of("v1-prog-unknown", kOther);
+  CHECK(stranger && !stranger->get("error") && stranger->has_key("payload") && !stranger->get("payload"));
+  auto garbled = progression_of("v1-prog-garbled", "nobody");
+  CHECK(garbled && !garbled->get("error") && garbled->has_key("payload") && !garbled->get("payload"));
+  auto no_tracks = progression_of("v1-prog-empty", kId);
+  CHECK(no_tracks && no_tracks->get("payload")->is_array() && no_tracks->get("payload")->as_array().empty());
+  gate.record_progression(kOther, {50, 1, 0.5});  // not online: not recorded
+  gate.record_progression(kId, {13, 62.5, 0.25});
+  stranger = progression_of("v1-prog-unknown2", kOther);
+  CHECK(stranger && stranger->has_key("payload") && !stranger->get("payload"));
+  auto tracks = progression_of("v1-prog", kId);
+  CHECK(tracks && tracks->get("payload")->as_array().size() == 1);
+  if (tracks && tracks->get("payload")->as_array().size() == 1) {
+    const auto& track = tracks->get("payload")->as_array()[0];
+    CHECK(track.get("key")->as_string() == "character" && track.get("name")->as_string() == "Level" &&
+          track.get("level")->as_number() == 13 && track.get("experience")->as_number() == 62.5 &&
+          track.get("progress")->as_number() == 0.25);
+  }
+  gate.record_progression(kId, {14, 70, std::nullopt});  // level cap: no fraction
+  tracks = progression_of("v1-prog-cap", kId);
+  CHECK(tracks && tracks->get("payload")->as_array()[0].get("level")->as_number() == 14 &&
+        !tracks->get("payload")->as_array()[0].get("progress"));
   // Positions name the declared Dimension; teleports accept it and refuse any other.
   gate.record_position(kId, -113926.75f, 234912.75f, -14334.5f);
   auto location = takaro.request("v1-loc", "getPlayerLocation", json::obj({{"gameId", json::str(kId)}}), 2000ms);
@@ -1065,6 +1119,7 @@ void test_request_before_identify() {
 
 int main() {
   test_redaction_and_codec();
+  test_character_payloads();
   test_identify_and_wire();
   test_events_cursor_and_outage_replay();
   test_bans_and_expiry();
