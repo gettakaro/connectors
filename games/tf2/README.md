@@ -83,10 +83,11 @@ Checked on TF2 server version 11138802 (Steam build 25995664), 2026-10-20. ✅ w
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | |
-| Player list | ✅ | Name, ping and IP; the id is the SteamID64. Bots only with `takaro_tf2_include_bots 1`. |
+| Player list | ✅ | Name and ping; the id is the SteamID64. The player's IP is not sent. Bots only with `takaro_tf2_include_bots 1`. |
 | Player location | ✅ | |
 | Teleport | ✅ | Also through the teleports module (`@settp`, `@tp`). |
 | Player inventory | ⚠️ | The equipped weapons with in-game names; not the Steam backpack or cosmetics. |
+| Player levels and skills | ❌ | A TF2 server has no player level to read. Casual and Competitive ranks stay with Valve's matchmaking, and scores reset every match. |
 | Item list | ✅ | TF2 weapons with their in-game names. |
 | Entity list | ✅ | Engineer buildings, the sapper and Halloween bosses. |
 | Locations | ✅ | Read from the running map: intelligence, team spawns and control points. |
