@@ -1,4 +1,5 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
+#include <chrono>
 #include <pcre2.h>
 #include "native_log.h"
 #include "config_file.h"
@@ -84,6 +85,7 @@ struct Parser::Impl {
     std::string pendingId,mode="auto",events="filtered";
     bool readySeen=false,customJoin=false,customChat=false;
     std::string lastError;
+    EventsParse::LogPacer pacer;
 };
 Parser::Parser():impl_(std::make_unique<Impl>()){}
 Parser::~Parser()=default;
@@ -144,7 +146,13 @@ std::string Parser::Redact(const std::string& line) const{
 std::vector<Parsed> Parser::Feed(const std::string& raw){
     auto& s=*impl_;std::vector<Parsed> out;std::string line=raw;if(!line.empty()&&line.back()=='\r')line.pop_back();
     auto match=[&](const Re& re){auto h=re.Match(line);if(h.limitExceeded)s.lastError=re.label+": PCRE2 match/depth limit exceeded";return h;};
-    if(s.events!="none"&&(s.events=="all"||!Noise(line)))out.push_back({"log",Json{{"msg",Redact(line)}}.dump()});
+    if(s.events!="none"&&(s.events=="all"||!Noise(line))){
+        const uint64_t now=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if(s.pacer.Take(now)){
+            if(const uint64_t skipped=s.pacer.TakeSkipped())out.push_back({"log",Json{{"msg","Takaro connector: "+std::to_string(skipped)+" server log lines not forwarded, over the rate Takaro accepts"}}.dump()});
+            out.push_back({"log",Json{{"msg",Redact(line)}}.dump()});
+        }
+    }
     if(s.mode=="never")return out;
     if(match(s.ready).matched){s.readySeen=true;s.present.clear();s.pendingId.clear();return out;}
     auto h=match(s.login);if(h.matched){auto id=Id(h),name=Name(h);if(id.size()>1024||name.size()>1024)return out;if(!id.empty()&&!name.empty()){s.loginIds[name]=id;if(s.loginIds.size()>500)s.loginIds.erase(s.loginIds.begin());}else if(!id.empty())s.pendingId=id;return out;}

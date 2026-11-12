@@ -14,6 +14,7 @@
 #include "chat_probe.h"
 #include "reconnect_policy.h"
 
+#include <cmath>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -975,6 +976,62 @@ static void TestStackSplit() {
     CHECK(withinLimit, "no instance ever exceeds the item's own stack limit");
 }
 
+static void TestLogPacer() {
+    EventsParse::LogPacer pacer;
+    uint64_t sent = 0;
+    for (int i = 0; i < 4000; i++) sent += pacer.Take(1000);
+    CHECK(sent == 20, "a boot burst stops at the budget");
+    CHECK(pacer.TakeSkipped() == 3980, "skipped lines are counted");
+    CHECK(pacer.TakeSkipped() == 0, "the count is taken once");
+    CHECK(!pacer.Take(1010), "no credit after 10 ms");
+    CHECK(pacer.Take(2000), "the budget refills");
+    sent = 0;
+    for (uint64_t ms = 60000; ms < 65000; ms += 10) sent += pacer.Take(ms);
+    CHECK(sent < 100, "any 5 s stays under Takaro's limit");
+}
+
+static void TestCharacterJson() {
+    EQ(ActionsUtil::CharacterJson("ABC", "Hector", "Limon"), "{\"id\":\"ABC\",\"name\":\"Hector\"}");
+    EQ(ActionsUtil::CharacterJson("ABC", "", "Limon"), "{\"id\":\"ABC\",\"name\":\"Limon\"}");
+    EQ(ActionsUtil::CharacterJson("", "Hector", "Limon"), "");
+    EQ(ActionsUtil::CharacterJson("ABC", "", ""), "");
+    CHECK(ActionsUtil::CharacterJson("ABC", std::string(300, 'x'), "").size() < 290, "name capped for Takaro");
+}
+
+static void TestRefusalHint() {
+    const std::string hint = ActionsUtil::RefusalHint("Internal error identifying game server", "My Server");
+    CHECK(hint.find("\"My Server\"") != std::string::npos, "names the server");
+    CHECK(ActionsUtil::RefusalHint("Invalid registrationToken provided", "My Server").empty(), "other refusals get no hint");
+}
+
+static void TestProgression() {
+    using ActionsUtil::ProgressionKey;
+    using ActionsUtil::ProgressionStat;
+    using ActionsUtil::ProgressionTracksJson;
+    CHECK(ProgressionKey("ST_WeaponHandling_C") == "weaponHandling", "the game's ST_ prefix is stripped");
+    CHECK(ProgressionKey("ST_Strength_C") == "strength", "and the key starts lower case");
+    CHECK(ProgressionKey("BP_First_Aid_C") == "firstAid", "underscores become camel case");
+    CHECK(ProgressionKey("BP_9Lives_C") == "", "a key may not start with a digit");
+
+    ProgressionStat a;
+    a.code = "ST_Strength_C"; a.name = "Strength"; a.level = 2; a.xp = 150; a.xpFloor = 100; a.xpNext = 200;
+    ProgressionStat same = a;
+    ProgressionStat bad = a;
+    bad.code = "ST_Bad_C"; bad.xp = std::nan("");
+    ProgressionStat top = a;
+    top.code = "ST_Cooking_C"; top.name = ""; top.xpNext = top.xpFloor;
+    std::string json = ProgressionTracksJson({a, same, bad, top});
+    CHECK(json.find("\"key\":\"strength\"") != std::string::npos, "the track is reported");
+    CHECK(json.find("\"progress\":0.5") != std::string::npos, "progress is the fraction of the current level");
+    CHECK(json.find("strength", json.find("strength") + 40) == std::string::npos, "a repeated key is sent once");
+    CHECK(json.find("\"bad\"") == std::string::npos, "a non-finite XP value leaves the track out");
+    size_t cooking = json.find("\"key\":\"cooking\"");
+    CHECK(cooking != std::string::npos, "a track at the end of the curve is reported");
+    CHECK(json.find("progress", cooking) == std::string::npos, "and carries no progress");
+    CHECK(json.find("\"name\":\"Cooking\"") != std::string::npos, "a missing display name falls back to the humanised class");
+    CHECK(ProgressionTracksJson({}) == "[]", "no stats is an empty reading");
+}
+
 static void TestPlayerInventoryClassGuard() {
     using ActionsUtil::IsPlayerInventoryClass;
     // The live character's own bag, in every spelling the game uses for it.
@@ -1514,6 +1571,10 @@ int main() {
     TestAttemptedJson();
     TestStackSplit();
     TestPlayerInventoryClassGuard();
+    TestProgression();
+    TestLogPacer();
+    TestRefusalHint();
+    TestCharacterJson();
     TestCharacterIdFormatting();
     TestKillWeaponName();
     TestLocationRefusal();
