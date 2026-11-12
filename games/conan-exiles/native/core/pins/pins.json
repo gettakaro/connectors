@@ -102,6 +102,26 @@
         "objObjects": "0xa95a040",
         "nameBlocks": "0xa88b290"
       }
+    },
+    {
+      "platform": "linux",
+      "buildId": "613b5964a6fed53bf5a2e7b2e9726cb6ca5e6b54",
+      "build": "26552396",
+      "anchors": {
+        "processEvent": "0x3f584e0",
+        "objObjects": "0xc412800",
+        "nameBlocks": "0xc35dfc0"
+      }
+    },
+    {
+      "platform": "windows",
+      "buildId": "3b8c27b1-b6c9000",
+      "build": "26552396",
+      "anchors": {
+        "processEvent": "0x1646ba0",
+        "objObjects": "0xa9d06c0",
+        "nameBlocks": "0xa901910"
+      }
     }
   ]
 }
