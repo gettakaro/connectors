@@ -160,6 +160,11 @@ Json Player(const Json& raw) {
         out["xboxLiveId"] = xbox;
     if (!Str(p, "ip").empty()) out["ip"] = Str(p, "ip");
     if (p.contains("ping") && p["ping"].is_number() && std::isfinite(p["ping"].get<double>())) out["ping"] = p["ping"];
+    // Takaro's limits on a character: a bad one is left out, since it would refuse the whole player.
+    Json character = Object(p.value("character", Json::object()));
+    std::string characterId = Str(character, "id"), characterName = Str(character, "name");
+    if (!characterId.empty() && characterId.size() <= 255 && !characterName.empty() && characterName.size() <= 255)
+        out["character"] = {{"id", characterId}, {"name", characterName}};
     return out;
 }
 Json Position(const Json& raw) {
@@ -215,6 +220,12 @@ std::string ResolveKnownId(const PreparedAction& p, const std::string& raw) {
     for (auto& row : Rows(Parse(p.view->knownPlayersJson), "players"))
         if (MatchesPlayer(Object(row), needle)) return Lower(StripPlatform(Str(Object(row), "gameId")));
     return bare;
+}
+bool KnownPlayer(const PreparedAction& p, const std::string& id) {
+    const std::string needle = Lower(id);
+    for (auto& row : Rows(Parse(p.view->knownPlayersJson), "players"))
+        if (MatchesPlayer(Object(row), needle)) return true;
+    return false;
 }
 std::string ResolveId(const PreparedAction& p, const Json& args) {
     const std::string raw = PlayerId(args), known = ResolveKnownId(p, raw), needle = Lower(StripPlatform(raw));
@@ -741,6 +752,13 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p) {
             Json mapped = Json::array();
             for (auto& row : Rows(call(Actions::PlayerInventory(ResolveId(p, a))), "items")) mapped.push_back(InventoryItem(row));
             out.payloadJson = mapped.dump();
+        } else if (action == "getPlayerProgression") {
+            // Takaro polls this on every player sync, so it answers from the cached reading and
+            // never reaches the game thread. A player we know without a reading has no tracks yet.
+            id = ResolveKnownId(p, PlayerId(a));
+            Actions::Result raw = Actions::PlayerProgression(id);
+            if (raw.status < 400) out.payloadJson = Parse(raw.body).dump();
+            else out.payloadJson = KnownPlayer(p, id) ? "[]" : "null";
         } else if (action == "giveItem") {
             id = ResolveId(p, a);
             Json item = Object(a.value("item", Json::object()));
@@ -1373,6 +1391,10 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
                              "events.player-disconnected", "events.chat-message", "events.player-death",
                              "events.entity-killed", "events.log"})
         manifest.push_back(Json{{"name", name}});
+    // Characters are kept by the client and uploaded on join, so a client can claim any level.
+    manifest.push_back(Json{{"name", "players.progression"}, {"parameters", {{"source", "client-reported"}}}});
+    // Characters live on the player's PC and survive both death and a world wipe.
+    manifest.push_back(Json{{"name", "players.characters"}, {"parameters", {{"held", "client"}}}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
