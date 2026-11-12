@@ -259,6 +259,12 @@ the 16 action capabilities, `server.shutdown`, the six `events.*`, `game.profile
 once ready). The version Takaro returns in `identifyResponse` holds for that connection; a
 missing value is 0.
 
+- **Item icons** (`items.icons`, `agent/ItemIconCatalog`): on the first tick the game's own
+  file map (`ZomboidFileSystem.activeFileMap`) resolves each item's `media/textures/Item_<Icon>.png`,
+  so mod load order decides as it does in the client. A daemon thread hashes those files
+  before the connector connects, so every Item sync reports `iconHash`. `getItemIcons` runs
+  off both the game and socket threads and re-hashes each file before serving it, skipping
+  one that changed. Dedicated servers ship no vanilla item art, and `.pack` art is not read.
 - **Game profile** (`core/GameProfile`): every identify, on both versions, sends
   `game: "zomboid"` and `connector: {name: "takaro-zomboid", version}`. The version is
   `games/zomboid/version.txt` (or `-Pversion`), written into the jar as a resource by

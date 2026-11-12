@@ -147,6 +147,7 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Teleport | ⚠️ | The move is immediate, but the new position can take about 15 seconds to show in Takaro. |
 | Player inventory | ✅ | Matches what the player carries, including item condition. |
 | Item list | ✅ | |
+| Item icons | ✅ | Icons of items added by mods appear in Takaro with no setup. A dedicated server ships no vanilla item art, so vanilla items keep Takaro's icon pack. |
 | Entity list | ✅ | Zombies and vehicles, vehicles under their in-game names. |
 | Locations | ⚠️ | Build 42 has no named places, so only player-claimed safehouses are listed. |
 | World map | ⚠️ | The game's own world map with player dots; ground floor only, areas added by map mods show grey. Not checked on takaro.io yet. |
@@ -172,6 +173,8 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 
 - The map is the vanilla Knox County picture from the game install, built once at server start
   (about 20 seconds, cached in `Takaro/map/`). Basements and upper floors are not separate maps.
+- Item icons come from a mod's loose `media/textures/Item_*.png` files. Art a mod packs into a
+  `.pack` file is not read, so those items show no icon.
 - The connector must be attached before the server starts; it cannot be added to a running
   server.
 

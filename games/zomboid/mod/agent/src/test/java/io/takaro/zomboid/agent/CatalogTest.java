@@ -18,7 +18,7 @@ class CatalogTest {
         List<Catalog.ItemRow> rows = List.of(
                 new Catalog.ItemRow("Base.Axe", "Axe", "Weapon"),
                 new Catalog.ItemRow("Base.Nails", "", "Material"));
-        List<GameItem> items = Catalog.buildItems(rows);
+        List<GameItem> items = Catalog.buildItems(rows, icon -> null);
 
         assertEquals(2, items.size());
         assertEquals("Base.Axe", items.get(0).code());
@@ -37,7 +37,7 @@ class CatalogTest {
         rows.add(null);                                                     // null -> dropped
         rows.add(new Catalog.ItemRow("Base.Hammer", "Hammer", "Tool"));
 
-        List<GameItem> items = Catalog.buildItems(rows);
+        List<GameItem> items = Catalog.buildItems(rows, icon -> null);
         assertEquals(2, items.size());
         assertEquals("Base.Axe", items.get(0).code());
         assertEquals("Axe", items.get(0).name()); // first occurrence wins
@@ -46,7 +46,7 @@ class CatalogTest {
 
     @Test
     void buildItemsHandlesNullList() {
-        assertTrue(Catalog.buildItems(null).isEmpty());
+        assertTrue(Catalog.buildItems(null, icon -> null).isEmpty());
     }
 
     @Test

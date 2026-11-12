@@ -9,6 +9,7 @@ import io.takaro.zomboid.core.model.GameEntity;
 import io.takaro.zomboid.core.model.GameItem;
 import io.takaro.zomboid.core.model.GameLocation;
 import io.takaro.zomboid.core.model.InventoryItem;
+import io.takaro.zomboid.core.model.ItemIcon;
 import io.takaro.zomboid.core.model.MapDimension;
 import io.takaro.zomboid.core.model.MapImageChunk;
 import io.takaro.zomboid.core.model.PlayerInfo;
@@ -38,6 +39,7 @@ public final class ZomboidAdapter implements GameAdapter {
     private final boolean debug;
     private final MapService map = new MapService();
     private final AtomicBoolean mapStarted = new AtomicBoolean();
+    private final ItemIconCatalog itemIcons = new ItemIconCatalog(AgentLog::log);
     private volatile EventEmitter emitter;
 
     public ZomboidAdapter(MainThreadQueue queue, PlayerRegistry registry,
@@ -180,10 +182,46 @@ public final class ZomboidAdapter implements GameAdapter {
         if (cached != null && System.currentTimeMillis() - itemCacheAtMs < ITEM_CACHE_TTL_MS) {
             return cached;
         }
-        List<GameItem> built = Pz.listItems();
+        List<GameItem> built = Pz.listItems(itemIcons::hashFor);
         itemCache = built;
         itemCacheAtMs = System.currentTimeMillis();
         return built;
+    }
+
+    /**
+     * Reads which art the items use (main thread), hashes it on its own thread, then runs
+     * {@code then}, so the first Item sync after connecting already reports every hash.
+     */
+    public void buildItemIconsThen(Runnable then) {
+        Map<String, String> files;
+        try {
+            files = Pz.itemIconFiles();
+        } catch (Throwable t) {
+            AgentLog.error("item icons unavailable", t);
+            then.run();
+            return;
+        }
+        Thread thread = new Thread(() -> {
+            try {
+                itemIcons.build(files);
+            } catch (Throwable t) {
+                AgentLog.error("item icons unavailable", t);
+            } finally {
+                then.run();
+            }
+        }, "takaro-item-icons");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    @Override
+    public boolean supportsItemIcons() {
+        return true;
+    }
+
+    @Override
+    public List<ItemIcon> readItemIcons(List<String> hashes) {
+        return itemIcons.serve(hashes);
     }
 
     @Override
