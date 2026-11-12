@@ -40,8 +40,10 @@ for any connector that does not.
    `Mods/Takaro` (or set `<Enabled>false</Enabled>`); otherwise the connector connects again with the
    same identity token and Takaro registers it as a new, separate game server.
 
-Players already known to Takaro from the built-in integration are recognised by their Steam/Epic id
-and keep their profile. If an older version of this connector already created a second profile for
+Players already known to Takaro from the built-in integration are recognised by their Steam, Xbox
+or Epic id and keep their profile. For Steam and Xbox players the connector sends the Steam or Xbox
+id but not the game's Epic id, which differs per game; the Epic id is sent only for players who join
+through the Epic store. If an older version of this connector already created a second profile for
 a player (one with an empty Steam ID), delete that second profile in Takaro once; until then Takaro
 ignores that player's events.
 

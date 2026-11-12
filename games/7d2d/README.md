@@ -99,6 +99,10 @@ fix; a wrong token shows `Takaro rejected identify (error): Invalid registration
 **Upgrading:** stop the server, delete `<server>/Mods/Takaro/` and unzip the new version. Your
 `Takaro/Config.xml` stays.
 
+Upgrading from 0.9.0 or older: those versions also sent the game's Epic id for Steam and Xbox
+players, newer ones do not. Players Takaro already knows keep their profile, so this change needs
+no action.
+
 ## What works, what doesn't
 
 Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ works with a limit, ❌ not supported.
@@ -106,7 +110,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | Reconnects within about a second when a connection drops, within a minute after a longer outage; missed events are sent afterwards. |
-| Player list | ✅ | Steam or Xbox id, Epic id, IP and ping. |
+| Player list | ✅ | Steam or Xbox id, IP and ping. The Epic id is sent only for players who join through the Epic store. |
 | Player location | ✅ | Updated about every 30 seconds. |
 | Teleport | ⚠️ | Lands on the ground, not at the exact height. |
 | Player inventory | ✅ | |
