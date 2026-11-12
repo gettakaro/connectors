@@ -94,9 +94,10 @@ public static partial class ContractHarness
 
     // Takaro's PlayerService.resolveRef matches existing profiles on steamId,
     // epicOnlineServicesId, xboxLiveId and platformId, and never derives steamId from
-    // platformId. Profiles from Takaro's built-in 7D2D integration have only the first
-    // three, so every player object on the wire must carry them or Takaro duplicates the
-    // player.
+    // platformId. Profiles from Takaro's built-in 7D2D integration have no platformId,
+    // so every player object on the wire must carry steamId or xboxLiveId or Takaro
+    // duplicates the player. Takaro keeps one epicOnlineServicesId per player and the
+    // game's EOS id is per game, so it is sent only for a player with neither.
     private static void AssertLegacyIdentityFieldsOnTheWire()
     {
         ClientInfo steamClient = new ClientInfo
@@ -158,10 +159,9 @@ public static partial class ContractHarness
                 shape.Key + " gameId stays the EOS id"
             );
             Equal("76561198000000001", (string)json["steamId"], shape.Key + " carries steamId");
-            Equal(
-                "000213691caa4c17ab8134415efd0889",
-                (string)json["epicOnlineServicesId"],
-                shape.Key + " carries epicOnlineServicesId"
+            True(
+                json["epicOnlineServicesId"] == null,
+                shape.Key + " leaves the per-game EOS id out for a Steam player"
             );
             Equal(
                 "steam:76561198000000001",
@@ -190,11 +190,7 @@ public static partial class ContractHarness
             )
         );
         Equal("2535400000000001", (string)xbox["xboxLiveId"], "Xbox player carries xboxLiveId");
-        Equal(
-            "fixture-xbox-eos",
-            (string)xbox["epicOnlineServicesId"],
-            "Xbox player carries epicOnlineServicesId"
-        );
+        True(xbox["epicOnlineServicesId"] == null, "Xbox player leaves the per-game EOS id out");
         Equal("xbox:2535400000000001", (string)xbox["platformId"], "Xbox player platformId");
         True(xbox["steamId"] == null, "Xbox player omits steamId");
 
@@ -234,10 +230,9 @@ public static partial class ContractHarness
             (string)disconnectedData["player"]["steamId"],
             "player-disconnected frame carries steamId"
         );
-        Equal(
-            "000213691caa4c17ab8134415efd0889",
-            (string)disconnectedData["player"]["epicOnlineServicesId"],
-            "player-disconnected frame carries epicOnlineServicesId"
+        True(
+            disconnectedData["player"]["epicOnlineServicesId"] == null,
+            "player-disconnected frame leaves the per-game EOS id out"
         );
     }
 
@@ -1996,8 +1991,16 @@ public static partial class ContractHarness
     private static void AssertMatchesLegacyPlayer(JObject wire, JToken fixtureCase, string label)
     {
         var legacyKeys = new HashSet<string>();
+        var dropped = new HashSet<string>(
+            ((JArray)fixtureCase["modDrops"] ?? new JArray()).Select(key => (string)key)
+        );
         foreach (JProperty expected in ((JObject)fixtureCase["legacy"]).Properties())
         {
+            if (dropped.Contains(expected.Name))
+            {
+                True(wire[expected.Name] == null, label + " leaves out " + expected.Name);
+                continue;
+            }
             legacyKeys.Add(expected.Name);
             Equal((string)expected.Value, (string)wire[expected.Name], label + " " + expected.Name);
         }
@@ -2058,6 +2061,11 @@ public static partial class ContractHarness
                     (string)wire[expected.Name],
                     name + " " + expected.Name
                 );
+            foreach (
+                string identityKey in new[] { "steamId", "xboxLiveId", "epicOnlineServicesId" }
+            )
+                if (banCase["expected"][identityKey] == null)
+                    True(wire[identityKey] == null, name + " has no " + identityKey);
             True(
                 !((string)wire["gameId"]).StartsWith("Steam_")
                     && !((string)wire["gameId"]).StartsWith("XBL_")
