@@ -52,6 +52,7 @@ function Events:player(raw)
     if p.name == p.gameId and k.name then p.name = k.name end
     -- The login log is the only IP source; after a Lua reload the last-known IP fills the gap.
     if not p.ip and k.ip then p.ip = k.ip end
+    if not p.character then p.character = k.character end
   end
   return p
 end
