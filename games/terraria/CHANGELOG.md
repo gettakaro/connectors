@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.0](https://github.com/gettakaro/connectors/compare/terraria-v0.8.0...terraria-v0.9.0) (2026-11-12)
+
+
+### Features
+
+* **terraria:** reconnect within about 2 s after an established connection drops ([#875](https://github.com/gettakaro/connectors/issues/875)) ([4f4e9e6](https://github.com/gettakaro/connectors/commit/4f4e9e6caeffd27153631404648a74f7d2474b91))
+
+
+### Miscellaneous Chores
+
+* license connectors under AGPL-3.0 ([#820](https://github.com/gettakaro/connectors/issues/820)) ([2da9b8e](https://github.com/gettakaro/connectors/commit/2da9b8e10709398871f1bdf7310fc7ab0d8d543c))
+
+
+### Documentation
+
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/terraria-v0.7.0...terraria-v0.8.0) (2026-10-31)
 
 
