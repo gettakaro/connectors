@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/gettakaro/connectors/compare/tf2-v0.2.0...tf2-v0.3.0) (2026-11-12)
+
+
+### Features
+
+* **tf2:** reconnect within 2 s after an established connection drops ([#885](https://github.com/gettakaro/connectors/issues/885)) ([e09b23f](https://github.com/gettakaro/connectors/commit/e09b23f93dc7c9463407dc121a9952e2ad34b477))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/tf2-v0.1.0...tf2-v0.2.0) (2026-10-30)
 
 
