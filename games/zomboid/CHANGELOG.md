@@ -4,6 +4,20 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.6.0...zomboid-v1.7.0) (2026-11-12)
+
+
+### Features
+
+* **zomboid:** pin Build 42.22.2 target ([#852](https://github.com/gettakaro/connectors/issues/852)) ([b6b4b99](https://github.com/gettakaro/connectors/commit/b6b4b99ef3d27760e8e45415a957646af15169b4))
+* **zomboid:** reconnect within 2 s after an established connection drops ([#884](https://github.com/gettakaro/connectors/issues/884)) ([e9da55b](https://github.com/gettakaro/connectors/commit/e9da55b1fcd8b301d35a0ddfba9e6d878d6ca187))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* **zomboid:** research native and silent Takaro commands on Build 42 ([#602](https://github.com/gettakaro/connectors/issues/602)) ([7cb0966](https://github.com/gettakaro/connectors/commit/7cb096632da59e29b84c3c61ce5f72c51a2fc215))
+
 ## [1.6.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.5.0...zomboid-v1.6.0) (2026-10-30)
 
 
