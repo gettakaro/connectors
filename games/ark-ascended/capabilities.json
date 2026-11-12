@@ -127,6 +127,12 @@
       "responseShape": "-",
       "reason": "protocol v0 only; the v1 map capability replaces it",
       "liveVerified": false
+    },
+    "getMapTile": {
+      "status": "unsupported",
+      "responseShape": "-",
+      "reason": "the map is the operator's uploaded image of TheIsland_WP; Takaro serves its tiles, the plugin renders none",
+      "liveVerified": false
     }
   },
   "events": {
