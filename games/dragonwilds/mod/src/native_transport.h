@@ -38,8 +38,11 @@ struct Notice {
 struct Config {
     std::string url;
     std::string caFile;
+    // Backoff for consecutive connect failures. Losing a connection that was identified and stayed
+    // up is retried after 0.1-0.5 s regardless (ReconnectPolicy, reconnect_policy.h).
     unsigned reconnectBaseMs = 2000;
     unsigned reconnectMaxMs = 60000;
+    std::function<void(const std::string&)> log; // service thread; optional
     bool connect = true; // false: hold off (no registration token) until Retarget enables it
 };
 struct Stats {

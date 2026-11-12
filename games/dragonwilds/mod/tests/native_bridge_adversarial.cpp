@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
     if (!getenv("TAKARO_SERVER_NAME")) setenv("TAKARO_SERVER_NAME", "NativeBridge test", 1);
     if (argc == 3) NativeBridge::SetActionHandler([](const std::string& action, const std::string& args) {
         if (action == "echo") return args;
+        if (action == "testReachability") return std::string("{\"connectable\":true}");
         if (action == "throw") throw std::runtime_error("intentional handler failure");
         if (action == "badjson") return std::string("not json");
         if (action == "huge") return std::string("\"") + std::string(8 * 1024 * 1024 + 1, 'x') + "\"";

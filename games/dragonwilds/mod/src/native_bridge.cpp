@@ -593,7 +593,12 @@ void HandleFrame(const NativeTransport::Notice& n) {
             NativeTransport::RequestClose(n.epoch, 1013, "requestId too long");
             return;
         }
-        if (!identified || action.empty()) { SendError(id, n.epoch, "invalid request"); return; }
+        // Takaro can send its first testReachability on a socket just before that socket's
+        // identifyResponse; refusing it would mark the server offline after every reconnect.
+        // That read-only probe is served early; every other action still waits for identify.
+        if (action.empty() || (!identified && action != "testReachability")) {
+            SendError(id, n.epoch, "invalid request"); return;
+        }
         Json args = p.value("args", Json::object());
         if (args.is_string()) {
             std::string nested = args.get<std::string>();
@@ -1131,6 +1136,8 @@ void BridgeLoop() {
                                             Json({{"type", "identify"}, {"payload", p}}).dump(), 0, n.epoch))
                     NativeTransport::RequestClose(n.epoch, 1013, "identify queue full");
             } else if (n.type == NativeTransport::NoticeType::Closed && n.epoch == currentEpoch) {
+                PluginLog("native: connection to Takaro closed (epoch %llu, %s)", (unsigned long long)n.epoch,
+                          identified ? "was identified" : "before identify");
                 identified = false; liveEpoch = false; protocolVersion = 0;
                 if (gateMode) for (auto& e : outbox) e.sentEpoch = 0;
                 else sentEpochByOutboxId.clear();
@@ -1159,7 +1166,10 @@ void BridgeLoop() {
                     flushConfirm();
                     CommitShutdown();
                 }
-            } else if (n.type == NativeTransport::NoticeType::Error) lastError = n.text;
+            } else if (n.type == NativeTransport::NoticeType::Error) {
+                if (n.text != lastError) PluginLog("native: transport: %s", RedactSecrets(n.text).c_str());
+                lastError = n.text;
+            }
         }
         flushConfirm();
         Completion completed;
@@ -1595,6 +1605,7 @@ bool Start() {
     c.reconnectBaseMs = backoff("TAKARO_RECONNECT_BASE_MS", 2000);
     c.reconnectMaxMs = backoff("TAKARO_RECONNECT_MAX_MS", 60000);
     if (c.reconnectMaxMs < c.reconnectBaseMs) c.reconnectMaxMs = c.reconnectBaseMs;
+    c.log = [](const std::string& line) { PluginLog("%s", line.c_str()); };
     auto sink = [](NativeTransport::Notice n) -> bool {
         std::lock_guard<std::mutex> g(mu);
         if (n.type == NativeTransport::NoticeType::Written && !n.pingAfterWrite) {

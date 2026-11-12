@@ -5,6 +5,7 @@
 #include "common.h"
 #include "config_file.h"
 #include "perf.h"
+#include "reconnect_policy.h"
 #include "state.h"
 
 #include <dirent.h>
@@ -574,6 +575,80 @@ static void TestChatSender() {
     EQ(ChatSender::Render("", "Welcome back"), "Welcome back");
 }
 
+// gettakaro/connectors#858: fast first retry after a stable identified session, jittered exponential
+// backoff only for consecutive failures, capped at 60 s, streak reset by a stable session.
+static void TestReconnectPolicy() {
+    ReconnectPolicy::Params params; // defaults: base 2000, max 60000, fast 100..500, stable 10 s
+    // Fast retry after an identified connection that stayed up past the stable window.
+    {
+        ReconnectPolicy p(params, 42);
+        unsigned lo = ~0u, hi = 0;
+        for (int i = 0; i < 2000; ++i) {
+            p.OnIdentified(1000);
+            bool established = false;
+            const unsigned d = p.NextDelayMs(1000 + 10000, &established);
+            CHECK(established, "identified + 10 s must count as established");
+            CHECK(d >= 100 && d <= 500, "fast retry %u ms outside 100..500", d);
+            lo = std::min(lo, d); hi = std::max(hi, d);
+            CHECK(p.Streak() == 0, "established loss leaves streak %u", p.Streak());
+        }
+        CHECK(hi - lo >= 300, "fast retry has no jitter: %u..%u", lo, hi);
+    }
+    // Consecutive failures: equal jitter in [d/2, d], doubling, capped at 60 s, never above it.
+    {
+        ReconnectPolicy p(params, 7);
+        const unsigned want[] = {2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000};
+        for (unsigned i = 0; i < sizeof want / sizeof *want; ++i) {
+            bool established = true;
+            const unsigned d = p.NextDelayMs(0, &established);
+            CHECK(!established, "a failed attempt is not established");
+            CHECK(d >= want[i] / 2 && d <= want[i], "failure %u: %u ms outside [%u, %u]", i + 1, d, want[i] / 2, want[i]);
+            CHECK(p.Streak() == i + 1, "streak %u after %u failures", p.Streak(), i + 1);
+        }
+        for (int i = 0; i < 1000; ++i) CHECK(p.NextDelayMs(0) <= 60000, "cap exceeded");
+        // Jitter on the capped delay spans its upper half.
+        unsigned lo = ~0u, hi = 0;
+        for (int i = 0; i < 1000; ++i) { const unsigned d = p.NextDelayMs(0); lo = std::min(lo, d); hi = std::max(hi, d); }
+        CHECK(lo >= 30000 && hi <= 60000 && hi - lo >= 20000, "capped jitter %u..%u", lo, hi);
+        // A stable session ends the streak; the next drop is fast again.
+        p.OnIdentified(100000);
+        const unsigned d = p.NextDelayMs(100000 + 15000);
+        CHECK(d <= 500 && p.Streak() == 0, "stable session did not reset: %u ms, streak %u", d, p.Streak());
+        // ...and the following failure starts from the base again.
+        const unsigned f = p.NextDelayMs(200000);
+        CHECK(f >= 1000 && f <= 2000 && p.Streak() == 1, "streak restart %u ms, streak %u", f, p.Streak());
+    }
+    // Identified but dropped inside the stable window, or never identified: still a failure.
+    {
+        ReconnectPolicy p(params, 9);
+        p.OnIdentified(0);
+        bool established = true;
+        unsigned d = p.NextDelayMs(9999, &established);
+        CHECK(!established && d >= 1000 && d <= 2000, "short session: %u ms", d);
+        p.OnIdentified(20000); // identify once; the mark is consumed by one ended connection
+        p.NextDelayMs(40000);
+        d = p.NextDelayMs(60000, &established);
+        CHECK(!established && p.Streak() == 1 && d >= 1000 && d <= 2000, "mark reused: %u ms streak %u", d, p.Streak());
+    }
+    // Operator overrides of the old keys still shape the failure backoff; Reset clears the streak.
+    {
+        ReconnectPolicy::Params o;
+        o.baseMs = 5000; o.maxMs = 20000;
+        ReconnectPolicy p(o, 3);
+        CHECK(p.NextDelayMs(0) >= 2500, "override base ignored");
+        p.NextDelayMs(0); p.NextDelayMs(0);
+        const unsigned capped = p.NextDelayMs(0);
+        CHECK(capped >= 10000 && capped <= 20000, "override cap: %u", capped);
+        p.OnIdentified(0);
+        CHECK(p.NextDelayMs(60000) <= 500, "override must not slow the fast retry");
+        p.NextDelayMs(0); p.Reset();
+        CHECK(p.Streak() == 0, "Reset kept streak %u", p.Streak());
+        o.maxMs = 1000; // max below base is raised to base
+        ReconnectPolicy q(o, 4);
+        CHECK(q.NextDelayMs(0) <= 5000, "max<base");
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && strcmp(argv[1], "--exit-flush-child") == 0) return ExitFlushChild(argv[2]);
     TestSymParser();
@@ -590,6 +665,7 @@ int main(int argc, char** argv) {
     TestConfigResolve();
     TestMapSurveyGrid();
     TestChatSender();
+    TestReconnectPolicy();
     printf("%s: %d checks, %d failed\n", g_failed ? "FAILED" : "PASSED", g_ran, g_failed);
     return g_failed ? 1 : 0;
 }

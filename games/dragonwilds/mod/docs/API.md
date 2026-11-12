@@ -29,7 +29,7 @@ when it is missing. Only the first four are re-read while the server runs.
 | `Dragonwilds (<first 8 identity characters>)` | name sent with `identify`; last chat-sender fallback |
 | `TAKARO_SENDER_NAME` | — | chat sender name (`TAKARO_SERVER_CHAT_NAME` is the alias) |
 | `TAKARO_CA_FILE` | `/etc/ssl/certs/ca-certificates.crt` | CA bundle; chain and host name are always verified |
-| `TAKARO_RECONNECT_BASE_MS` / `TAKARO_RECONNECT_MAX_MS` | `2000` / `60000` | reconnect backoff (2000..60000) |
+| `TAKARO_RECONNECT_BASE_MS` / `TAKARO_RECONNECT_MAX_MS` | `2000` / `60000` | backoff for consecutive connect failures (2000..60000); the first retry after an established connection drops is always 0.1-0.5 s |
 | `TAKARO_REQUEST_DEADLINE_MS` | `8500` | every Takaro request is answered within this (1000..9500); Takaro gives up at 10 s |
 | `TAKARO_STATE_DIR` | `<data dir>` | connector state, see `native-state.md` |
 | `TAKARO_CURSOR_FILE`, `TAKARO_ONLINE_FILE`, `TAKARO_BAN_FILE`, `TAKARO_KNOWN_PLAYERS_FILE` | in the state dir | 0.2.x file locations, see `native-state.md` |
@@ -55,7 +55,13 @@ an installation. `plugin.log` lines are redacted (`*Password`, `*Token`, `Ticket
 
 - `identify` with the identity token (+ registration token, + name) on every new socket.
   `identifyResponse` is the moment the connector is live; a rejected identity closes the socket and
-  reconnects with backoff. Takaro `ping` frames get `pong`; Takaro `error` frames are counted
+  reconnects with backoff.
+- Reconnect (`src/reconnect_policy.h`): losing a connection that was identified and stayed up 10 s is
+  retried after 0.1-0.5 s (random), so Takaro sees the server back within about 2 s. Only consecutive
+  failures back off: `TAKARO_RECONNECT_BASE_MS` doubling to `TAKARO_RECONNECT_MAX_MS`, each delay a
+  random point in its upper half; a stable session ends the streak. A dead link without a FIN or RST
+  is noticed by the WebSocket ping every 5 s: two unanswered pings or 20 s without any inbound frame
+  close it, and the fast retry follows. `plugin.log` records each close and the chosen delay. Takaro `ping` frames get `pong`; Takaro `error` frames are counted
   (`/health.native.protocolErrorCount`) and the last one is kept in `lastError` with tokens redacted.
 - Requests: `payload.args` may be `[]`, `{}`, an object, `null` or a JSON-encoded string; nesting
   deeper than 64 is refused. Every request is answered once, by `requestId`, within
