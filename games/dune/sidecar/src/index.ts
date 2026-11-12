@@ -1,5 +1,7 @@
 import { Bridge, type EventSource } from './bridge.js';
 import { DuneAdapter } from './dune/adapter.js';
+import type { TakaroPlayer } from './dune/types.js';
+import { waitForBattlegroup } from './dune/readyGate.js';
 import { FileBanStore } from './dune/banStore.js';
 import { BanManager } from './dune/bans.js';
 import { Catalogue } from './dune/catalogue.js';
@@ -234,6 +236,12 @@ async function main(): Promise<void> {
     pluginDrops[reason] = (pluginDrops[reason] ?? 0) + 1;
   };
 
+  if (plugin.enabled()) {
+    // Fill the entity cache before Takaro's first sync asks, and keep it fresh as the map loads its NPCs.
+    void adapter.refreshEntities();
+    setInterval(() => void adapter.refreshEntities(), 5 * 60_000).unref?.();
+  }
+
   const pluginEvents: EventPoller | undefined = plugin.enabled()
     ? new EventPoller({
         getEvents: (since) => plugin.getEvents(since),
@@ -276,7 +284,7 @@ async function main(): Promise<void> {
           // so the edge is deduped against it: the first source through wins and tells presence, the second is
           // dropped.
           if (type === 'player-connected' || type === 'player-disconnected') {
-            const player = (data as { player?: { gameId?: string; name?: string } }).player;
+            const player = (data as { player?: Partial<TakaroPlayer> }).player;
             const gameId = player?.gameId;
             if (gameId) {
               const known = presence.onlinePlayers().some((p) => p.gameId === gameId);
@@ -285,7 +293,9 @@ async function main(): Promise<void> {
                 return true;
               }
               if (type === 'player-connected') {
-                presence.note({ gameId, name: player?.name ?? gameId }, { flsId: gameId, characterName: player?.name ?? null });
+                // The character goes along: the plugin's cached player can name the one just left, and the next
+                // roster read has to be able to see that and correct it.
+                presence.note({ ...player, gameId, name: player?.name ?? gameId }, { flsId: gameId, characterName: player?.name ?? null });
               } else {
                 presence.forget(gameId);
               }
@@ -412,7 +422,21 @@ async function main(): Promise<void> {
   bridge.startHealthWatch();
   // Game-side duties start NOW, before Takaro is even contacted, and keep running whatever Takaro does.
   await bridge.startSources();
-  takaro.connect();
+  // A schema probe that failed at boot makes reachability fall back to a bare `SELECT 1`, so it is retried first.
+  await waitForBattlegroup(
+    async () => {
+      if (!pg.isProbed()) await pg.probe();
+      return adapter.testReachability();
+    },
+    { maxWaitMs: config.identifyWaitMs },
+  );
+  // Settings saved during the wait apply to the first identify.
+  const changed = settings.poll();
+  if (changed) {
+    takaro.reconfigure(changed.wsUrl, { identityToken: changed.identityToken, registrationToken: changed.registrationToken, serverName: changed.serverName });
+  } else {
+    takaro.connect();
+  }
 
   const settingsWatch = setInterval(() => {
     const next = settings.poll();

@@ -21,6 +21,8 @@ export interface DunePlayerRow {
   platformId?: string | null;
   platformName?: string | null;
   accountId?: number | null;
+  /** `player_state.id`: the character's row, kept for its whole life and independent of its name. */
+  characterId?: string | null;
   characterName?: string | null;
   /**
    * `player_state.online_status::text`. The real enum is `PlayerConnectionStatus = Offline | LoggingOut | Online`
@@ -66,6 +68,26 @@ export interface DuneInventoryRow {
   inventoryType?: number | null;
 }
 
+/** `FLevelComponent` of the character's FGL entity: what the map process last saved for the character. */
+export interface DuneCharacterLevelRow {
+  totalXpEarned: number | null;
+  totalSkillPoints: number | null;
+  keystoneBonusSkillPoints: number | null;
+}
+
+/** One `specialization_tracks` row. `level` is a REAL, so the fraction is the way to the next level. */
+export interface DuneSpecializationRow {
+  /** The `SpecializationTrackType` enum label: `Crafting`, `Gathering`, `Exploration`, `Combat`, `Sabotage`. */
+  track: string;
+  level: number | null;
+  xp: number | null;
+}
+
+export interface DuneProgressionRows {
+  character: DuneCharacterLevelRow | null;
+  specializations: DuneSpecializationRow[];
+}
+
 export interface DuneReachability {
   connectable: boolean;
   reason: string | null;
@@ -74,10 +96,26 @@ export interface DuneReachability {
   expectedPartitions?: number;
 }
 
+/** The player's current character, on `getPlayers`, `getPlayer` and every player in a pushed event. */
+export interface TakaroCharacter {
+  id: string;
+  name: string;
+}
+
+/** One Progression Track, as `getPlayerProgression` answers it. */
+export interface TakaroProgressionTrack {
+  key: string;
+  name?: string;
+  level: number;
+  experience?: number;
+  progress?: number;
+}
+
 /** Takaro IGamePlayer. For Dune `gameId` = FLS id, `steamId` = platform_id when steam, `platformId` = `steam:<id>`. */
 export interface TakaroPlayer {
   gameId: string;
   name: string;
+  character?: TakaroCharacter;
   /** Only set on a last-known record answered for a player who is not online (see adapter.getPlayer). */
   online?: boolean;
   steamId?: string;

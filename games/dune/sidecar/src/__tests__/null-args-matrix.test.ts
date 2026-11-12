@@ -17,6 +17,7 @@ const NULL_ARG_CASES: Record<string, Record<string, unknown>[]> = {
   getPlayer: [{ gameId: FLS }, { gameId: FLS, extra: null }, { player: { gameId: FLS, steamId: null, platformId: null } }],
   getPlayerLocation: [{ gameId: FLS }, { gameId: FLS, dimension: null }],
   getPlayerInventory: [{ gameId: FLS }, { gameId: FLS, opts: null }],
+  getPlayerProgression: [{ gameId: FLS }, { gameId: FLS, opts: null }],
   giveItem: [
     { gameId: FLS, item: 'WaterFlask' },
     { gameId: FLS, item: 'WaterFlask', amount: null, quality: null, dimension: null },
@@ -51,7 +52,7 @@ const NULL_ARG_CASES: Record<string, Record<string, unknown>[]> = {
 };
 
 describe('null-args matrix', () => {
-  it('covers every one of the 17 actions', () => {
+  it('covers every one of the 18 actions', () => {
     expect(Object.keys(NULL_ARG_CASES).sort()).toEqual([...GAME_SERVER_ACTIONS].sort());
   });
 

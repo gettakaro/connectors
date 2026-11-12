@@ -9,13 +9,13 @@ import * as gmCommands from './gm.js';
 import { GmClient, GmCommandError, defaultExecRunner, type ExecRunner } from './gm.js';
 import { gmPlayerId, mapPlayer, num, str, stripPlatform, type PlayerIdKind } from './identity.js';
 import type { KnownPlayerStore } from './knownStore.js';
-import { aggregateInventory, mapInventoryRow } from './mapping.js';
+import { aggregateInventory, mapInventoryRow, mapProgression } from './mapping.js';
 import { dimensionForMap } from './mapDimensions.js';
 import { DunePg, isOnline } from './pg.js';
 import { DunePluginClient } from './pluginClient.js';
 import type { PluginJoin } from './pluginJoin.js';
 import { DuneRmq } from './rmq.js';
-import type { DunePlayerRow, Position, TakaroBan, TakaroEntity, TakaroItem, TakaroPlayer } from './types.js';
+import type { DunePlayerRow, Position, TakaroBan, TakaroEntity, TakaroItem, TakaroPlayer, TakaroProgressionTrack } from './types.js';
 
 export class ActionError extends Error {}
 
@@ -55,6 +55,8 @@ export interface AdapterOptions {
   verifyIntervalMs?: number;
   /** Argv run to stop the battlegroup after the shutdown notice. Empty = `shutdown` refuses with a clear message. */
   shutdownCmd?: string;
+  /** How long listEntities waits for the plugin before answering from the cache (default 3 s). */
+  entityWaitMs?: number;
   shutdownNoticeSeconds?: number;
   /** Injectable sleep so the shutdown notice wait is testable without real time. */
   sleep?: (ms: number) => Promise<void>;
@@ -81,6 +83,9 @@ export class DuneAdapter {
   private readonly known = new Map<string, TakaroPlayer>();
   private readonly options: AdapterOptions;
 
+  private pluginEntities: TakaroEntity[] = [];
+  private entityFetch: Promise<void> | null = null;
+  private lastReachability: { connectable: boolean; reason: string | null; at: string } | null = null;
   private lastLocation: Record<string, unknown> | null = null;
   private readonly locationSourceCounts: Record<string, number> = {};
 
@@ -118,6 +123,8 @@ export class DuneAdapter {
       bans: 'connector-enforced',
       catalogue: this.options.catalogue.status(),
       shutdownHook: Boolean(this.options.shutdownCmd),
+      // `/health` `ok` only covers Postgres, so a stopped map shows up here. Takaro asks about once a minute; `at` dates it.
+      gameReachability: this.lastReachability,
     };
   }
 
@@ -142,6 +149,8 @@ export class DuneAdapter {
         return this.getPlayerLocation(playerId(args));
       case 'getPlayerInventory':
         return this.getPlayerInventory(playerId(args));
+      case 'getPlayerProgression':
+        return this.getPlayerProgression(playerId(args));
       case 'giveItem':
         return this.giveItem(args);
       case 'listItems':
@@ -174,6 +183,12 @@ export class DuneAdapter {
   // --- reads ---------------------------------------------------------------
 
   async testReachability(): Promise<{ connectable: boolean; reason: string | null }> {
+    const result = await this.checkReachability();
+    this.lastReachability = { ...result, at: new Date().toISOString() };
+    return result;
+  }
+
+  private async checkReachability(): Promise<{ connectable: boolean; reason: string | null }> {
     try {
       const pg = await this.options.pg.reachability();
       const problems: string[] = [];
@@ -301,34 +316,60 @@ export class DuneAdapter {
     return aggregateInventory(carried.map((r) => mapInventoryRow(r, (code) => this.options.catalogue.displayName(code))));
   }
 
+  /** `null` for a player the game does not know, `[]` for a known one with nothing to report. */
+  async getPlayerProgression(id: string): Promise<TakaroProgressionTrack[] | null> {
+    const row = await this.findRow(id);
+    if (!row) return null;
+    return mapProgression(await this.options.pg.progression(row));
+  }
+
+  /**
+   * Takaro gives every action 10 s. The plugin's /entities can take longer while the map is still loading, and an
+   * answer that comes too late leaves a fresh server with no entities at all, so the plugin rows are cached and
+   * fetched in the background; listEntities waits for them only briefly.
+   */
   async listEntities(): Promise<TakaroEntity[]> {
     const fromFile = this.options.catalogue.listEntities();
+    if (!this.options.plugin?.enabled()) return fromFile;
+    const pending = this.refreshEntities();
+    if (!this.pluginEntities.length) {
+      await Promise.race([pending, new Promise((resolve) => setTimeout(resolve, this.options.entityWaitMs ?? 3000).unref?.())]);
+    }
+    const merged = new Map(fromFile.map((e) => [e.code, e] as const));
+    // The file wins on `name`: it is the one carrying curated display names.
+    for (const entity of this.pluginEntities) if (!merged.has(entity.code)) merged.set(entity.code, entity);
+    return [...merged.values()];
+  }
+
+  /** Fetches the plugin's live entity rows into the cache; concurrent calls share one request. */
+  refreshEntities(): Promise<void> {
     const plugin = this.options.plugin;
-    if (!plugin?.enabled()) return fromFile;
-    try {
-      const rows = await plugin.getEntities();
-      if (Array.isArray(rows) && rows.length) {
+    if (!plugin?.enabled()) return Promise.resolve();
+    this.entityFetch ??= (async () => {
+      try {
+        const rows = await plugin.getEntities();
         const { mapEntity } = await import('./mapping.js');
-        const merged = new Map(fromFile.map((e) => [e.code, e] as const));
-        for (const raw of rows) {
+        const mapped: TakaroEntity[] = [];
+        for (const raw of Array.isArray(rows) ? rows : []) {
           try {
-            // The plugin flags a row whose only available name is the blueprint/class name. Those are dev names and
-            // the catalogue gate forbids them, so they are dropped rather than shown to an operator as a creature.
+            // A row named only by its blueprint/class name is a dev name, which the catalogue gate forbids.
             if (isClassNamed(raw)) continue;
-            const entity = mapEntity(raw);
-            // The file wins on `name`: it is the one carrying curated display names.
-            if (!merged.has(entity.code)) merged.set(entity.code, entity);
+            mapped.push(mapEntity(raw));
           } catch {
             /* unidentifiable plugin row */
           }
         }
-        return [...merged.values()];
+        // An empty answer is kept out on purpose: the map is still loading its NPCs, and Takaro only adds entities.
+        if (mapped.length) this.pluginEntities = mapped;
+      } catch (err) {
+        logger.debug(`Plugin /entities unavailable: ${(err as Error).message}`);
+      } finally {
+        this.entityFetch = null;
       }
-    } catch (err) {
-      logger.debug(`Plugin /entities unavailable: ${(err as Error).message}`);
-    }
-    return fromFile;
+    })();
+    return this.entityFetch;
   }
+
 
   // --- mutations -----------------------------------------------------------
 

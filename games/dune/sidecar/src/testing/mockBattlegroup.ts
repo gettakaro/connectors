@@ -3,7 +3,7 @@ import type { Queryable } from '../dune/pg.js';
 import { OPTIONAL_COLUMNS } from '../dune/pg.js';
 import type { AmqpChannel, AmqpConnection, AmqpMessage } from '../dune/rmq.js';
 import type { ExecRunner, PublishChannel } from '../dune/gm.js';
-import type { DuneInventoryRow, DunePlayerRow } from '../dune/types.js';
+import type { DuneInventoryRow, DunePlayerRow, DuneProgressionRows } from '../dune/types.js';
 
 /**
  * An in-memory stand-in for a Dune battlegroup: the Postgres reads, the game RabbitMQ, and the broker-exec channel.
@@ -17,6 +17,8 @@ export interface MockPlayer extends DunePlayerRow {
   inventory?: DuneInventoryRow[];
   /** `inventories.max_item_count` of the backpack; absent = no row, as on a schema without the column. */
   backpackSlots?: number;
+  /** The character's saved level component and specialization rows; absent = no rows at all. */
+  progression?: DuneProgressionRows;
 }
 
 export interface RecordedPublish {
@@ -92,6 +94,24 @@ export class MockBattlegroup {
         for (const column of cols) out.push({ table_name: table, column_name: column });
       }
       return out;
+    }
+    // The character lookup answers the account id as both actor ids, so the two reads below can find the player again.
+    if (sql.includes('AS controller_id')) {
+      const id = String(params[0]);
+      return [{ pawn_id: id, controller_id: id }];
+    }
+    if (sql.includes('FLevelComponent')) {
+      const level = this.players.find((p) => p.accountId === Number(params[0]))?.progression?.character;
+      if (!level) return [];
+      return [{
+        total_xp_earned: level.totalXpEarned,
+        total_skill_points: level.totalSkillPoints,
+        keystone_bonus_skill_points: level.keystoneBonusSkillPoints,
+      }];
+    }
+    if (sql.includes('"specialization_tracks"')) {
+      const rows = this.players.find((p) => p.accountId === Number(params[0]))?.progression?.specializations ?? [];
+      return rows.map((r) => ({ track_type: r.track, level: r.level, xp_amount: r.xp }));
     }
     if (sql.includes('ready_alive')) {
       return [{ expected: this.partitions.expected, ready_alive: this.partitions.readyAlive }];
@@ -336,6 +356,7 @@ function toRow(p: MockPlayer, actorColumns: Set<string>, playerStateColumns: Set
     platform_id: p.platformId ?? '',
     platform_name: p.platformName ?? '',
     account_id: p.accountId ?? null,
+    character_id: p.characterId ?? null,
     character_name: p.characterName ?? '',
     online_status: p.onlineStatus ?? '',
     server_id: p.serverId ?? '',
