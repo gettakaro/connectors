@@ -87,7 +87,7 @@ connector creates it, or create it yourself before the first start:
     <RegistrationToken></RegistrationToken>
     <IdentityToken></IdentityToken>
     <Enabled>true</Enabled>
-    <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
+    <ReconnectIntervalSeconds>2</ReconnectIntervalSeconds>
   </WebSocket>
   <Chat>
     <ServerChatName></ServerChatName>
@@ -102,6 +102,12 @@ Paste your registration token between the `RegistrationToken` tags and save. Lea
 is and leave `IdentityToken` empty; the connector fills it in (unless you are migrating, see
 [MIGRATION.md](MIGRATION.md)). No restart is needed: the connector checks the file every few
 seconds and connects as soon as it has a token. Emptying the token disconnects the server.
+
+**Reconnecting.** When a working connection drops, the connector reconnects within about a
+second. Only when attempts keep failing does it wait longer between them: from
+`ReconnectIntervalSeconds` (default 2), doubling each time, at most 60 seconds, with a random
+spread. A file written by an older connector says 30; that still works (the backoff then starts
+at 30 seconds), and you can change it to 2.
 
 **Server chat name (optional).** Messages from Takaro show **Server** as the sender. To show your
 own name, set the server's chat name in Takaro. If your Takaro does not pass that name to the
@@ -171,7 +177,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects by itself within about a minute after an outage or a server restart; events from the outage are delivered afterwards. |
+| Connection | ✅ | Reconnects within about a second when a working connection drops, and by itself within a minute after a longer outage or a server restart; events from the gap are delivered afterwards. A link that goes silent is noticed within 45 seconds. |
 | Player list | ✅ | Name, Steam id (or Xbox id), Epic (EOS) id, platform id, IP and ping. |
 | Player location | ✅ | Updated about every 30 seconds. |
 | Teleport | ⚠️ | The height is snapped to the ground, so the player lands on solid ground, not at the exact height asked for. |

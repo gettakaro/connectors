@@ -23,7 +23,7 @@ for any connector that does not.
        <IdentityToken>identity-token-from-takaro</IdentityToken>
        <RegistrationToken>registration-token-from-takaro</RegistrationToken>
        <Enabled>true</Enabled>
-       <ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>
+       <ReconnectIntervalSeconds>2</ReconnectIntervalSeconds>
      </WebSocket>
    </Takaro>
    ```
