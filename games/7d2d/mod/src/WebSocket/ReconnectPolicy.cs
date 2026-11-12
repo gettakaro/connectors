@@ -38,9 +38,7 @@ namespace Takaro.WebSocket
             random = Math.Min(Math.Max(random, 0), 1);
 
             if (failureStreak <= 0)
-                return TimeSpan.FromSeconds(
-                    FastRetryMinSeconds + FastRetryJitterSeconds * random
-                );
+                return TimeSpan.FromSeconds(FastRetryMinSeconds + FastRetryJitterSeconds * random);
 
             int clampedBase = Math.Min(Math.Max(1, baseSeconds), MaxSeconds);
             int exponent = Math.Min(16, failureStreak - 1);

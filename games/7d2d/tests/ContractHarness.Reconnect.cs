@@ -38,7 +38,10 @@ public static partial class ContractHarness
         {
             double ceiling = Seconds(streak, b, 1);
             double floor = Seconds(streak, b, 0);
-            True(Math.Abs(floor - ceiling / 2) < 1e-9, $"streak {streak}: floor is half the ceiling");
+            True(
+                Math.Abs(floor - ceiling / 2) < 1e-9,
+                $"streak {streak}: floor is half the ceiling"
+            );
             True(ceiling >= previousCeiling, $"streak {streak}: the delay does not shrink");
             previousCeiling = ceiling;
         }
