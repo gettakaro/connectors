@@ -8,38 +8,37 @@ for what CI checks.
 ````markdown
 # Takaro <Game> Connector
 
-<Two or three sentences: what it is (plugin / mod / native library), which server OS, and
-"Players do not install anything." (or exactly what they install, if they must).>
+<One sentence: what it is (plugin / mod / native library) and which server OS.> Players do not
+install anything.
 
 ## Install
 
-### 1. Before you start
+You need: <server type and OS, framework or mod loader if any, a Takaro game server of type
+Generic and its registration token>.
 
-- <bullets: server type and OS, framework/loader if any, access needed, a Takaro game server of
-  type Generic and its registration token>
+### 1. Download
 
-### 2. Download
+From https://takaro.io/connectors/<id>, download `<exact file name>`. <Which file for which
+server build, in one line or the generated target table. Use `<version>`, never a fixed version.>
 
-Download the latest release from https://takaro.io/connectors/<id>. <Which file for which server
-build, as a short list or the generated target table. One sentence on SHA256SUMS. Never name a
-fixed version number in an example file name: use `<version>`.>
+### 2. Install
 
-### 3. Install
+<Where the files go: one code block with the path, plus a Linux / Windows difference if any.>
 
-<Where the files go: a code block with the folder tree, then Linux and Windows example paths.>
+### 3. Configure
 
-### 4. Configure
+<Where the config file is, a minimal config example with the token, and whether a restart is
+needed.>
 
-<Where the config file is, the minimal config, where the token goes, whether a restart is needed.>
+<Optional settings, only those owners really change, as a short table. The server chat name is
+one row.>
 
-### 5. Check that it works
+### 4. Check that it works
 
-<The log line(s) to look for, and "the game server shows as online in Takaro". What a wrong or
-missing token looks like.>
+<The one log line that means connected, and "the server shows as online in Takaro". One line on
+what a wrong token looks like.>
 
-### 6. Upgrade
-
-<Stop, replace which files, keep which files, start. Link UPGRADING.md / MIGRATION.md if any.>
+**Upgrading:** <one line, only when a manual step is needed.>
 
 ## What works, what doesn't
 
@@ -87,18 +86,21 @@ Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
   icon", "Restarts and outages", "Game updates". A game-specific capability goes last (for example
   "PrismaCore commands"). Economy belongs in the Shop row. A capability the game does not have stays in the table as ❌
   with a short reason.
-- **Notes are one short sentence** (two at most): what the server owner gets or what the limit is.
-  An empty note is fine for a plain ✅.
+- **About 350 to 600 words.** The install steps matter most. No explanations of why something
+  works the way it does, no options an owner does not need, no environment-variable lists (one
+  line at most), no file-name history and no developer notes (those go in DEVELOPMENT.md).
+- **Notes are one short phrase**: what the server owner gets or what the limit is. An empty note
+  is fine for a plain ✅.
 - **No test or run narrative.** No "proven live", "verified with a real game client", "re-proven
   on", "no client in that run", event ids, PR or issue numbers, rig or staging names, counts from
   a test session, "during testing", or the history of how a feature came to work. The one line
   under "What works" is the only place a test date appears.
 - **No version history.** What changed between versions belongs in CHANGELOG.md and
-  UPGRADING.md. The README describes the latest release only (an upgrade step from an older layout
-  may stay in "6. Upgrade" in one or two sentences).
+  UPGRADING.md. The README describes the latest release only (a manual upgrade step may stay as
+  the one "Upgrading" line).
 - **No Takaro-internal talk** a server owner cannot act on: "protocol version 1", "declares
   `locations.list`", "Takaro-side echo". Say what the owner sees instead.
 - **One download place**: https://takaro.io/connectors/<id>. Mention the GitHub releases page at
-  most once, as the alternative.
+  most once, as the alternative. No SHA256SUMS or legacy file names.
 - Keep generated blocks (`<!-- takaro-maint:targets:begin -->` … `end -->`) byte for byte.
 - Plain, short sentences. No marketing.
