@@ -29,7 +29,7 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$here:/src" -v "$managed
   csc -nologo -langversion:7.3 -optimize+ -deterministic -target:library -out:bin/TakaroEmpyrion/TakaroEmpyrion.dll \
     -r:/managed/Mif.dll -r:/managed/ModApi.dll -r:/managed/Newtonsoft.Json.dll \
     -r:/usr/lib/mono/4.5/Facades/netstandard.dll -r:System.Net.Http.dll -r:System.IO.Compression.dll \
-    "${sources[@]}"'
+    -resource:assets/icon-256.png,TakaroEmpyrion.icon-256.png "${sources[@]}"'
 grep -v "^# x-release-please-" "$here/mod/TakaroEmpyrion_Info.yaml" > "$out/TakaroEmpyrion_Info.yaml"
 cp "$here/TakaroConfig.txt.example" "$out/"
 sha256sum "$out/TakaroEmpyrion.dll"
