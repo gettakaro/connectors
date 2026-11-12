@@ -99,6 +99,18 @@ void ItemLevelTests() {
     CHECK(!ParseItemLevel(std::string("abc"), lvl));
 }
 
+// console `give ... [level] [rarity]`: AdminInventoryCreateAction.rarity 0-4
+void ItemRarityTests() {
+    t::Group("give-item-rarity");
+    int r = -1;
+    CHECK(ParseItemRarity("common", r) && r == 0);
+    CHECK(ParseItemRarity("Uncommon", r) && r == 1);
+    CHECK(ParseItemRarity("rare", r) && r == 2);
+    CHECK(ParseItemRarity("EPIC", r) && r == 3);
+    CHECK(ParseItemRarity("legendary", r) && r == 4);
+    for (const char* bad : {"", "3", "mythic", "rare ", "legend"}) CHECK_MSG(!ParseItemRarity(bad, r), bad);
+}
+
 void IsoTests() {
     t::Group("iso-dates");
     int64_t ms = 0;
@@ -621,6 +633,7 @@ void RunUnitTests() {
     IdentityTests();
     JsonUtilTests();
     ItemLevelTests();
+    ItemRarityTests();
     IsoTests();
     HeartbeatTests();
     ReconnectPolicyTests();

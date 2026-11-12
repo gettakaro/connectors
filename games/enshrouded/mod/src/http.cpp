@@ -398,14 +398,14 @@ Response DoTeleport(const std::string& id, double x, double y, double z) {
     return {200, "{\"success\":true}"};
 }
 
-Response DoGive(const std::string& id, const std::string& code, double amount, uint8_t level = 0) {
+Response DoGive(const std::string& id, const std::string& code, double amount, uint8_t level = 0, int rarity = -1) {
     std::string steam, name, err, detail;
     if (!PluginState::Get().FindOnline(id, steam, name)) return Err(404, "player not online");
     if (!ItemTablesUsable()) return Err(503, "giveItem unavailable: " + ItemTablesReason());
     const ItemDef* item = FindItemByCode(code);
     if (!item) return Err(400, "unknown item code '" + code + "' (see GET /items)");
     if (!(amount >= 1) || amount > 100000) return Err(400, "amount must be >= 1");
-    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail, level)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
+    if (!WorldGiveItem(name, *item, (uint32_t)amount, err, detail, level, rarity)) return Err(503, err + (detail.empty() ? "" : " (" + detail + ")"));
     return {200, "{\"success\":true,\"code\":" + JsonStr(item->code) + ",\"detail\":" + JsonStr(detail) + "}"};
 }
 
@@ -478,7 +478,7 @@ bool RunCommand(const std::string& line, std::string& out) {
     std::string notice = st.GameSupportNotice();
     if (cmd == "help") {
         out = (notice.empty() ? "" : "DEGRADED: " + notice + "\n") + "commands: help | version | players | say <text> | whisper <player> <text> | location <player> | "
-              "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] | "
+              "teleport <player> <x> <y> <z> | tp <player> <toPlayer> | inventory <player> | give <player> <itemCode> [amount] [level] [rarity] | "
               "item <search> | kick <player> | levels | level <player> | save-and-shutdown. <player> = SteamID64 or name; "
               "a name with spaces may be quoted: level \"Character 1\".";
         return true;
@@ -583,18 +583,25 @@ bool RunCommand(const std::string& line, std::string& out) {
         return true;
     }
     if (cmd == "give" && args.size() >= 2) {
-        // an item code is one word; amount and level are numbers, so a trailing word can only be part of the name
+        // an item code is one word; amount and level are numbers and rarity is one of five words, so any other trailing
+        // word can only be part of the name
         auto giveRest = [](const std::vector<Arg>& r) {
             double d;
             uint8_t l;
-            return (r.size() < 2 || Num(r[1].text, d)) && (r.size() < 3 || ParseItemLevel(r[2].text, l));
+            int q;
+            return (r.size() < 2 || Num(r[1].text, d)) && (r.size() < 3 || ParseItemLevel(r[2].text, l)) &&
+                   (r.size() < 4 || ParseItemRarity(r[3].text, q));
         };
-        if (!resolve({{1, 1, 3, giveRest}}, "give <player> <itemCode> [amount] [level 1-255]")) return false;
+        if (!resolve({{1, 1, 4, giveRest}},
+                     "give <player> <itemCode> [amount] [level 1-255] [common|uncommon|rare|epic|legendary]"))
+            return false;
         double n = 1;
         uint8_t lvl = 0;
+        int rarity = -1;
         if (pa.rest.size() >= 2) Num(pa.rest[1].text, n);
-        if (pa.rest.size() == 3) ParseItemLevel(pa.rest[2].text, lvl);
-        Response r = DoGive(pa.players[0].steamId, pa.rest[0].text, n, lvl);
+        if (pa.rest.size() >= 3) ParseItemLevel(pa.rest[2].text, lvl);
+        if (pa.rest.size() == 4) ParseItemRarity(pa.rest[3].text, rarity);
+        Response r = DoGive(pa.players[0].steamId, pa.rest[0].text, n, lvl, rarity);
         if (r.status != 200) return out = ErrText(r), false;
         out = "gave " + std::to_string((long long)n) + " x " + pa.rest[0].text;
         return true;
