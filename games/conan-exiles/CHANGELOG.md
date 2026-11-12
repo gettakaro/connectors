@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.7.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.6.0...conan-exiles-v3.7.0) (2026-11-12)
+
+
+### Features
+
+* **conan-exiles:** reconnect within about a second after an established connection drops ([#880](https://github.com/gettakaro/connectors/issues/880)) ([97eab8c](https://github.com/gettakaro/connectors/commit/97eab8c2ffebadc9f00616380cfcae075aa9b09d))
+
+
+### Build System
+
+* **conan-exiles:** retry apt fetches from the pinned Debian snapshot ([#785](https://github.com/gettakaro/connectors/issues/785)) ([bad843b](https://github.com/gettakaro/connectors/commit/bad843bdca5ead783b3c6f629466ed3b9e48ef32))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [3.6.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.5.1...conan-exiles-v3.6.0) (2026-10-30)
 
 
