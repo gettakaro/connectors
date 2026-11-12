@@ -36,7 +36,11 @@ class SourceRegressionTests(unittest.TestCase):
         transport = self.source("src/WebSocket/WebSocketTransport.cs")
         poll = transport.split("CheckInboundLiveness();", 1)[1].split("FlushPending();", 1)[0]
         self.assertIn("_session.ApplyAcknowledgements();", poll)
-        self.assertIn("CloseIfIdentifyOverdue();", poll)
+        deadline = transport.split("private void OnConnectDeadline(", 1)[1].split(
+            "private string StalledStage", 1
+        )[0]
+        self.assertIn("_session.AttemptOverdue(generation, CONNECT_DEADLINE_SECONDS)", deadline)
+        self.assertIn("ScheduleReconnect();", deadline)
 
         flush = transport.split("private void FlushPending()", 1)[1].split("while (true)", 1)[0]
         self.assertIn("_session.ReplayUnconfirmedOnNewSocket()", flush)
@@ -421,7 +425,35 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertIn('"migration.native"', handshake)
         self.assertIn("OfferedProtocolVersions = { 0, 1 }", handshake)
         self.assertNotIn("PromoteIfGraceElapsed", transport)
-        self.assertIn("IDENTIFY_DEADLINE_SECONDS", transport)
+        self.assertIn("CONNECT_DEADLINE_SECONDS", transport)
+
+    def test_blocking_connect_runs_off_the_connect_lock(self):
+        # websocket-sharp's Connect() has no TLS-handshake timeout: under the
+        # connect lock a silent peer froze reconnects, config reloads and Shutdown.
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        self.assertEqual(transport.count("socket.Connect();"), 1)
+        run_connect = transport.split("private void RunConnect(", 1)[1].split(
+            "private void StartConnectDeadline", 1
+        )[0]
+        self.assertIn("socket.Connect();", run_connect)
+        self.assertLess(
+            run_connect.index("socket.Connect();"), run_connect.index("lock (_connectLock)")
+        )
+        connect = transport.split("private void ConnectToServer()", 1)[1].split(
+            "private void RunConnect(", 1
+        )[0]
+        self.assertNotIn(".Connect()", connect)
+        self.assertIn("new Thread(() => RunConnect(socket))", connect)
+        self.assertIn("StartConnectDeadline(socket, generation);", connect)
+
+        shutdown = transport.split("public void Shutdown()", 1)[1].split("public void Send(", 1)[0]
+        locked = shutdown.split("lock (_connectLock)", 1)[1].split("}", 1)[0]
+        self.assertNotIn("Close", locked)
+        self.assertIn("CloseForShutdown(last);", shutdown)
+
+        discard = transport.split("private void DiscardSocket()", 1)[1]
+        self.assertIn("RetireSocket(previous", discard)
+        self.assertNotIn(".Close(", discard.split("RetireSocket(previous", 1)[0])
 
     def test_event_streams_are_numbered_on_the_sender_thread(self):
         ledger = self.source("src/Services/OutboundLedger.cs")

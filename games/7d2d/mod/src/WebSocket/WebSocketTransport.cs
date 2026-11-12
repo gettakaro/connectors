@@ -19,8 +19,7 @@ namespace Takaro.WebSocket
     ///           versions offered, Capability Manifest, game identifier
     ///        -> "unconfirmed": nothing else may be written
     ///        -> confirmed only by a successful identifyResponse, which also
-    ///           names the negotiated protocol version (absent means 0); no
-    ///           answer within IDENTIFY_DEADLINE_SECONDS closes the socket
+    ///           names the negotiated protocol version (absent means 0)
     ///        -> backlog is drained and the heartbeat starts
     ///        -> the failure streak is reset only once the connection has
     ///           stayed up for CONNECTION_STABLE_SECONDS; a drop after that is
@@ -29,6 +28,14 @@ namespace Takaro.WebSocket
     /// accepted, before it has processed identify, and the edge answers an
     /// unidentified `gameEvent` with a bare TCP terminate (the 1006 bounce), so
     /// no other inbound frame counts as an acknowledgement.
+    ///
+    /// The connect itself runs on its own thread and never under the connect
+    /// lock: websocket-sharp's Connect() has no timeout for the TLS handshake
+    /// or the upgrade, so a peer that accepts TCP and then says nothing would
+    /// block it for good. TCP connect, TLS, upgrade and identify answer share
+    /// one deadline (CONNECT_DEADLINE_SECONDS); an attempt not confirmed by
+    /// then is abandoned, its TCP connection shut down, and retried with
+    /// backoff. Config reloads and Shutdown therefore never wait on the network.
     ///
     /// A blackholed link stays "open" and swallows every event written into
     /// it, so the last inbound frame is tracked and a socket silent for
@@ -54,6 +61,7 @@ namespace Takaro.WebSocket
         private WebSocketSharp.WebSocket _webSocket;
         private Timer _heartbeatTimer;
         private Timer _reconnectTimer;
+        private Timer _connectDeadlineTimer;
 
         private readonly TransportSession _session;
 
@@ -65,9 +73,15 @@ namespace Takaro.WebSocket
 
         private readonly Random _jitter = new Random();
 
-        // Every Takaro version answers identify; a socket that stays silent
-        // past this is not going to, and is replaced.
-        private const int IDENTIFY_DEADLINE_SECONDS = 30;
+        // From starting a connection attempt to Takaro accepting identify: the
+        // TCP connect, the TLS handshake, the WebSocket upgrade and the identify
+        // round trip together take one to two seconds, so an attempt still
+        // unconfirmed after this is stalled and is given up on.
+        private const int CONNECT_DEADLINE_SECONDS = 15;
+
+        // Shutdown runs on the game thread: the closing handshake of a
+        // healthy socket gets this long, a dead link is not waited for.
+        private const int SHUTDOWN_CLOSE_WAIT_MILLISECONDS = 2000;
 
         // How long a confirmed connection must stay up before the failure streak
         // is reset and its drop gets the fast retry. See ResetBackoffIfStable().
@@ -93,7 +107,8 @@ namespace Takaro.WebSocket
         private readonly object _sendLock = new object();
 
         // Serialises connection attempts: the reconnect timer and a config
-        // change can both start one.
+        // change can both start one. Never held across a blocking network
+        // call; Shutdown and a config reload take it too.
         private readonly object _connectLock = new object();
 
         private BlockingCollection<OutboundLedger.Entry> _outbound;
@@ -174,12 +189,16 @@ namespace Takaro.WebSocket
 
         public void Shutdown()
         {
+            WebSocketSharp.WebSocket last;
             lock (_connectLock)
             {
                 _shuttingDown = true;
                 StopTimers();
-                CloseConnection();
+                last = _webSocket;
+                _webSocket = null;
+                _session.MarkDetached();
             }
+            CloseForShutdown(last);
             _outbound?.CompleteAdding();
             _senderThread?.Join(TimeSpan.FromSeconds(5));
             _senderThread = null;
@@ -250,7 +269,6 @@ namespace Takaro.WebSocket
                 // link is noticed within a second of the timeout.
                 CheckInboundLiveness();
                 _session.ApplyAcknowledgements();
-                CloseIfIdentifyOverdue();
                 ResetBackoffIfStable();
                 FlushPending();
             }
@@ -295,33 +313,6 @@ namespace Takaro.WebSocket
                     + "resetting reconnect backoff"
             );
             _reconnectAttempts = 0;
-        }
-
-        /// <summary>
-        /// A socket whose identify is never answered cannot be used and would
-        /// otherwise hold the backlog forever: close it so the normal reconnect
-        /// path runs.
-        /// </summary>
-        private void CloseIfIdentifyOverdue()
-        {
-            if (_webSocket == null || !_session.IdentifyOverdue(IDENTIFY_DEADLINE_SECONDS))
-                return;
-
-            _session.DeadSocketClosing = true;
-            LogService.Instance.Warn(
-                $"Takaro did not answer identify within {IDENTIFY_DEADLINE_SECONDS}s; "
-                    + "closing the connection and retrying with backoff"
-            );
-            try
-            {
-                _webSocket.CloseAsync(CloseStatusCode.Away, "Identify not answered");
-            }
-            catch (Exception ex)
-            {
-                LogService.Instance.Info(
-                    $"Error closing a socket that never answered identify: {ex.GetType().FullName}: {ex.Message}"
-                );
-            }
         }
 
         /// <summary>
@@ -506,8 +497,13 @@ namespace Takaro.WebSocket
 
                 socket.OnOpen += (sender, e) =>
                 {
+                    // An attempt abandoned at the deadline can still finish
+                    // its handshake later; that socket is never identified.
                     if (!ReferenceEquals(socket, _webSocket))
+                    {
+                        RetireSocket(socket, "Connection attempt abandoned");
                         return;
+                    }
 
                     _session.MarkOpened();
                     LogService.Instance.Info(
@@ -579,13 +575,235 @@ namespace Takaro.WebSocket
                 socket.OnClose += (sender, e) =>
                     ThreadPool.QueueUserWorkItem(_ => HandleClose(socket, e));
 
-                socket.Connect();
+                StartConnectDeadline(socket, generation);
+                var connectThread = new Thread(() => RunConnect(socket))
+                {
+                    IsBackground = true,
+                    Name = "Takaro-WsConnect",
+                };
+                connectThread.Start();
             }
             catch (Exception ex)
             {
                 LogService.Instance.Error($"Error connecting to WebSocket server: {ex.Message}");
                 Log.Exception(ex);
                 ScheduleReconnect();
+            }
+        }
+
+        /// <summary>
+        /// The blocking part of a connection attempt, on its own thread. A
+        /// failed connect is reported through OnClose (HandleClose schedules
+        /// the retry); a stalled one is ended by the connect deadline.
+        /// </summary>
+        private void RunConnect(WebSocketSharp.WebSocket socket)
+        {
+            try
+            {
+                socket.Connect();
+            }
+            catch (Exception ex)
+            {
+                lock (_connectLock)
+                {
+                    if (_shuttingDown || !ReferenceEquals(socket, _webSocket))
+                        return;
+                    LogService.Instance.Error(
+                        $"Error connecting to WebSocket server: {ex.GetType().FullName}: {ex.Message}"
+                    );
+                    _webSocket = null;
+                    _session.MarkDetached();
+                    StopTimers();
+                    ScheduleReconnect();
+                }
+                RetireSocket(socket, "Connect failed");
+            }
+        }
+
+        private void StartConnectDeadline(WebSocketSharp.WebSocket socket, long generation)
+        {
+            StopConnectDeadlineTimer();
+            Timer timer = null;
+            timer = new Timer(
+                state => OnConnectDeadline(socket, generation, timer),
+                null,
+                Timeout.Infinite,
+                Timeout.Infinite
+            );
+            _connectDeadlineTimer = timer;
+            // A little past the deadline, so the session agrees it has passed.
+            timer.Change(
+                TimeSpan.FromSeconds(CONNECT_DEADLINE_SECONDS) + TimeSpan.FromMilliseconds(250),
+                Timeout.InfiniteTimeSpan
+            );
+        }
+
+        /// <summary>
+        /// The attempt is still not confirmed at the deadline: detach it, retry
+        /// with backoff, and close its TCP connection so the thread blocked in
+        /// websocket-sharp's handshake returns.
+        /// </summary>
+        private void OnConnectDeadline(
+            WebSocketSharp.WebSocket socket,
+            long generation,
+            Timer timer
+        )
+        {
+            try
+            {
+                lock (_connectLock)
+                {
+                    if (
+                        _shuttingDown
+                        || !ReferenceEquals(timer, _connectDeadlineTimer)
+                        || !ReferenceEquals(socket, _webSocket)
+                        || !_session.AttemptOverdue(generation, CONNECT_DEADLINE_SECONDS)
+                    )
+                        return;
+
+                    string stage = StalledStage(socket);
+                    _session.MarkClosed(out _);
+                    _webSocket = null;
+                    StopTimers();
+                    LogService.Instance.Warn(
+                        $"Connecting to Takaro stalled: {stage} did not finish within "
+                            + $"{CONNECT_DEADLINE_SECONDS}s; abandoning the attempt and retrying "
+                            + $"with backoff ({_ledger.PendingCount} message(s) buffered)"
+                    );
+                    ScheduleReconnect();
+                }
+                RetireSocket(socket, "Connect stalled");
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Error(
+                    $"Error abandoning a stalled connection attempt: {ex.GetType().FullName}: {ex.Message}"
+                );
+            }
+        }
+
+        private string StalledStage(WebSocketSharp.WebSocket socket)
+        {
+            if (_session.HasOpened)
+                return "the identify answer";
+            if (!StalledSocket.CanAbort)
+                return "the connect";
+            if (!StalledSocket.HasTcpConnection(socket))
+                return "the TCP connect";
+            return ConfigManager.Instance.WebSocketUrl.StartsWith(
+                "wss:",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? "the TLS handshake or WebSocket upgrade"
+                : "the WebSocket upgrade";
+        }
+
+        /// <summary>
+        /// Closes a socket that is no longer the current one, off the caller's
+        /// thread and lock. An open socket gets a close frame; one still
+        /// connecting has its TCP connection shut down, because websocket-sharp's
+        /// own Close() waits for the connect to finish.
+        /// </summary>
+        private static void RetireSocket(WebSocketSharp.WebSocket socket, string reason)
+        {
+            if (socket == null)
+                return;
+
+            WebSocketState state = socket.ReadyState;
+            if (state == WebSocketState.Closing || state == WebSocketState.Closed)
+                return;
+
+            var retire = new Thread(() => CloseWhenPossible(socket, reason))
+            {
+                IsBackground = true,
+                Name = "Takaro-WsRetire",
+            };
+            retire.Start();
+        }
+
+        // Linux gives up an unanswered TCP connect after about 130 s.
+        private const int RETIRE_WAIT_SECONDS = 180;
+
+        private static void CloseWhenPossible(WebSocketSharp.WebSocket socket, string reason)
+        {
+            try
+            {
+                // Still in the TCP connect, there is no connection to shut down
+                // yet; it appears once the connect completes.
+                for (int waited = 0; waited < RETIRE_WAIT_SECONDS; waited++)
+                {
+                    WebSocketState state = socket.ReadyState;
+                    if (state == WebSocketState.Open)
+                    {
+                        socket.CloseAsync(CloseStatusCode.Away, reason);
+                        return;
+                    }
+                    if (state == WebSocketState.Closing || state == WebSocketState.Closed)
+                        return;
+                    if (StalledSocket.AbortTransport(socket))
+                        return;
+                    Thread.Sleep(1000);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Debug(
+                    $"Error closing a replaced socket: {ex.GetType().FullName}: {ex.Message}"
+                );
+            }
+        }
+
+        /// <summary>
+        /// Sends the closing handshake on a healthy socket, waiting at most
+        /// SHUTDOWN_CLOSE_WAIT_MILLISECONDS, and abandons a connecting or dead
+        /// one, so server exit never waits on the network.
+        /// </summary>
+        private static void CloseForShutdown(WebSocketSharp.WebSocket socket)
+        {
+            if (socket == null)
+                return;
+
+            try
+            {
+                if (socket.ReadyState != WebSocketState.Open)
+                {
+                    StalledSocket.AbortTransport(socket);
+                    LogService.Instance.Info(
+                        "Shutting down while connecting to Takaro; connection attempt abandoned"
+                    );
+                    return;
+                }
+
+                var closer = new Thread(() =>
+                {
+                    try
+                    {
+                        socket.Close(CloseStatusCode.Normal, "Application shutting down");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogService.Instance.Error(
+                            $"Error closing WebSocket connection: {ex.Message}"
+                        );
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "Takaro-WsClose",
+                };
+                closer.Start();
+                if (!closer.Join(SHUTDOWN_CLOSE_WAIT_MILLISECONDS))
+                {
+                    StalledSocket.AbortTransport(socket);
+                    LogService.Instance.Info(
+                        $"Takaro did not answer the close within {SHUTDOWN_CLOSE_WAIT_MILLISECONDS} ms; "
+                            + "connection dropped"
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                LogService.Instance.Error($"Error closing WebSocket connection: {ex.Message}");
             }
         }
 
@@ -959,9 +1177,19 @@ namespace Takaro.WebSocket
             timer.Change(interval, Timeout.InfiniteTimeSpan);
         }
 
+        private void StopConnectDeadlineTimer()
+        {
+            if (_connectDeadlineTimer != null)
+            {
+                _connectDeadlineTimer.Dispose();
+                _connectDeadlineTimer = null;
+            }
+        }
+
         private void StopTimers()
         {
             StopHeartbeatTimer();
+            StopConnectDeadlineTimer();
 
             if (_reconnectTimer != null)
             {
@@ -971,8 +1199,8 @@ namespace Takaro.WebSocket
         }
 
         /// <summary>
-        /// Detaches and closes the current socket without touching the pending
-        /// outbound backlog.
+        /// Detaches the current socket and closes it in the background, without
+        /// touching the pending outbound backlog.
         /// </summary>
         private void DiscardSocket()
         {
@@ -982,38 +1210,7 @@ namespace Takaro.WebSocket
 
             _webSocket = null;
             _session.MarkDetached();
-
-            try
-            {
-                if (previous.ReadyState == WebSocketState.Open)
-                    previous.Close(CloseStatusCode.Away, "Reconnecting");
-                else
-                    ((IDisposable)previous).Dispose();
-            }
-            catch (Exception ex)
-            {
-                LogService.Instance.Debug($"Error discarding previous socket: {ex.Message}");
-            }
-        }
-
-        private void CloseConnection()
-        {
-            if (_webSocket != null && _session.IsConnected)
-            {
-                try
-                {
-                    _webSocket.Close(CloseStatusCode.Normal, "Application shutting down");
-                }
-                catch (Exception ex)
-                {
-                    LogService.Instance.Error($"Error closing WebSocket connection: {ex.Message}");
-                }
-                finally
-                {
-                    _webSocket = null;
-                    _session.MarkDetached();
-                }
-            }
+            RetireSocket(previous, "Reconnecting");
         }
     }
 }

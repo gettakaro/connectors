@@ -65,7 +65,7 @@ public static partial class ContractHarness
             AssertUnbanLiftsTheEntriesTheMirrorReports();
             AssertBanCaptureMergesBothStores();
             AssertBanCaptureSendsOnlyRealNames();
-            AssertIdentifyDeadline();
+            AssertConnectDeadline();
             AssertIdentifyAnswerSetsTheNegotiatedVersion();
             AssertRefusedIdentifyIsNeverConfirmed();
             AssertAcknowledgementsAreRoutedByVersion();
@@ -1514,23 +1514,52 @@ public static partial class ContractHarness
         }
     }
 
-    private static void AssertIdentifyDeadline()
+    private static void AssertConnectDeadline()
     {
+        // One deadline from the start of the attempt to the identify answer:
+        // a TCP connect, TLS handshake or upgrade that never finishes counts too.
+        var stalled = new SessionRig();
+        long attempt = stalled.Session.BeginSocket();
+        stalled.Advance(14);
+        True(
+            !stalled.Session.AttemptOverdue(attempt, 15),
+            "a connect is not overdue before the deadline"
+        );
+        True(!stalled.Session.HasOpened, "a stalled connect never opened");
+        stalled.Advance(1);
+        True(
+            stalled.Session.AttemptOverdue(attempt, 15),
+            "a connect that never opened is overdue at the deadline"
+        );
+
         var rig = new SessionRig();
         rig.OpenSocket();
-        rig.Advance(29);
-        True(!rig.Session.IdentifyOverdue(30), "identify is not overdue before the deadline");
+        rig.Advance(14);
+        True(
+            !rig.Session.AttemptOverdue(rig.Socket, 15),
+            "identify is not overdue before the deadline"
+        );
         rig.Advance(1);
-        True(rig.Session.IdentifyOverdue(30), "identify is overdue at the deadline");
+        True(rig.Session.HasOpened, "the socket opened");
+        True(
+            rig.Session.AttemptOverdue(rig.Socket, 15),
+            "an unanswered identify is overdue at the deadline"
+        );
 
         rig.Session.DeadSocketClosing = true;
-        True(!rig.Session.IdentifyOverdue(30), "a socket already being closed is not closed twice");
+        True(
+            !rig.Session.AttemptOverdue(rig.Socket, 15),
+            "a socket already being closed is not closed twice"
+        );
 
         var answered = new SessionRig();
         answered.OpenSocket();
         answered.Accept(AcceptedV1);
         answered.Advance(120);
-        True(!answered.Session.IdentifyOverdue(30), "a confirmed socket has no deadline");
+        True(
+            !answered.Session.AttemptOverdue(answered.Socket, 15),
+            "a confirmed socket has no deadline"
+        );
 
         var refused = new SessionRig();
         refused.OpenSocket();
@@ -1538,21 +1567,39 @@ public static partial class ContractHarness
             "{\"type\":\"identifyResponse\",\"payload\":null,\"error\":{\"code\":\"unsupported\",\"message\":\"no\"}}"
         );
         refused.Advance(120);
-        True(!refused.Session.IdentifyOverdue(30), "a rejected socket is closed by the rejection");
+        True(
+            !refused.Session.AttemptOverdue(refused.Socket, 15),
+            "a rejected socket is closed by the rejection"
+        );
 
         var next = new SessionRig();
         next.OpenSocket();
+        long old = next.Socket;
         next.Advance(40);
-        True(next.Session.IdentifyOverdue(30), "the old socket is overdue");
+        True(next.Session.AttemptOverdue(old, 15), "the old socket is overdue");
         next.OpenSocket();
-        True(!next.Session.IdentifyOverdue(30), "a new socket gets a fresh deadline");
+        True(
+            !next.Session.AttemptOverdue(old, 15),
+            "a replaced attempt's deadline no longer fires"
+        );
+        True(!next.Session.AttemptOverdue(next.Socket, 15), "a new socket gets a fresh deadline");
         Equal(0, next.Session.SecondsSinceOpened(), "uptime counts from the new socket");
 
         int uptime = next.Session.MarkClosed(out bool wasConfirmed);
         Equal(0, uptime, "closing reports the uptime");
         True(!wasConfirmed, "an unanswered socket closes unconfirmed");
         Equal(-1, next.Session.SecondsSinceInbound(), "no socket means no inbound clock");
-        True(!next.Session.IdentifyOverdue(30), "a closed socket has no deadline");
+        next.Advance(40);
+        True(!next.Session.AttemptOverdue(next.Socket, 15), "a closed socket has no deadline");
+
+        var detached = new SessionRig();
+        long detachedAttempt = detached.Session.BeginSocket();
+        detached.Session.MarkDetached();
+        detached.Advance(40);
+        True(
+            !detached.Session.AttemptOverdue(detachedAttempt, 15),
+            "a detached attempt has no deadline"
+        );
     }
 
     private static void AssertIdentifyAnswerSetsTheNegotiatedVersion()

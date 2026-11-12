@@ -29,7 +29,8 @@ namespace Takaro.WebSocket
     /// <summary>
     /// The connection state machine behind WebSocketTransport, free of sockets,
     /// timers and logging so it can be driven with an injected clock: the
-    /// identify handshake (deadline, rejection, negotiated protocol version),
+    /// connection attempt (one deadline from connect to identify answer,
+    /// rejection, negotiated protocol version),
     /// classification of inbound frames, acknowledgement routing into the
     /// OutboundLedger and the replay of unconfirmed events on a new socket.
     /// Receive and sender threads share it; the flags are volatile and the
@@ -51,6 +52,7 @@ namespace Takaro.WebSocket
         private volatile int _protocolVersion = -1;
         private long _generation;
         private long _openedAtTicks;
+        private long _attemptStartedTicks;
         private long _lastInboundTicks;
 
         private readonly ConcurrentQueue<long> _pongs = new ConcurrentQueue<long>();
@@ -88,6 +90,7 @@ namespace Takaro.WebSocket
             _identifyRejected = false;
             _deadSocketClosing = false;
             _protocolVersion = -1;
+            Interlocked.Exchange(ref _attemptStartedTicks, _utcTicks());
             return Interlocked.Increment(ref _generation);
         }
 
@@ -113,6 +116,7 @@ namespace Takaro.WebSocket
         {
             long openedAt = Interlocked.Exchange(ref _openedAtTicks, 0);
             Interlocked.Exchange(ref _lastInboundTicks, 0);
+            Interlocked.Exchange(ref _attemptStartedTicks, 0);
             wasConfirmed = _isConfirmed;
             _isConnected = false;
             _isConfirmed = false;
@@ -128,6 +132,7 @@ namespace Takaro.WebSocket
             _isConfirmed = false;
             Interlocked.Exchange(ref _openedAtTicks, 0);
             Interlocked.Exchange(ref _lastInboundTicks, 0);
+            Interlocked.Exchange(ref _attemptStartedTicks, 0);
         }
 
         /// <summary>
@@ -207,19 +212,25 @@ namespace Takaro.WebSocket
         }
 
         /// <summary>
-        /// True when identify was written but never answered within the deadline.
+        /// True when the connection attempt of this generation is still not
+        /// confirmed deadlineSeconds after it started: the TCP connect, the TLS
+        /// handshake, the WebSocket upgrade and the identify answer all count
+        /// against one deadline, so a peer that stalls at any step is given up on.
         /// </summary>
-        public bool IdentifyOverdue(int deadlineSeconds)
+        public bool AttemptOverdue(long generation, int deadlineSeconds)
         {
-            if (_isConfirmed || !_isConnected || _identifyRejected || _deadSocketClosing)
+            if (generation != Generation || _isConfirmed || _identifyRejected || _deadSocketClosing)
                 return false;
 
-            long openedAt = Interlocked.Read(ref _openedAtTicks);
-            if (openedAt == 0)
+            long startedAt = Interlocked.Read(ref _attemptStartedTicks);
+            if (startedAt == 0)
                 return false;
 
-            return TimeSpan.FromTicks(_utcTicks() - openedAt).TotalSeconds >= deadlineSeconds;
+            return TimeSpan.FromTicks(_utcTicks() - startedAt).TotalSeconds >= deadlineSeconds;
         }
+
+        /// <summary>True once the current socket finished the WebSocket upgrade.</summary>
+        public bool HasOpened => Interlocked.Read(ref _openedAtTicks) != 0;
 
         /// <summary>Seconds since the current socket opened, or -1 while none is up.</summary>
         public int SecondsSinceOpened()
