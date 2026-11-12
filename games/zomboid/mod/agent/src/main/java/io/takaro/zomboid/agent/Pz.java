@@ -7,17 +7,23 @@ import io.takaro.zomboid.core.model.GameItem;
 import io.takaro.zomboid.core.model.GameLocation;
 import io.takaro.zomboid.core.model.PlayerInfo;
 import io.takaro.zomboid.core.model.PlayerLocation;
+import io.takaro.zomboid.core.model.ProgressionTrack;
 
 import java.lang.reflect.Field;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import zombie.ZomboidFileSystem;
 import zombie.characters.IsoGameCharacter;
 import zombie.characters.IsoPlayer;
 import zombie.characters.Roles;
+import zombie.characters.skills.PerkFactory;
 import zombie.chat.ChatMessage;
 import zombie.chat.ChatUtility;
 import zombie.chat.defaultChats.GeneralChat;
@@ -166,6 +172,94 @@ public final class Pz {
             return null;
         }
         return new PlayerLocation(p.getX(), p.getY(), p.getZ(), null);
+    }
+
+    /**
+     * Stores a reading for every spawned player. A dead character keeps its last reading until the
+     * new one spawns, and a player on the loading or respawn screen has no character to read.
+     */
+    public static void readProgression(Progression progression, Characters characters) {
+        UdpEngine engine = GameServer.udpEngine;
+        if (engine == null || engine.connections == null) {
+            return;
+        }
+        Set<String> connected = new HashSet<>();
+        for (UdpConnection c : new ArrayList<>(engine.connections)) {
+            String username = c == null ? null : c.getUserName();
+            if (username == null || username.isEmpty() || !c.isFullyConnected()) {
+                continue;
+            }
+            connected.add(username);
+            IsoPlayer p = c.players != null && c.players.length > 0 ? c.players[0] : null;
+            if (p == null || p.isDead() || characters.current(username) == null) {
+                continue;
+            }
+            try {
+                progression.put(username, perkTracks(p));
+            } catch (RuntimeException e) {
+                AgentLog.error("progression read failed for " + username, e);
+            }
+        }
+        progression.retain(connected);
+    }
+
+    /**
+     * Gives each living survivor without an id its id. The reading goes in first: Takaro asks for
+     * the character and then the levels, so a new id must never be answered with the last
+     * survivor's levels.
+     */
+    public static void observeCharacters(Characters characters, Progression progression) {
+        UdpEngine engine = GameServer.udpEngine;
+        if (engine == null || engine.connections == null) {
+            return;
+        }
+        for (UdpConnection c : new ArrayList<>(engine.connections)) {
+            String username = c == null ? null : c.getUserName();
+            if (username == null || username.isEmpty() || !c.isFullyConnected()) {
+                continue;
+            }
+            IsoPlayer p = c.players != null && c.players.length > 0 ? c.players[0] : null;
+            if (p == null || p.isDead() || !characters.needsNew(username, p)) {
+                continue;
+            }
+            try {
+                progression.put(username, perkTracks(p));
+            } catch (RuntimeException e) {
+                progression.remove(username);
+                AgentLog.error("progression read failed for " + username, e);
+            }
+            AgentLog.log("character: " + characters.begin(username, survivorName(p, username)).id()
+                    + " for " + username);
+        }
+    }
+
+    private static String survivorName(IsoPlayer p, String username) {
+        String name = p.getDescriptor() != null ? p.getDescriptor().getFullname() : null;
+        return name == null || name.isBlank() ? username : name.trim();
+    }
+
+    /** Where {@link Characters} keeps its file: the current world's save folder. */
+    public static Path characterFile() {
+        return ZomboidFileSystem.instance.getFileInCurrentSave(Characters.FILE_NAME).toPath();
+    }
+
+    private static List<ProgressionTrack> perkTracks(IsoPlayer p) {
+        IsoGameCharacter.XP xp = p.getXp();
+        List<ProgressionTrack> tracks = new ArrayList<>();
+        Set<String> keys = new HashSet<>();
+        for (PerkFactory.Perk perk : PerkFactory.PerkList) {
+            // A perk without a parent is a skill-screen category, not a skill.
+            if (perk.getParent() == null || perk.getParent() == PerkFactory.Perks.None) {
+                continue;
+            }
+            int level = p.getPerkLevel(perk);
+            ProgressionTrack track = PerkTracks.track(perk.getId(), perk.getName(), level, xp.getXP(perk),
+                    perk.getTotalXpForLevel(level), perk.getXpForLevel(level + 1));
+            if (track != null && tracks.size() < PerkTracks.MAX_TRACKS && keys.add(track.key())) {
+                tracks.add(track);
+            }
+        }
+        return tracks;
     }
 
     public static PlayerInfo toPlayerInfo(IsoPlayer p) {
@@ -531,7 +625,7 @@ public final class Pz {
                         continue;
                     }
                     rows.add(new Catalog.InvRow(it.getFullType(), it.getDisplayName(),
-                            it.getCount(), it.getCondition(), it.getConditionMax()));
+                            it.getCondition(), it.getConditionMax()));
                 }
             }
         }

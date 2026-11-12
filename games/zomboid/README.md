@@ -146,6 +146,8 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Player location | ✅ | Live X/Y/Z, following teleports. |
 | Teleport | ⚠️ | The move is immediate, but the new position can take about 15 seconds to show in Takaro. |
 | Player inventory | ✅ | Matches what the player carries, including item condition. |
+| Player levels and skills | ✅ | Every skill as its own track with level, experience and progress, on the player profile and in level history; level changes trigger hooks. Project Zomboid has no overall character level. |
+| Characters | ✅ | Every survivor is its own character in Takaro, so levels and history stay with the survivor. A death ends the character, and the next survivor starts fresh without a false level change. |
 | Item list | ✅ | |
 | Entity list | ✅ | Zombies and vehicles, vehicles under their in-game names. |
 | Locations | ⚠️ | Build 42 has no named places, so only player-claimed safehouses are listed. |
@@ -153,10 +155,10 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Send a message | ✅ | Broadcasts reach everyone, whispers reach one player, with the server chat name as sender. |
 | Console commands | ✅ | Output and success or failure are returned, including errors for unknown commands. |
 | Kick | ✅ | The player can rejoin afterwards. |
-| Ban and unban | ⚠️ | Permanent ban and unban work; automatic expiry of timed bans is not checked on this build. |
+| Ban and unban | ✅ | Permanent and timed bans, and unban; a timed ban lifts itself at its expiry. |
 | Ban list | ✅ | With expiry, including bans made outside Takaro. |
 | Give an item | ✅ | Appears in the inventory without a relog. |
-| Shop | ⚠️ | Not checked. |
+| Shop | ✅ | Pay, claim with delivery to the inventory, and cancel with a refund. |
 | Shut down the server | ✅ | Saves and quits on request; the game can take about two minutes to exit after saving, then restarts and re-identifies. |
 | Player joined / left | ✅ | Left also arrives on a kick. |
 | Chat messages | ✅ | With the player and channel. |

@@ -34,6 +34,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // Per connection: set by a successful identifyResponse, cleared when the socket opens or closes.
     private volatile boolean identified = false;
     private volatile int protocolVersion = 0;
+    private volatile int identifiedMapDimensions;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "takaro-reconnect");
         t.setDaemon(true);
@@ -249,6 +250,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             position.addProperty("dimension", dim);
         }
         data.add("position", position);
+        if (protocolVersion >= 1) {
+            data.addProperty("characterEnded", true);
+        }
         sendGameEvent("player-death", data);
     }
 
@@ -428,6 +432,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             payload.add("protocolVersions", versions);
             List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
             mapDimensions = dims.size();
+            identifiedMapDimensions = mapDimensions;
             payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
         }
 
@@ -509,6 +514,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String serverId = optString(payload, "gameServerId", optString(optObject(payload, "server"), "id", null));
         adapter.logInfo("Identified successfully" + (serverId != null ? ", server ID: " + serverId : "")
                 + ", protocol " + protocolVersion);
+        // The map can finish loading between identify and this answer, when capabilitiesChanged
+        // still has to stay quiet.
+        if (protocolVersion >= 1 && mapDimensions().size() != identifiedMapDimensions) {
+            sendCapabilities();
+        }
         flushOutbox();
     }
 
@@ -561,6 +571,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 break;
             case "getPlayerInventory":
                 handleOnMainThread(requestId, () -> handleGetPlayerInventory(args));
+                break;
+            case "getPlayerProgression":
+                if (protocolVersion >= 1) {
+                    handleGetPlayerProgression(requestId, args);
+                } else {
+                    sendError(requestId, ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
+                }
                 break;
             case "giveItem":
                 handleOnMainThread(requestId, () -> { handleGiveItem(args); return null; });
@@ -842,6 +859,26 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         return arr;
     }
 
+    private void handleGetPlayerProgression(String requestId, JsonObject args) {
+        String gameId = extractGameId(args);
+        List<ProgressionTrack> tracks = gameId == null ? null : adapter.getPlayerProgression(gameId);
+        if (tracks == null) {
+            sendResponse(requestId, JsonNull.INSTANCE, null);
+            return;
+        }
+        JsonArray arr = new JsonArray();
+        for (ProgressionTrack track : tracks) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("key", track.key());
+            if (track.name() != null) obj.addProperty("name", track.name());
+            obj.addProperty("level", track.level());
+            if (track.experience() != null) obj.addProperty("experience", track.experience());
+            if (track.progress() != null) obj.addProperty("progress", track.progress());
+            arr.add(obj);
+        }
+        sendResponse(requestId, arr, null);
+    }
+
     private void handleGiveItem(JsonObject args) {
         String gameId = extractGameId(args);
         // Takaro sends the item identifier under itemCode (confirmed against the
@@ -1007,7 +1044,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         obj.addProperty("epicOnlineServicesId", p.epicOnlineServicesId());
         obj.addProperty("xboxLiveId", p.xboxLiveId());
         obj.addProperty("platformId", p.platformId());
+        addCharacter(obj, p);
         return obj;
+    }
+
+    private void addCharacter(JsonObject obj, PlayerInfo p) {
+        if (p.character() == null || protocolVersion < 1) {
+            return;
+        }
+        JsonObject character = new JsonObject();
+        character.addProperty("id", p.character().id());
+        character.addProperty("name", p.character().name());
+        obj.add("character", character);
     }
 
     private JsonObject playerInfoToJson(PlayerInfo p) {
@@ -1020,6 +1068,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         obj.addProperty("platformId", p.platformId());
         obj.addProperty("ip", p.ip());
         obj.addProperty("ping", p.ping());
+        addCharacter(obj, p);
         return obj;
     }
 
