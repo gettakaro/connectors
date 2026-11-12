@@ -11,6 +11,7 @@
 #include <bcrypt.h>
 #include <wincrypt.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -21,7 +22,10 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <cstdio>
+#include <cstring>
 #include <string>
+#include <unordered_map>
 #include <thread>
 #include <vector>
 
@@ -205,11 +209,181 @@ tj::Value PositionJson(double x, double y, double z) {
     return p;
 }
 
+// Steam ids. The game knows players only by their EOS id, which is different in every EOS product, so it can never
+// match a player across games. EOS keeps the Steam account a Steam player logged in with; the server asks for it at
+// login and holds player-connected back for at most kSteamWait, so the first event already carries the Steam id.
+namespace steamlink {
+using EosPuid = void*;
+using EosConnect = void*;
+struct QueryOptions { int32_t ApiVersion; EosPuid LocalUserId; int32_t AccountIdTypeDeprecated; const EosPuid* ProductUserIds; uint32_t ProductUserIdCount; };
+struct MappingOptions { int32_t ApiVersion; EosPuid LocalUserId; int32_t AccountIdType; EosPuid TargetProductUserId; };
+struct QueryInfo { int32_t ResultCode; void* ClientData; EosPuid LocalUserId; };
+using QueryCallback = void(__cdecl*)(const QueryInfo*);
+using FromStringFn = EosPuid(__cdecl*)(const char*);
+using QueryFn = void(__cdecl*)(EosConnect, const QueryOptions*, void*, QueryCallback);
+using MappingFn = int32_t(__cdecl*)(EosConnect, const MappingOptions*, char*, int32_t*);
+struct CopyOptions { int32_t ApiVersion; EosPuid TargetUserId; int32_t AccountIdType; };
+struct ExternalAccount { int32_t ApiVersion; EosPuid ProductUserId; const char* DisplayName; const char* AccountId; int32_t AccountIdType; int64_t LastLoginTime; };
+using CopyFn = int32_t(__cdecl*)(EosConnect, const CopyOptions*, ExternalAccount**);
+using ReleaseFn = void(__cdecl*)(ExternalAccount*);
+struct CountOptions { int32_t ApiVersion; EosPuid TargetUserId; };
+using CountFn = uint32_t(__cdecl*)(EosConnect, const CountOptions*);
+constexpr int32_t kSteam = 1;  // EOS_EAT_STEAM
+constexpr auto kSteamWait = std::chrono::seconds(5);
+
+// announce: send player-connected when the lookup ends. Players found online when the plugin loads were never
+// announced by this instance and are only looked up.
+struct Pending { std::string eos; std::chrono::steady_clock::time_point deadline; bool announce = true, asked = false, done = false; };
+std::unordered_map<std::string, std::string> g_ids;  // EOS id -> SteamID64
+std::vector<Pending> g_pending;
+FromStringFn g_fromString = nullptr;
+QueryFn g_query = nullptr;
+MappingFn g_mapping = nullptr;
+CopyFn g_copy = nullptr;
+ReleaseFn g_release = nullptr;
+CountFn g_count = nullptr;
+bool g_loaded = false, g_warned = false;
+
+bool Load() {
+    if (g_loaded) return g_query != nullptr;
+    g_loaded = true;
+    HMODULE sdk = GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll");
+    if (sdk == nullptr) { LogLine("steam: EOS SDK not loaded, players carry the EOS id only"); return false; }
+    g_fromString = reinterpret_cast<FromStringFn>(GetProcAddress(sdk, "EOS_ProductUserId_FromString"));
+    g_query = reinterpret_cast<QueryFn>(GetProcAddress(sdk, "EOS_Connect_QueryProductUserIdMappings"));
+    g_mapping = reinterpret_cast<MappingFn>(GetProcAddress(sdk, "EOS_Connect_GetProductUserIdMapping"));
+    g_copy = reinterpret_cast<CopyFn>(GetProcAddress(sdk, "EOS_Connect_CopyProductUserExternalAccountByAccountType"));
+    g_release = reinterpret_cast<ReleaseFn>(GetProcAddress(sdk, "EOS_Connect_ExternalAccountInfo_Release"));
+    g_count = reinterpret_cast<CountFn>(GetProcAddress(sdk, "EOS_Connect_GetProductUserExternalAccountCount"));
+    if (g_fromString == nullptr || g_query == nullptr || g_mapping == nullptr) {
+        g_query = nullptr;
+        LogLine("steam: EOS Connect functions missing, players carry the EOS id only");
+        return false;
+    }
+    return true;
+}
+
+// Reads one pointer, false instead of a crash when the address is not readable.
+bool SafeRead(const void* address, void** out) {
+    __try {
+        *out = *static_cast<void* const*>(address);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The server's EOS Connect handle, read from the game's EOS online subsystem: Subsystem -> IdentityImpl -> EOSConnect.
+// The identity points back at its subsystem, which confirms the layout before the handle is used. Found once, then
+// cached; every read is guarded, so a layout change costs the Steam id, never the server.
+EosConnect g_connect = nullptr;
+int g_tries = 0;
+EosConnect Connect() {
+    if (g_connect != nullptr || g_tries >= 3) return g_connect;
+    ++g_tries;
+    const auto identityAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineSubsystemEOS.IdentityImpl"));
+    const auto connectAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.EOSConnect"));
+    const auto ownerAt = static_cast<ptrdiff_t>(GetAddress(nullptr, "FOnlineIdentityInterfaceEOS.SubsystemEOS"));
+    if (identityAt <= 0 || connectAt <= 0 || ownerAt <= 0) { LogLine("steam: EOS subsystem fields unknown"); return nullptr; }
+    auto hex = [](const void* v) { char b[24]; snprintf(b, sizeof b, "%p", v); return std::string(b); };
+    for (const char* service : {"RedpointEOS", "EOS"}) {
+        FName name(service, FNAME_Find);
+        if (name.IsNone()) continue;
+        auto* subsystem = static_cast<char*>(NativeCall<void*, FName&>(nullptr, "IOnlineSubsystem.Get(FName&)", name));
+        LogLine(std::string("steam: subsystem ") + service + " = " + hex(subsystem));
+        if (subsystem == nullptr) continue;
+        for (ptrdiff_t back = 0; back <= 0x40; back += 8) {
+            char* base = subsystem - back;
+            void *identity = nullptr, *owner = nullptr, *connect = nullptr;
+            if (!SafeRead(base + identityAt, &identity) || identity == nullptr) continue;
+            const bool ro = SafeRead(static_cast<char*>(identity) + ownerAt, &owner);
+            const bool rc = SafeRead(static_cast<char*>(identity) + connectAt, &connect);
+            LogLine("steam: back=" + std::to_string(back) + " identity=" + hex(identity) + " owner=" + (ro ? hex(owner) : "?") +
+                    " connect=" + (rc ? hex(connect) : "?"));
+            if (!ro || owner != base || !rc || connect == nullptr) continue;
+            g_connect = connect;
+            LogLine(std::string("steam: EOS Connect found through ") + service);
+            return g_connect;
+        }
+    }
+    if (g_tries >= 3) LogLine("steam: EOS Connect not found, players carry the EOS id only");
+    return nullptr;
+}
+
+bool IsSteamId64(const std::string& id) {
+    return id.size() == 17 && id.rfind("7656119", 0) == 0 && id.find_first_not_of("0123456789") == std::string::npos;
+}
+
+void __cdecl OnQueried(const QueryInfo* info) {
+    std::unique_ptr<std::string> eos(static_cast<std::string*>(info->ClientData));
+    for (auto& p : g_pending) if (p.eos == *eos) p.done = true;
+    if (info->ResultCode != 0) { LogLine("steam: lookup failed for " + *eos + " (EOS result " + std::to_string(info->ResultCode) + ")"); return; }
+    EosConnect connect = Connect();
+    if (connect == nullptr) return;
+    EosPuid target = g_fromString(eos->c_str());
+    std::string id;
+    int32_t result = -1;
+    // A game server has no logged-in user, so read the account the query cached; the mapping call needs one.
+    if (g_copy != nullptr && g_release != nullptr) {
+        CopyOptions copy{1, target, kSteam};
+        ExternalAccount* account = nullptr;
+        result = g_copy(connect, &copy, &account);
+        if (result == 0 && account != nullptr) {
+            if (account->AccountId != nullptr) id = account->AccountId;
+            g_release(account);
+        }
+    }
+    if (id.empty()) {
+        MappingOptions options{1, nullptr, kSteam, target};
+        char buffer[129] = {};
+        int32_t length = sizeof(buffer);
+        const int32_t mapped = g_mapping(connect, &options, buffer, &length);
+        if (mapped == 0) id = buffer;
+        else LogLine("steam: copy result " + std::to_string(result) + ", mapping result " + std::to_string(mapped));
+        result = mapped;
+    }
+    if (g_count != nullptr) {
+        CountOptions count{1, target};
+        LogLine("steam: " + *eos + " has " + std::to_string(g_count(connect, &count)) + " linked accounts, Steam id '" + id + "'");
+    }
+    if (IsSteamId64(id)) {
+        g_ids[*eos] = id;
+        LogLine("steam: " + *eos + " is Steam " + id);
+    } else {
+        LogLine("steam: no Steam account for " + *eos + " (EOS result " + std::to_string(result) + ")");
+    }
+}
+
+bool IsPending(const std::string& eos) {
+    return std::any_of(g_pending.begin(), g_pending.end(), [&](const Pending& p) { return p.eos == eos; });
+}
+
+void Ask(Pending& p) {
+    EosConnect connect = Connect();
+    if (connect == nullptr) return;
+    EosPuid id = g_fromString(p.eos.c_str());
+    QueryOptions options{2, nullptr, 0, &id, 1};  // a game server queries without a local user
+    p.asked = true;
+    g_query(connect, &options, new std::string(p.eos), OnQueried);
+}
+}  // namespace steamlink
+
+void FlushConnects(const std::string& only = std::string());
+void AdoptOnlinePlayers();
+
 tj::Value PlayerJson(const std::string& eos, const Roster& r) {
     tj::Value p = tj::Value::object();
     p.set("gameId", tj::str(eos));
     p.set("name", tj::str(r.name.empty() ? eos : r.name));
-    p.set("epicOnlineServicesId", tj::str(eos));
+    // An EOS id is issued per EOS product and Takaro keeps one per player, so for a Steam player it would fight the
+    // EOS id of every other EOS game. The Steam id names the account everywhere; the EOS id stays the gameId.
+    // While the lookup runs the player carries no platform id: an EOS id sent now would stick to the Steam player.
+    if (const auto steam = steamlink::g_ids.find(eos); steam != steamlink::g_ids.end()) {
+        p.set("steamId", tj::str(steam->second));
+        p.set("platformId", tj::str("steam:" + steam->second));
+    } else if (!steamlink::IsPending(eos)) {
+        p.set("epicOnlineServicesId", tj::str(eos));
+    }
     if (!r.ip.empty()) p.set("ip", tj::str(r.ip));
     if (r.ping >= 0) p.set("ping", tj::num(r.ping));
     if (r.survivor) p.set("character", takaro::SurvivorJson(*r.survivor));
@@ -291,7 +465,10 @@ takaro::Outcome GetPlayers() {
         if (pc == nullptr) continue;
         const std::string eos = EosId(pc);
         if (eos.empty()) continue;
-        out.push(PlayerJson(eos, Refresh(eos, pc)));
+        Roster& r = Refresh(eos, pc);
+        // Takaro creates the player from this row if it does not know the gameId yet, so wait for the Steam id.
+        if (steamlink::IsPending(eos)) continue;
+        out.push(PlayerJson(eos, r));
     }
     return takaro::Outcome::Ok(std::move(out));
 }
@@ -538,8 +715,13 @@ takaro::Outcome Inventory(const tj::Value& args) {
 takaro::Outcome GiveItem(const tj::Value& args) {
     const std::string id = takaro::PlayerIdOf(args);
     if (id.empty()) return takaro::Outcome::Fail("invalid_args", "gameId is required");
-    const std::string code = takaro::ItemCodeOf(args);
-    if (code.empty()) return takaro::Outcome::Fail("invalid_args", "item must be a /Game item class path");
+    std::string code = takaro::ItemCodeOf(args);
+    if (code.empty()) {
+        size_t matches = 0;
+        code = takaro::ItemCodeByName(args, g_items, matches);
+        if (matches > 1) return takaro::Outcome::Fail("invalid_args", "more than one item has this name; give the item code from listItems");
+        if (code.empty()) return takaro::Outcome::Fail("invalid_args", "item must be an item code or name from listItems");
+    }
     double amount = 1, quality = 0;
     const tj::Value* amountRaw = args.get("amount");
     if (amountRaw == nullptr) amountRaw = args.get("quantity");
@@ -711,6 +893,7 @@ void OnTick(float) {
     TickCost cost;
     if (!g_gameReady.load() && AsaApi::GetApiUtils().GetStatus() == AsaApi::ServerStatus::Ready) {
         OnWorldReady();
+        AdoptOnlinePlayers();
         g_gameReady = true;
         LogLine("game ready");
         // Takaro reads the catalogues only in the first seconds after a server registers, so connecting while the
@@ -724,6 +907,7 @@ void OnTick(float) {
         AsaApi::GetApiUtils().GetCheatManager()->DoExit();
         return;
     }
+    if (!steamlink::g_pending.empty()) FlushConnects();
     SweepBans();
     SweepSurvivors();
     const auto stop = std::chrono::steady_clock::now() + kTickBudget;
@@ -750,6 +934,41 @@ bool OnChat(AShooterPlayerController* pc, FString* message, int mode, int, bool 
     return false;
 }
 
+// A plugin loaded into a running server finds players already online. Look up their Steam ids like at login, or the
+// first getPlayers would send them with the EOS id.
+void AdoptOnlinePlayers() {
+    for (auto& weak : AsaApi::GetApiUtils().GetWorld()->PlayerControllerListField()) {
+        auto* pc = static_cast<AShooterPlayerController*>(weak.Get());
+        if (pc == nullptr) continue;
+        const std::string eos = EosId(pc);
+        if (eos.empty() || IsBanned(eos)) continue;
+        Roster& r = Refresh(eos, pc);
+        ReadSurvivor(eos, pc, r);
+        r.online = true;
+        LogLine("adopted online player eos=" + eos);
+        if (steamlink::g_ids.count(eos) == 0 && !steamlink::IsPending(eos) && steamlink::Load())
+            steamlink::g_pending.push_back({eos, std::chrono::steady_clock::now() + steamlink::kSteamWait, false});
+    }
+}
+
+// Sends the held-back player-connected once the Steam lookup answered or timed out; `force` sends it now (logout).
+void FlushConnects(const std::string& only) {
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = steamlink::g_pending.begin(); it != steamlink::g_pending.end();) {
+        const bool forced = !only.empty() && it->eos == only;
+        if (!forced && !it->done && now < it->deadline) {
+            if (!it->asked) steamlink::Ask(*it);
+            ++it;
+            continue;
+        }
+        if (!it->done) LogLine("steam: no answer for " + it->eos + ", connecting without a Steam id");
+        if (const auto r = g_players.find(it->eos); it->announce && r != g_players.end() && r->second.online)
+            g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(it->eos, r->second)}}));
+        it = steamlink::g_pending.erase(it);
+    }
+}
+
+
 DECLARE_HOOK(AShooterGameMode_HandleNewPlayer_Implementation, bool, AShooterGameMode*, AShooterPlayerController*, UPrimalPlayerData*, AShooterCharacter*, bool);
 bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, UPrimalPlayerData* data, AShooterCharacter* character, bool fromLogin)
 {
@@ -763,7 +982,11 @@ bool Hook_HandleNewPlayer(AShooterGameMode* mode, AShooterPlayerController* pc, 
             ReadSurvivor(eos, pc, r);
             if (!r.online) {
                 r.online = true;
-                g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(eos, r)}}));
+                if (steamlink::g_ids.count(eos) != 0 || !steamlink::Load()) {
+                    g_client->Emit("player-connected", tj::obj({{"player", PlayerJson(eos, r)}}));
+                } else {
+                    steamlink::g_pending.push_back({eos, std::chrono::steady_clock::now() + steamlink::kSteamWait});
+                }
             }
         }
     }
@@ -854,6 +1077,7 @@ void Hook_Logout(AShooterGameMode* mode, AController* controller)
         auto* pc = static_cast<AShooterPlayerController*>(controller);
         const std::string eos = EosId(pc);
         if (!eos.empty()) {
+            FlushConnects(eos);
             Roster& r = Refresh(eos, pc);
             if (r.online) {
                 r.online = false;

@@ -30,6 +30,9 @@ tj::Value CatalogSearch(const std::vector<CatalogRow>& rows, const std::string& 
 
 // The item a giveItem names, whichever field Takaro used. Empty when it is not a /Game class path.
 std::string ItemCodeOf(const tj::Value& args);
+// The catalogue code for an item given by its display name (case-insensitive), as Takaro's own give and many modules
+// send it. Empty when no item or more than one item has that name; `matches` tells which.
+std::string ItemCodeByName(const tj::Value& args, const std::vector<CatalogRow>& rows, size_t& matches);
 
 // Dino costumes the account owns sit in the inventory list with no flag marking them, but the game shows them on
 // the Cosmetics tab, not as something the player carries.
