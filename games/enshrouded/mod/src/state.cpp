@@ -466,7 +466,10 @@ std::string PluginState::PlayerJsonLocked(const PlayerRecord& p, bool online) co
     std::string level = p.level < 0 ? "" : ",\"level\":" + std::to_string(p.level) + ",\"experience\":" +
                                                std::to_string(p.experience) + ",\"experienceRequired\":" +
                                                std::to_string(p.experienceRequired);
-    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level +
+    std::string character = p.characterId.empty() || p.characterName.empty()
+                                ? ""
+                                : ",\"character\":{\"id\":" + JsonStr(p.characterId) + ",\"name\":" + JsonStr(p.characterName) + "}";
+    return "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + ",\"steamId\":" + JsonStr(id) + level + character +
            ",\"peerId\":" + JsonStr(p.peerId) + ",\"group\":" + JsonStr(p.group) + ",\"permissions\":" + perms +
            ",\"connectedAt\":" + JsonStr(p.connectedAt) + ",\"online\":" + (online ? "true" : "false") + "}";
 }
@@ -506,14 +509,30 @@ void PluginState::SetCharacterName(const std::string& persona, const std::string
         }
 }
 
-void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
-    Guard g(lock_);
+// Steam names are not unique: with two online players on one name the read can't be tied to either, and nothing is
+// better than one player's character on the other's record.
+PlayerRecord* PluginState::OnlyOnlineNamedLocked(const std::string& persona) {
+    PlayerRecord* hit = nullptr;
     for (auto& p : players_)
         if (p.online && p.name == persona) {
-            p.level = level;
-            p.experience = experience;
-            p.experienceRequired = experienceRequired;
+            if (hit) return nullptr;
+            hit = &p;
         }
+    return hit;
+}
+
+void PluginState::SetCharacterId(const std::string& persona, const std::string& id) {
+    Guard g(lock_);
+    if (PlayerRecord* p = OnlyOnlineNamedLocked(persona)) p->characterId = id;
+}
+
+void PluginState::SetLevel(const std::string& persona, int level, int experience, int experienceRequired) {
+    Guard g(lock_);
+    if (PlayerRecord* p = OnlyOnlineNamedLocked(persona)) {
+        p->level = level;
+        p->experience = experience;
+        p->experienceRequired = experienceRequired;
+    }
 }
 
 void PluginState::SetMachineIsPeerIndexPlusOne(bool on) {

@@ -80,5 +80,22 @@ int main(){
  { std::string j=st.PlayersJson(); assert(j.find("\"level\":12,\"experience\":340,\"experienceRequired\":900")!=std::string::npos); }
  st.SetLevel("Nobody",5,1,2);  // not online: ignored
  assert(count2(st.PlayersJson(),"\"level\":")==1);
+ // character id: listed with its name, absent until both are read, set only for an online player
+ assert(st.PlayersJson().find("\"character\"")==std::string::npos);
+ st.SetCharacterId("Finn","8471ed03199476459871b310d8735318");
+ assert(st.PlayersJson().find("\"character\"")==std::string::npos);
+ st.SetCharacterName("Finn","Character 1");
+ assert(st.PlayersJson().find("\"character\":{\"id\":\"8471ed03199476459871b310d8735318\",\"name\":\"Character 1\"}")!=std::string::npos);
+ st.SetCharacterId("Nobody","00");
+ assert(count2(st.PlayersJson(),"\"character\":")==1);
+ // two online players on one Steam name: the read can't be tied to either, so neither gets it
+ login("8(9)","76561190000000008","9","Twin");
+ login("9(10)","76561190000000009","10","Twin");
+ st.Housekeep();
+ st.SetCharacterId("Twin","aa");
+ st.SetCharacterName("Twin","Same");
+ st.SetLevel("Twin",7,1,2);
+ assert(st.PlayersJson().find("\"id\":\"aa\"")==std::string::npos);
+ assert(st.PlayersJson().find("\"level\":7")==std::string::npos);
  std::cout<<"PASS\n";
 }

@@ -10,6 +10,7 @@ struct PlayerRecord {
     std::string steamId;  // SteamID64 as decimal string; used as gameId
     std::string name;     // Steam persona name as printed by the server (matches the game's player slot)
     std::string characterName;  // in-game character name, read from the game once the player's entity exists
+    std::string characterId;    // keen::CharacterId as 32 hex digits, stable for the character's life; "" until read
     int level = -1;             // character level and experience (ecs::NetworkPlayerAttributes), -1 until read
     int experience = -1;
     int experienceRequired = -1;
@@ -68,6 +69,8 @@ public:
     void SetMachineIsPeerIndexPlusOne(bool on);
     // Character name of the online player whose Steam persona name is `persona` (reported to Takaro as "name").
     void SetCharacterName(const std::string& persona, const std::string& character);
+    // Called from the game thread before SetCharacterName, so player-connected already carries the id.
+    void SetCharacterId(const std::string& persona, const std::string& id);
     // Character level of the online player whose Steam persona name is `persona`. Called from the game thread: it
     // only stores the values; Housekeep logs level changes.
     void SetLevel(const std::string& persona, int level, int experience, int experienceRequired);
@@ -94,6 +97,7 @@ private:
     void FinalizeLoginLocked();
     void EmitConnectedLocked(PlayerRecord& p);
     void BindMachineLocked(size_t idx, const std::string& machine);
+    PlayerRecord* OnlyOnlineNamedLocked(const std::string& persona);
     std::string PlayerJsonLocked(const PlayerRecord& p, bool online = true) const;
     void LoadGroupsLocked();
 
