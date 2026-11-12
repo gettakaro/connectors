@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.9.0...7d2d-v0.10.0) (2026-11-12)
+
+
+### Features
+
+* **7d2d:** reconnect within a second after an established connection drops ([#876](https://github.com/gettakaro/connectors/issues/876)) ([59a5d82](https://github.com/gettakaro/connectors/commit/59a5d82e93254cfdf292316e0b9fd5c966b4a7e9))
+* **7d2d:** supply item icons with items.icons ([#847](https://github.com/gettakaro/connectors/issues/847)) ([3348383](https://github.com/gettakaro/connectors/commit/3348383cc63c593d3e980e4126d307449e4dcf02))
+
 ## [0.9.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.8.0...7d2d-v0.9.0) (2026-11-09)
 
 
