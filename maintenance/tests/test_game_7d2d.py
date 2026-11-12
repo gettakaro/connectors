@@ -686,7 +686,7 @@ def test_verify_hooks_render_config_and_use_the_7d2d_ready_line(tmp_path: Path) 
     assert oct(written.stat().st_mode)[-3:] == "600"
     body = written.read_text()
     assert "<Url>ws://host.docker.internal:34567/</Url>" in body
-    assert "<ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>" in body
+    assert "<ReconnectIntervalSeconds>2</ReconnectIntervalSeconds>" in body
 
     assert hooks.READY_LINE.search("2026-09-21T10:00:00 12.345 INF StartGame done")
     assert hooks.HANDSHAKE_LINE.search(

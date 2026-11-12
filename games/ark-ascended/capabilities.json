@@ -17,7 +17,7 @@
     "getPlayers": {
       "status": "live-supported",
       "responseShape": "IGamePlayer[]",
-      "reason": "UWorld player controllers; gameId and epicOnlineServicesId = EOS id, no Steam id is available",
+      "reason": "UWorld player controllers; gameId = EOS id; steamId + platformId steam:<id> from the EOS Connect Steam mapping, epicOnlineServicesId only for players without Steam",
       "liveVerified": false
     },
     "getPlayer": {
@@ -47,7 +47,7 @@
     "giveItem": {
       "status": "live-supported",
       "responseShape": "null",
-      "reason": "AShooterPlayerController.GiveItem by item class path, with quantity, quality and blueprint",
+      "reason": "AShooterPlayerController.GiveItem by item class path or catalogue name, with quantity, quality and blueprint",
       "liveVerified": false
     },
     "listItems": {
@@ -126,6 +126,12 @@
       "status": "unsupported",
       "responseShape": "-",
       "reason": "protocol v0 only; the v1 map capability replaces it",
+      "liveVerified": false
+    },
+    "getMapTile": {
+      "status": "unsupported",
+      "responseShape": "-",
+      "reason": "the map is the operator's uploaded image of TheIsland_WP; Takaro serves its tiles, the plugin renders none",
       "liveVerified": false
     }
   },

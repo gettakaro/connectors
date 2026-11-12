@@ -2,7 +2,7 @@
   "games/ark": "0.5.0",
   "games/rust": "0.5.0",
   "games/minecraft": "0.7.0",
-  "games/7d2d": "0.9.0",
+  "games/7d2d": "0.10.0",
   "games/valheim": "4.5.0",
   "games/conan-exiles": "3.6.0",
   "games/terraria": "0.8.0",
@@ -14,5 +14,5 @@
   "games/scum": "0.3.0",
   "games/tf2": "0.2.0",
   "games/empyrion": "0.1.0",
-  "games/ark-ascended": "0.1.0"
+  "games/ark-ascended": "0.1.1"
 }

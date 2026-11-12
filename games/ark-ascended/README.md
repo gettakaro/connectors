@@ -109,7 +109,7 @@ Game actions, events, levels and Characters checked on game 97.17 (Steam build 2
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | Connects once the world has loaded and reconnects by itself after a restart or network drop. |
-| Player list | ✅ | Name, ping and IP. The id is the Epic (EOS) id; no Steam id is available. |
+| Player list | ✅ | Name, ping and IP. Steam players carry their Steam id, so they are the same player as in your other Steam games; other players carry their Epic (EOS) id. |
 | Player location | ✅ | Live position; offline players give the last position seen since the server started. |
 | Teleport | ✅ | Online players. |
 | Player inventory | ⚠️ | Carried and equipped items of an online player. Account cosmetics are left out. |
@@ -124,7 +124,7 @@ Game actions, events, levels and Characters checked on game 97.17 (Steam build 2
 | Kick | ✅ | The player sees the reason. |
 | Ban and unban | ✅ | Also offline and timed; a banned player is refused on rejoin, also after a restart. |
 | Ban list | ✅ | Also bans made in the game; for those the reason and end time are unknown. |
-| Give an item | ✅ | To an online player, by item class path, with amount and quality. |
+| Give an item | ✅ | To an online player, by item code or item name, with amount (up to 10,000) and quality. |
 | Shop | ✅ | Buying, orders and claims work. Items land like Give an item. |
 | Shut down the server | ⚠️ | Needs `RCONEnabled=True`. The game saves by itself on the way out. |
 | Player joined / left | ✅ | |
@@ -146,8 +146,9 @@ Game actions, events, levels and Characters checked on game 97.17 (Steam build 2
 - A teleport far above the map can remove the character without a death, and Takaro still reports
   success. Keep teleport heights close to the ground.
 - Only `-NoBattlEye` is known to work. BattlEye on is unchecked.
-- Players are known by their Epic (EOS) id. There is no Steam id, so anything in Takaro keyed on
-  Steam ids does not match ARK players.
+- The Steam id comes from Epic Online Services at login. If Epic does not answer within a few seconds, the
+  player joins with only the Epic (EOS) id. Players who joined with connector 0.1.0 already have an
+  EOS-only player in Takaro; merge it into their Steam player in Takaro if needed.
 - Without `RCONEnabled=True`, console commands and shut down answer with an error. Nothing else is
   affected.
 

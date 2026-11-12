@@ -214,7 +214,10 @@ mod/src/
 ### Connection & Authentication
 - WebSocket endpoint from `Config.xml` (default `wss://connect.takaro.io/`)
 - Identity + registration token system; identity token auto-generated (UUID)
-- Reconnect with exponential backoff (cap 300s); 30s heartbeat
+- Reconnect (`ReconnectPolicy`): a drop after a confirmed connection that stayed up 10 s is
+  retried after 0.1-0.5 s; consecutive failures back off from `ReconnectIntervalSeconds`
+  (default 2 s), doubling, with jitter, capped at 60 s
+- 15 s heartbeat; no inbound frame for 45 s closes the socket (half-open link)
 - Outbound messages drained by a dedicated sender thread — event publishing
   from the game thread never blocks on socket I/O
 
