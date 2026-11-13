@@ -23,6 +23,8 @@ namespace TakaroEmpyrion.Game
         Dictionary<string, int> GetBlockAndItemMapping();
         IEnumerable<string> ContentDirs();
         string SaveGameDir();
+        /// <summary>IApplication.GetPlayerDataFor: Steam id and name without a v1 round trip. Game thread only.</summary>
+        PlayerData? GetPlayerDataFor(int entityId);
     }
 
     /// <summary>A structured failure answered as {success:false} / error frame, never a fake success.</summary>
@@ -250,7 +252,7 @@ namespace TakaroEmpyrion.Game
         /// </summary>
         public async Task<PlayerRecord> RefreshConnectingPlayer(int entityId, int attempts = 3, int gapMs = 1000)
         {
-            PlayerRecord r = await RefreshPlayer(entityId);
+            PlayerRecord r = await RefreshPlayerPatiently(entityId);
             r.Ip = null;
             for (int i = 0; i < attempts && r.Ip == null && CanReadPlys; i++)
             {
@@ -262,6 +264,64 @@ namespace TakaroEmpyrion.Game
                 try { r = await RefreshPlayer(entityId); } catch (Exception) { }
             }
             return r;
+        }
+
+        /// <summary>Total time RefreshPlayerPatiently keeps asking, and the first wait between attempts (doubles, max 8x).</summary>
+        public TimeSpan PlayerInfoBudget = TimeSpan.FromSeconds(60);
+        public TimeSpan PlayerInfoRetryBase = TimeSpan.FromSeconds(1);
+        /// <summary>Test seam for the waits between attempts.</summary>
+        public Func<TimeSpan, Task> Delay = Task.Delay;
+
+        /// <summary>
+        /// RefreshPlayer for a player who is still joining. While the dedi starts a playfield server for the join,
+        /// Request_Player_Info can go unanswered for tens of seconds (live 2026-11-13: 10 s timeout, answered 20 s
+        /// later). Retries with backoff 1, 2, 4, 8, 8 ... s until PlayerInfoBudget has passed, then rethrows.
+        /// Runs on a connector thread; each attempt is one queued v1 request.
+        /// </summary>
+        public async Task<PlayerRecord> RefreshPlayerPatiently(int entityId)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            TimeSpan wait = PlayerInfoRetryBase;
+            TimeSpan maxWait = TimeSpan.FromTicks(PlayerInfoRetryBase.Ticks * 8);
+            for (int attempt = 1; ; attempt++)
+            {
+                try { return await RefreshPlayer(entityId); }
+                catch (Exception e) when (e is GameRequestException || e is ActionFailure)
+                {
+                    if (sw.Elapsed + wait >= PlayerInfoBudget)
+                    {
+                        _log.Warn("player info for entity " + entityId + " failed " + attempt + " times in " + sw.Elapsed.TotalSeconds.ToString("0") + "s: " + e.Message);
+                        throw;
+                    }
+                    _log.Info("player info for entity " + entityId + " not ready (attempt " + attempt + "): " + e.Message + "; retrying in " + wait.TotalSeconds.ToString("0.#") + "s");
+                    await Delay(wait);
+                    wait = TimeSpan.FromTicks(Math.Min(wait.Ticks * 2, maxWait.Ticks));
+                }
+            }
+        }
+
+        /// <summary>
+        /// What the connector knows about an entity without Request_Player_Info: IApplication.GetPlayerDataFor (one
+        /// lookup on the game thread), else the registry (players.json). Null when neither has a player id.
+        /// </summary>
+        public async Task<PlayerRecord> KnownPlayer(int entityId)
+        {
+            try
+            {
+                Task<PlayerData?> lookup = _game.OnGameThread(() => _v2.GetPlayerDataFor(entityId));
+                if (await Task.WhenAny(lookup, Task.Delay(TimeSpan.FromSeconds(5))) == lookup)
+                {
+                    PlayerData? pd = lookup.Result;
+                    if (pd.HasValue && !string.IsNullOrEmpty(pd.Value.SteamId))
+                    {
+                        PlayerRecord r = _players.Upsert(pd.Value.SteamId, entityId, pd.Value.PlayerName);
+                        if (!string.IsNullOrEmpty(pd.Value.PlayfieldName)) r.Playfield = pd.Value.PlayfieldName;
+                        return r;
+                    }
+                }
+            }
+            catch (Exception e) { _log.Debug("GetPlayerDataFor " + entityId + " failed: " + e.Message); }
+            return _players.ByEntity(entityId);
         }
 
         public static Dictionary<int, string> ParsePlysIps(string plys)

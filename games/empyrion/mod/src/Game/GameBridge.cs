@@ -30,7 +30,9 @@ namespace TakaroEmpyrion.Game
         ModGameAPI _api;
         int _seq = 1000;
 
-        public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+        public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(10);
+        /// <summary>How long a v1 request waits for its reply event before it fails.</summary>
+        public TimeSpan RequestTimeout = DefaultRequestTimeout;
         public double FrameBudgetMs = 2.0;
         public int MainThreadId { get; private set; }
         public long FramesSeen { get; private set; }
@@ -43,6 +45,7 @@ namespace TakaroEmpyrion.Game
             public TaskCompletionSource<object> Tcs;
             public CmdId Request;
             public DateTime Deadline;
+            public TimeSpan Timeout;
         }
 
         public GameBridge(ILog log) { _log = log; }
@@ -70,7 +73,8 @@ namespace TakaroEmpyrion.Game
             var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
             if (_api == null) { tcs.SetException(new GameRequestException("game API not attached yet")); return tcs.Task; }
             ushort seq = NextSeq();
-            _pending[seq] = new Pending { Tcs = tcs, Request = id, Deadline = DateTime.UtcNow + RequestTimeout };
+            TimeSpan timeout = RequestTimeout;
+            _pending[seq] = new Pending { Tcs = tcs, Request = id, Deadline = DateTime.UtcNow + timeout, Timeout = timeout };
             _work.Enqueue(() =>
             {
                 bool ok;
@@ -113,7 +117,7 @@ namespace TakaroEmpyrion.Game
         {
             DateTime now = DateTime.UtcNow;
             foreach (KeyValuePair<ushort, Pending> kv in _pending)
-                if (kv.Value.Deadline < now) Fail(kv.Key, new GameRequestException(kv.Value.Request + " got no answer within " + RequestTimeout.TotalSeconds + "s"));
+                if (kv.Value.Deadline < now) Fail(kv.Key, new GameRequestException(kv.Value.Request + " got no answer within " + kv.Value.Timeout.TotalSeconds + "s"));
         }
 
         /// <summary>Game_Event: resolve a pending request by seqNr, else hand it to the event adapter.</summary>
