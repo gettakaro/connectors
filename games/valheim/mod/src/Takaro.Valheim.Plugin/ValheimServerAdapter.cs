@@ -463,7 +463,11 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
         playerResolver.TryResolvePlayer(identifier, out _, out var peer, out var player);
         var primaryIdentifier = FirstNonEmpty(player?.GameId, identifier);
-        var displayName = FirstNonEmpty(player?.Name, peer?.m_playerName, primaryIdentifier);
+        var displayName = ModerationFactory.PickPlayerName(
+            primaryIdentifier,
+            player?.Name,
+            peer?.m_playerName,
+            playerResolver.TryGetKnownName(primaryIdentifier, out var knownName) ? knownName : null);
 
         znet.Ban(primaryIdentifier);
         RememberBanAliases(primaryIdentifier, displayName, identifier, player, peer);
@@ -473,7 +477,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             peer.m_rpc?.Invoke("Kicked");
         }
 
-        logger.LogInfo($"Takaro Valheim banned {displayName} ({primaryIdentifier}). Reason: {reason ?? "<none>"}.");
+        logger.LogInfo($"Takaro Valheim banned {displayName ?? "<unknown name>"} ({primaryIdentifier}). Reason: {reason ?? "<none>"}.");
         return Task.FromResult(TakaroActionResult.Ok());
     }
 
@@ -516,13 +520,19 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         var bans = network.Banned
             .Select(ban => new ValheimBan(
                 GameId: ban,
-                Name: banNames.TryGetValue(ban, out var name) || playerResolver.TryGetKnownName(ban, out name) ? name : ban))
+                Name: ModerationFactory.PickPlayerName(
+                    ban,
+                    banNames.TryGetValue(ban, out var banName) ? banName : null,
+                    playerResolver.TryGetKnownName(ban, out var knownName) ? knownName : null) ?? string.Empty))
             .ToArray();
+        var entries = ModerationFactory.CreateBanEntries(bans);
 
-        logger.LogInfo($"Takaro Valheim listBans returned {bans.Length} official ban entry/entries.");
+        logger.LogInfo(
+            $"Takaro Valheim listBans returned {entries.Length} of {bans.Length} ban entry/entries; "
+            + $"{bans.Length - entries.Length} without a known player name left out.");
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(
             true,
-            ModerationFactory.CreateBanEntries(bans),
+            entries,
             "Valheim ban registry"));
     }
 
@@ -539,7 +549,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             (int)MessageHud.MessageType.TopLeft,
             $"Takaro: {message}");
 
-    private void RememberBanAliases(string primaryIdentifier, string displayName, string requestedIdentifier, TakaroPlayer? player, ZNetPeer? peer)
+    private void RememberBanAliases(string primaryIdentifier, string? displayName, string requestedIdentifier, TakaroPlayer? player, ZNetPeer? peer)
     {
         var aliases = new[]
             {
@@ -571,7 +581,10 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             }
         }
 
-        banNames[primaryIdentifier] = displayName;
+        if (displayName is not null)
+        {
+            banNames[primaryIdentifier] = displayName;
+        }
     }
 
     private bool BanMatchesIdentifier(string ban, string identifier)
