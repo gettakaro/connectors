@@ -131,11 +131,13 @@ public static partial class ContractTests
         {
             var rig = new JoinRig(int.MaxValue);
             rig.Actions.PlayerInfoBudget = TimeSpan.FromMilliseconds(500);
-            rig.Players.Upsert("76561198000000001", 101, "Tester");
+            PlayerRecord known = rig.Players.Upsert("76561198000000001", 101, "Tester");
+            known.Ip = "192.0.2.99"; known.Ping = 77; // from an earlier session
             rig.Bridge.OnGameEvent(CmdId.Event_Player_Connected, 0, new Id(101));
             JObject ev = rig.WaitFor("player-connected", 4000);
             Check((string)ev?["player"]?["gameId"] == "76561198000000001" && (string)ev["player"]["name"] == "Tester",
                 "no answer: player-connected from the registry when v2 has no data", ev?.ToString() ?? "no event");
+            Check(ev?["player"]?["ip"] == null && ev?["player"]?["ping"] == null, "no answer: no ip or ping remembered from an earlier session", ev?.ToString() ?? "no event");
             rig.Stop();
         }
 

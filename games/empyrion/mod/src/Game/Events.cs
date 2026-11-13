@@ -94,6 +94,8 @@ namespace TakaroEmpyrion.Game
                     _log.Error("player-connected for entity " + entityId + " not sent: no player id known (" + e.Message + ")");
                     return;
                 }
+                // ip and ping are only current when a getPlayers in this session already refreshed the record.
+                if (!r.Online) { r.Ip = null; r.Ping = 0; }
                 _log.Warn("player-connected for " + r.SteamId + " sent with the known id and name only: " + e.Message);
             }
             if (!((ICollection<KeyValuePair<int, long>>)_joining).Remove(new KeyValuePair<int, long>(entityId, gen)))

@@ -275,7 +275,8 @@ namespace TakaroEmpyrion.Game
         /// <summary>
         /// RefreshPlayer for a player who is still joining. While the dedi starts a playfield server for the join,
         /// Request_Player_Info can go unanswered for tens of seconds (live 2026-11-13: 10 s timeout, answered 20 s
-        /// later). Retries with backoff 1, 2, 4, 8, 8 ... s until PlayerInfoBudget has passed, then rethrows.
+        /// later). Retries with backoff 1, 2, 4, 8, 8 ... s and starts no attempt that would begin after PlayerInfoBudget;
+        /// with the 10 s request timeout the last failure comes at most about 70 s after the join. Then it rethrows.
         /// Runs on a connector thread; each attempt is one queued v1 request.
         /// </summary>
         public async Task<PlayerRecord> RefreshPlayerPatiently(int entityId)
