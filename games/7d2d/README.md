@@ -109,7 +109,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 
 | What | | Notes |
 |---|---|---|
-| Connection | ✅ | Reconnects within about a second when a connection drops, within a minute after a longer outage; missed events are sent afterwards. |
+| Connection | ✅ | Reconnects within about a second when a connection drops, within a minute after a longer outage, also when Takaro accepts the connection but never answers; missed events are sent afterwards. |
 | Player list | ✅ | Steam or Xbox id, IP and ping. The Epic id is sent only for players who join through the Epic store. |
 | Player location | ✅ | Updated about every 30 seconds. |
 | Teleport | ⚠️ | Lands on the ground, not at the exact height. |

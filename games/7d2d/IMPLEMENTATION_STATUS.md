@@ -218,14 +218,18 @@ mod/src/
   retried after 0.1-0.5 s; consecutive failures back off from `ReconnectIntervalSeconds`
   (default 2 s), doubling, with jitter, capped at 60 s
 - 15 s heartbeat; no inbound frame for 45 s closes the socket (half-open link)
+- Shutdown sends the closing handshake on a healthy socket and waits at most 2 s for it
 - Outbound messages drained by a dedicated sender thread — event publishing
   from the game thread never blocks on socket I/O
 
 ### Protocol (Generic Game Protocol v1)
 - Identify offers `protocolVersions: [0, 1]` and the version in Takaro's `identifyResponse` is
   used from then on (absent means 0, which is what Takaro releases without negotiation answer).
-  A socket is confirmed only by a successful `identifyResponse`; one that is not answered within
-  30 s is closed and retried.
+  A socket is confirmed only by a successful `identifyResponse`. The TCP connect, TLS handshake,
+  WebSocket upgrade and identify answer share one 15 s deadline; an attempt that misses it (for
+  example an endpoint that accepts TCP and never answers TLS) is abandoned, its TCP connection shut
+  down, and retried with backoff. The blocking connect runs on its own thread, never under the
+  connect lock, so a config reload or server shutdown never waits on the network.
 - Identify carries the Capability Manifest, derived from `RequestRouter.SupportedActions` (the
   cases of `Dispatch`) plus `events.<type>` for every event the mod emits. The harness fails when
   the manifest and the answered actions disagree. `getMapInfo` is v0 only.

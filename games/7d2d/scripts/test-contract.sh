@@ -69,4 +69,13 @@ docker compose --project-directory "${PROJECT_ROOT}" run --rm --no-deps \
       /app/tests/StorageHarness.cs
     cp /app/_data/7dtd-binaries/LiteDB.dll /app/_data/7dtd-binaries/System.Buffers.dll "$test_dir/"
     mono "$test_dir/storage-harness.exe"
+
+    # A stalled connect against the websocket-sharp build the mod ships, under Mono.
+    mcs -langversion:latest \
+      -out:"$test_dir/transport-harness.exe" \
+      -r:/app/_data/7dtd-binaries/websocket-sharp.dll \
+      /app/mod/src/WebSocket/StalledSocket.cs \
+      /app/tests/TransportHarness.cs
+    cp /app/_data/7dtd-binaries/websocket-sharp.dll "$test_dir/"
+    mono "$test_dir/transport-harness.exe"
   '
