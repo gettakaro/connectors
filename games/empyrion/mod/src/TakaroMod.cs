@@ -19,7 +19,7 @@ namespace TakaroEmpyrion
     /// </summary>
     public sealed class TakaroMod : IMod, ModInterface
     {
-        public const string Version = "0.1.0"; // x-release-please-version
+        public const string Version = "0.2.0"; // x-release-please-version
 
         IModApi _api;
         FileLog _log;
