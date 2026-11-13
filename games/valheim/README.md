@@ -108,7 +108,7 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Console commands | ⚠️ | Allowlisted commands only (default `help`). |
 | Kick | ✅ | |
 | Ban and unban | ⚠️ | The reason is discarded. |
-| Ban list | ✅ | |
+| Ban list | ✅ | A ban for someone the server has never seen (no name known) stays in the game but is not shown in Takaro. |
 | Give an item | ✅ | Dropped at the player's feet. |
 | Shop | ✅ | Delivered at the buyer's feet. |
 | Shut down the server | ✅ | |

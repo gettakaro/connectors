@@ -95,4 +95,76 @@ public sealed class ModerationFactoryTests
         Assert.IsTrue(ModerationFactory.BanMatches(ban, "steam:76561198000735875"));
         Assert.IsFalse(ModerationFactory.BanMatches(ban, "Thor"));
     }
+
+    [TestMethod]
+    public void BanWithoutARealNameIsLeftOut()
+    {
+        // Takaro writes every listBans name onto the player, and a null or missing name fails the
+        // whole list, so an id-named or nameless ban must not be sent at all.
+        var entries = ModerationFactory.CreateBanEntries(new[]
+        {
+            new ValheimBan("Steam_76561198000735875", "Steam_76561198000735875"),
+            new ValheimBan("76561198000735876", "76561198000735876"),
+            new ValheimBan("76561198000735877", "Steam_76561198000735877"),
+            new ValheimBan("Steam_76561198000735878", "steam:76561198000735878"),
+            new ValheimBan("Xbox_2535405290924481", "2535405290924481"),
+            new ValheimBan("PlayStation_6151790232542195830", "PlayStation_6151790232542195830"),
+            new ValheimBan("Steam_76561198000735879", ""),
+            new ValheimBan("Steam_76561198000735880", "   "),
+            new ValheimBan("Steam_76561198000735881", "Hehe")
+        });
+
+        var response = TakaroProtocol.CreateResponse("list-bans", TakaroActionResult.Ok(entries));
+        using var document = JsonDocument.Parse(response);
+        var payload = document.RootElement.GetProperty("payload");
+
+        Assert.AreEqual(1, payload.GetArrayLength());
+        Assert.AreEqual("Steam_76561198000735881", payload[0].GetProperty("player").GetProperty("gameId").GetString());
+        Assert.AreEqual("Hehe", payload[0].GetProperty("player").GetProperty("name").GetString());
+    }
+
+    [TestMethod]
+    public void NoBanEntryIsNamedAfterAnId()
+    {
+        var bans = new[]
+        {
+            new ValheimBan("Steam_76561198000735875", "Steam_76561198000735875"),
+            new ValheimBan("Steam_76561198000735876", "Odin"),
+            new ValheimBan("Odin", "Odin")
+        };
+
+        var response = TakaroProtocol.CreateResponse("list-bans", TakaroActionResult.Ok(ModerationFactory.CreateBanEntries(bans)));
+        using var document = JsonDocument.Parse(response);
+
+        foreach (var entry in document.RootElement.GetProperty("payload").EnumerateArray())
+        {
+            var player = entry.GetProperty("player");
+            var name = player.GetProperty("name").GetString();
+            Assert.IsFalse(string.IsNullOrWhiteSpace(name));
+            if (player.TryGetProperty("platformId", out var platformId))
+            {
+                Assert.AreNotEqual(player.GetProperty("gameId").GetString(), name);
+                Assert.AreNotEqual(platformId.GetString(), name);
+            }
+        }
+    }
+
+    [TestMethod]
+    public void PickPlayerNameSkipsIdsAndBlanksForTheStoredName()
+    {
+        // An offline ban resolves no player or peer; the name must come from the known-players store.
+        Assert.AreEqual(
+            "Hehe",
+            ModerationFactory.PickPlayerName("Steam_76561198000735875", null, "", "Steam_76561198000735875", "76561198000735875", "Hehe"));
+        Assert.AreEqual("Odin", ModerationFactory.PickPlayerName("Steam_76561198000735875", " Odin ", "Hehe"));
+        Assert.IsNull(ModerationFactory.PickPlayerName("Steam_76561198000735875", null, "Steam_76561198000735875", "steam:76561198000735875"));
+        Assert.IsNull(ModerationFactory.PickPlayerName("76561198000735875", "Steam_76561198000735875"));
+    }
+
+    [TestMethod]
+    public void NameBanKeepsItsOwnTextAsTheName()
+    {
+        Assert.IsFalse(ModerationFactory.IsPlaceholderName("Odin", "Odin"));
+        Assert.IsTrue(ModerationFactory.IsPlaceholderName("Odin", ""));
+    }
 }
