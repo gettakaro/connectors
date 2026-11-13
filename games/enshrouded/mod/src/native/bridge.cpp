@@ -990,6 +990,11 @@ void Bridge::DeliverEvents(int64_t now) {
     size_t queued = 0;
     const std::string& stream = o_.store->Outbox().streamId;
     for (; it != pending.end() && queued < kNoticeBatch; ++it) {
+        bool isLog = it->type == "log";
+        if (isLog) {
+            while (!logSentAt_.empty() && now - logSentAt_.front() >= o_.logWindowMs) logSentAt_.pop_front();
+            if (logSentAt_.size() >= o_.logBudget) break;
+        }
         // protocol 1: the same event with (streamId, seq = outbox id), so a resend after a reconnect dedups
         std::string frame = protocol_ >= 1 ? GameEventFrameV1(it->frame, stream, it->id) : it->frame;
         if (frame.empty()) {
@@ -1009,6 +1014,7 @@ void Bridge::DeliverEvents(int64_t now) {
         }
         lastQueuedId_ = it->id;
         queued++;
+        if (isLog) logSentAt_.push_back(now);
         if (o_.config.logFrames) PluginLog("native: frame out %s", frame.c_str());
         eventsQueued_++;
         if (IsConnectionType(it->type)) {

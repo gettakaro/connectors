@@ -772,6 +772,36 @@ void LogFilter() {
     }
 }
 
+void LogBudget() {
+    t::Group("bridge-log-budget");
+    Rig r("logbudget");
+    r.o.logBudget = 10;
+    r.o.logWindowMs = 400;
+    for (int i = 0; i < 25; i++) r.fake.PushEvent("log", "{\"msg\":\"[boot] line " + std::to_string(i) + "\",\"level\":\"info\"}");
+    r.fake.PushEvent("chat-message", "{\"msg\":\"after the boot lines\"}");
+    r.Start();
+    CHECK(t::WaitFor([&] { return r.HealthNum("outbox", "admitted") == 26; }));
+    r.Connect();
+    // the first window carries the budget and no more; the chat line waits behind the logs, in order
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("log").size() >= 10;
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("log").size(), (size_t)10);
+    CHECK_EQ(r.Events("chat-message").size(), (size_t)0);
+    // later windows deliver the rest; nothing is dropped
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return r.Events("chat-message").size() == 1;
+    }, 5000));
+    auto logs = r.Events("log");
+    CHECK_EQ(logs.size(), (size_t)25);
+    if (logs.size() == 25)
+        CHECK(t::JsonTextEq(JsonDump(*logs[24].get("payload")->get("data")), R"({"msg":"[boot] line 24"})"));
+}
+
 void OutboxSurvivesRestart() {
     t::Group("bridge-outbox-restart");
     Rig r("restart");
@@ -1272,6 +1302,7 @@ void RunBridgeTests() {
     WindowRules();
     LogTailFallback();
     LogFilter();
+    LogBudget();
     OutboxSurvivesRestart();
     NewBootReconciles();
     PeriodicReconcileNeedsTwoMisses();

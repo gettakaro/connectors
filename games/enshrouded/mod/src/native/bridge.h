@@ -53,6 +53,10 @@ struct BridgeOptions {
     // identify waits, at most this long after Start: Takaro records a server's status (with the reachability reason)
     // only when it turns reachable, so identifying before the world runs would pin a start-up "degraded" reason.
     int64_t startupHoldMs = 300000;
+    // Takaro drops `log` events above 100 per 5 s per server. The boot backlog alone is ~170 lines, so log frames
+    // are paced below that budget; other events keep their order and wait behind them.
+    size_t logBudget = 80;
+    int64_t logWindowMs = 5000;
     // Called on the bridge thread; they must not block.
     std::function<void(const LiveSettings& accepted)> onIdentified;
     // summary: "<name>: <message> (HTTP <status>)" built from the error's name, message and status only
@@ -163,6 +167,7 @@ private:
     int protocol_ = 0;  // negotiated protocol version of the current connection (0 until identified)
     std::string gameServerId_, clientId_;
     uint64_t lastQueuedId_ = 0;
+    std::deque<int64_t> logSentAt_;  // when recent log frames went out, for the log budget
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
     std::set<std::string> pendingIds_;
     std::deque<std::string> recentIds_;
