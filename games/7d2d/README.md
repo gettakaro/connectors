@@ -1,6 +1,6 @@
 # Takaro 7D2D Connector
 
-The Takaro connector for 7 Days to Die (version **0.10.1**) is a server-side mod for Linux and <!-- x-release-please-version -->
+The Takaro connector for 7 Days to Die (version **0.10.2**) is a server-side mod for Linux and <!-- x-release-please-version -->
 Windows dedicated servers. Players do not install anything.
 
 ## Install
