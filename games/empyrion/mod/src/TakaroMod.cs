@@ -193,6 +193,7 @@ namespace TakaroEmpyrion
                 yield return _api.Application.GetPathFor(AppFolder.Content);
             }
             public string SaveGameDir() { return _api.Application.GetPathFor(AppFolder.SaveGame); }
+            public PlayerData? GetPlayerDataFor(int entityId) { return _api.Application.GetPlayerDataFor(entityId); }
         }
 
         sealed class NullLog : ILog

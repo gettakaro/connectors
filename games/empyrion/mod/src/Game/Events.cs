@@ -73,9 +73,36 @@ namespace TakaroEmpyrion.Game
             });
         }
 
+        // Joins whose player-connected is still being prepared: entity id -> join generation. A disconnect removes
+        // the entry, so a join that ends before its identity is known sends neither event.
+        readonly System.Collections.Concurrent.ConcurrentDictionary<int, long> _joining = new System.Collections.Concurrent.ConcurrentDictionary<int, long>();
+        long _joinGen;
+
         async Task Connected(int entityId)
         {
-            PlayerRecord r = await _actions.RefreshConnectingPlayer(entityId);
+            long gen = System.Threading.Interlocked.Increment(ref _joinGen);
+            _joining[entityId] = gen;
+            PlayerRecord r;
+            try { r = await _actions.RefreshConnectingPlayer(entityId); }
+            catch (Exception e)
+            {
+                // Never drop the join: send what is already known (Steam id and name) without ip/ping/position.
+                r = await _actions.KnownPlayer(entityId);
+                if (r == null)
+                {
+                    ((ICollection<KeyValuePair<int, long>>)_joining).Remove(new KeyValuePair<int, long>(entityId, gen));
+                    _log.Error("player-connected for entity " + entityId + " not sent: no player id known (" + e.Message + ")");
+                    return;
+                }
+                // ip and ping are only current when a getPlayers in this session already refreshed the record.
+                if (!r.Online) { r.Ip = null; r.Ping = 0; }
+                _log.Warn("player-connected for " + r.SteamId + " sent with the known id and name only: " + e.Message);
+            }
+            if (!((ICollection<KeyValuePair<int, long>>)_joining).Remove(new KeyValuePair<int, long>(entityId, gen)))
+            {
+                _log.Info("player-connected for entity " + entityId + " not sent: the player left, or joined again, before it was ready");
+                return;
+            }
             _players.SetOnline(r, true);
             var data = new JObject { ["player"] = PlayerRegistry.ToTakaro(r) };
             JObject pos = PlayerRegistry.PositionOf(r);
@@ -85,6 +112,11 @@ namespace TakaroEmpyrion.Game
 
         Task Disconnected(int entityId)
         {
+            if (_joining.TryRemove(entityId, out long _))
+            {
+                _log.Info("entity " + entityId + " left before player-connected was sent; sending neither event");
+                return Task.CompletedTask;
+            }
             PlayerRecord r = _players.ByEntity(entityId);
             // A refused login (ban, wrong password) disconnects entity -1, which never connected.
             if (r == null) { _log.Debug("disconnect of unknown entity " + entityId); return Task.CompletedTask; }

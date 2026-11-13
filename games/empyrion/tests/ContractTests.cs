@@ -41,6 +41,7 @@ public static partial class ContractTests
         Run("reconnect delays", ReconnectDelays);
         Run("reconnect wire", ReconnectWire);
         Run("reconnect slow uplink", ReconnectSlowUplink);
+        Run("first join while a playfield starts", FirstJoinWhilePlayfieldStarts);
         Console.WriteLine("\n" + _pass + " passed, " + _fail + " failed");
         Console.Out.Flush();
         // Background protocol threads are still alive; exit hard so Mono's teardown cannot mask the result.
@@ -243,6 +244,8 @@ public static partial class ContractTests
         public Dictionary<string, int> GetBlockAndItemMapping() { return new Dictionary<string, int> { { "Pistol", 4099 }, { "IronOre", 4300 } }; }
         public IEnumerable<string> ContentDirs() { return new string[0]; }
         public string SaveGameDir() { return null; }
+        public readonly Dictionary<int, PlayerData> Data = new Dictionary<int, PlayerData>();
+        public PlayerData? GetPlayerDataFor(int entityId) { return Data.TryGetValue(entityId, out PlayerData d) ? d : (PlayerData?)null; }
     }
 
     sealed class ConsoleLog : ILog
