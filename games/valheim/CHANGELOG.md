@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.6.1](https://github.com/gettakaro/connectors/compare/valheim-v4.6.0...valheim-v4.6.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **valheim:** never send an id as a ban name in listBans ([#920](https://github.com/gettakaro/connectors/issues/920)) ([fff18d9](https://github.com/gettakaro/connectors/commit/fff18d92301de963cafb740087f16dfdcba82ffb))
+
 ## [4.6.0](https://github.com/gettakaro/connectors/compare/valheim-v4.5.0...valheim-v4.6.0) (2026-11-13)
 
 
