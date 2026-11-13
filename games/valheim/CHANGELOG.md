@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.6.0](https://github.com/gettakaro/connectors/compare/valheim-v4.5.0...valheim-v4.6.0) (2026-11-13)
+
+
+### Features
+
+* **valheim:** reconnect within a second after an established connection drops ([#882](https://github.com/gettakaro/connectors/issues/882)) ([141b66d](https://github.com/gettakaro/connectors/commit/141b66d439b9d7b30c8f96a2ea8f946207ab2f57))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [4.5.0](https://github.com/gettakaro/connectors/compare/valheim-v4.4.0...valheim-v4.5.0) (2026-10-30)
 
 
