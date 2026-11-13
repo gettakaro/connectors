@@ -19,10 +19,10 @@ from takaro_maint.exit_codes import ConflictError, UsageError
 from takaro_maint.games import adapter_for
 
 GAME = "empyrion"
-TARGET = "windows-25490402"
+TARGET = "windows-26569354"
 APP = 530870
 DEPOT = "530871"
-MANIFEST = "8329430202076268665"
+MANIFEST = "1958826245013655100"
 VERSION = "0.1.0-dev.abc1234"
 ARTIFACT = f"takaro-empyrion-{TARGET}-{VERSION}.zip"
 MOD = "TakaroEmpyrion"
@@ -61,7 +61,7 @@ def test_catalog_validate_accepts_the_empyrion_target(run: Any) -> None:
 def test_the_steam_pin_is_exact_and_anonymous() -> None:
     server = record()["inputs"]["server"]
 
-    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (APP, "public", 25490402, "windows")
+    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (APP, "public", 26569354, "windows")
     assert server["depots"][DEPOT]["manifest"] == MANIFEST
     assert server["credentials"] is None
     assert server["files"]["DedicatedServer/EmpyrionDedicated.exe"]["sha256"]
@@ -98,7 +98,7 @@ def test_resolve_names_the_artifact_and_build_inputs(run: Any) -> None:
 
     assert payload["artifactFileNames"]["mod"] == f"takaro-empyrion-{TARGET}-{{version}}.zip"
     env = adapter_for(GAME).env(payload, "EMPYRION")
-    assert env["EMPYRION_STEAM_BUILDID"] == "25490402"
+    assert env["EMPYRION_STEAM_BUILDID"] == "26569354"
     assert env["EMPYRION_ARTIFACT_MOD"] == f"takaro-empyrion-{TARGET}-{{version}}.zip"
     assert env["EMPYRION_TOOLCHAIN"].startswith("mono:6.12.0.182@sha256:")
     assert [entry.split(":", 1)[0] for entry in env["EMPYRION_REFERENCES"].split(";")] == [

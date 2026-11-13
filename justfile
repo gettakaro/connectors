@@ -62,7 +62,7 @@ build-release-tf2 version out-dir='dist' target='linux-25995664':
     ./games/tf2/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
 # Build the Empyrion connector release zip for one catalog target into <out-dir>
-build-release-empyrion version out-dir='dist' target='windows-25490402':
+build-release-empyrion version out-dir='dist' target='windows-26569354':
     ./games/empyrion/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
 # Package the ARK: Survival Ascended release zip around an MSVC-built TakaroAsa.dll (TAKARO_ASA_DLL)

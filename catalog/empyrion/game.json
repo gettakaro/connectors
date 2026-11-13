@@ -24,7 +24,7 @@
           }
         },
         "knownBranches": [],
-        "readinessNote": "The connector is a native C# mod (TakaroEmpyrion.dll) loaded by the game's own mod loader in the dedicated server and in every playfield server, proven on game v1.19.6 build 5188 (Steam build 25490402). It uses only the public Mod API (ModApi.dll and Mif.dll), so a new build usually keeps working, but every new build needs a live retest before it is declared."
+        "readinessNote": "The connector is a native C# mod (TakaroEmpyrion.dll) loaded by the game's own mod loader in the dedicated server and in every playfield server, proven on game v1.20 build 5229 (Steam build 26569354). It uses only the public Mod API (ModApi.dll and Mif.dll), so a new build usually keeps working, but every new build needs a live retest before it is declared."
       }
     }
   },
