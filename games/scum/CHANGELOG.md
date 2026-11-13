@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/scum-v0.3.0...scum-v0.4.0) (2026-11-13)
+
+
+### Features
+
+* **scum:** reconnect within about a second after an established connection drops ([#879](https://github.com/gettakaro/connectors/issues/879)) ([c03241c](https://github.com/gettakaro/connectors/commit/c03241c465c7bd4923989f67398649782218e8be))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/scum-v0.2.0...scum-v0.3.0) (2026-10-30)
 
 
