@@ -114,6 +114,15 @@ namespace Takaro.WebSocket
             };
         }
 
+        /// <summary>True for a `log` game event, the type Takaro rate-limits per server.</summary>
+        public bool IsLogEvent()
+        {
+            return Type == MessageTypes.GameEvent
+                && Payload is IDictionary<string, object> payload
+                && payload.TryGetValue("type", out object type)
+                && type as string == GameEventTypes.Log;
+        }
+
         // Common message type constants - for consistency and to avoid string typos
         public static class MessageTypes
         {

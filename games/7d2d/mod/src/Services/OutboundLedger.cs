@@ -18,10 +18,24 @@ namespace Takaro.Services
     /// read an event but before the pong came back, that event is sent twice.
     ///
     /// Protocol v1 replaces the pong with an explicit cumulative acknowledgement
-    /// per event stream: every event is numbered when it enters the ledger, and
+    /// per event stream: every event is numbered when it is first written, and
     /// Takaro's "eventAck up to N" confirms everything numbered up to N, wherever
     /// it is. Takaro drops a number it has already seen, so a resent event is
     /// harmless there. A restart makes a new stream, so numbers never repeat.
+    ///
+    /// Takaro drops `log` events above 100 per 5 s per server (event-rate-limited),
+    /// counted when they reach it, and the backlog after an outage holds hundreds
+    /// of them. A log line therefore takes a place in the log budget from the
+    /// moment it is written until logWindow after Takaro confirmed it (pong or
+    /// eventAck). Lines held up on the way, behind a large response for example,
+    /// keep their place, so however they bunch up Takaro never receives more than
+    /// logBudget of them within logWindow. The ones over budget stay parked, in
+    /// order. Responses and pings never wait for them.
+    /// Other game events may pass a parked log line because an event is numbered
+    /// when it is first picked to be written, not when it is queued: Takaro keeps
+    /// only the highest number per stream and drops anything at or below it, so
+    /// numbers must rise in write order. An event that already has a number (one
+    /// requeued from a dead socket) is never passed by another event.
     /// </summary>
     public class OutboundLedger
     {
@@ -31,7 +45,10 @@ namespace Takaro.Services
             public bool Replayable;
             public bool IsPing;
 
-            /// <summary>Position in the event stream; 0 for frames that are not events.</summary>
+            /// <summary>A `log` game event, written within the log budget.</summary>
+            public bool IsLog;
+
+            /// <summary>Position in the event stream; 0 for frames that are not events and for events not yet picked to be written.</summary>
             public long Seq;
         }
 
@@ -45,11 +62,32 @@ namespace Takaro.Services
         private long _lastPingMark;
         private long _nextSeq = 1;
 
-        public OutboundLedger(int maxPending, int maxInFlight, string streamId = null)
+        // Takaro allows 100 log events per server in each fixed 5 s bucket and
+        // 600 per 30 s; 80 per 5 s stays below both.
+        public const int DefaultLogBudget = 80;
+        public static readonly TimeSpan DefaultLogWindow = TimeSpan.FromSeconds(5);
+
+        private readonly int _logBudget;
+        private readonly long _logWindowTicks;
+        private readonly Func<long> _utcTicks;
+        private readonly Queue<long> _logConfirmedAt = new Queue<long>();
+        private int _logsInFlight;
+
+        public OutboundLedger(
+            int maxPending,
+            int maxInFlight,
+            string streamId = null,
+            int logBudget = DefaultLogBudget,
+            TimeSpan? logWindow = null,
+            Func<long> utcTicks = null
+        )
         {
             _maxPending = maxPending;
             _maxInFlight = maxInFlight;
             StreamId = streamId ?? Guid.NewGuid().ToString("N");
+            _logBudget = logBudget;
+            _logWindowTicks = (logWindow ?? DefaultLogWindow).Ticks;
+            _utcTicks = utcTicks ?? (() => DateTime.UtcNow.Ticks);
         }
 
         /// <summary>Identifies the numbering of this ledger's events; new for every process.</summary>
@@ -78,7 +116,7 @@ namespace Takaro.Services
             ConfirmsByPong && _inFlight.Count > 0 && _lastPingMark < _writeSequence;
 
         /// <summary>Appends a frame; returns how many oldest frames were dropped to stay under the cap.</summary>
-        public int Enqueue(string json, bool replayable, bool isPing)
+        public int Enqueue(string json, bool replayable, bool isPing, bool isLog = false)
         {
             if (string.IsNullOrEmpty(json))
                 return 0;
@@ -89,24 +127,91 @@ namespace Takaro.Services
                     Json = json,
                     Replayable = replayable,
                     IsPing = isPing,
-                    Seq = replayable ? _nextSeq++ : 0,
+                    IsLog = replayable && isLog,
                 }
             );
             return TrimPending();
         }
 
+        /// <summary>The oldest frame, numbered if it is an event, whatever the log budget.</summary>
         public Entry PeekHead()
         {
-            return _pending.First?.Value;
+            return Number(_pending.First?.Value);
+        }
+
+        /// <summary>
+        /// The frame to write next, numbered if it is an event, or null when
+        /// everything left is log lines over budget (or events behind a numbered one).
+        /// </summary>
+        public Entry NextToSend()
+        {
+            bool logsOpen = LogBudgetLeft();
+            bool eventsHeld = false;
+            for (LinkedListNode<Entry> node = _pending.First; node != null; node = node.Next)
+            {
+                Entry entry = node.Value;
+                if (!entry.Replayable)
+                    return entry;
+                if (entry.IsLog && !logsOpen)
+                {
+                    // Takaro would drop it as a duplicate once a higher number got through.
+                    if (entry.Seq != 0)
+                        eventsHeld = true;
+                    continue;
+                }
+                if (!eventsHeld)
+                    return Number(entry);
+            }
+            return null;
+        }
+
+        private const int UNCONFIRMED_LOG_POLL_MILLISECONDS = 100;
+
+        /// <summary>
+        /// How long until a parked log line may be written: 0 when one may go now,
+        /// -1 when no log line is parked.
+        /// </summary>
+        public int MillisecondsUntilLogBudget()
+        {
+            bool parked = false;
+            foreach (Entry entry in _pending)
+            {
+                if (entry.IsLog)
+                {
+                    parked = true;
+                    break;
+                }
+            }
+            if (!parked)
+                return -1;
+            if (LogBudgetLeft())
+                return 0;
+            // Confirmations arrive on the receive thread and are applied by the
+            // sender loop, so a budget held by unconfirmed lines is polled.
+            if (_logConfirmedAt.Count == 0)
+                return UNCONFIRMED_LOG_POLL_MILLISECONDS;
+            long wait = _logConfirmedAt.Peek() + _logWindowTicks - _utcTicks();
+            return (int)
+                Math.Max(
+                    1,
+                    (wait + TimeSpan.TicksPerMillisecond - 1) / TimeSpan.TicksPerMillisecond
+                );
         }
 
         /// <summary>The head frame was written to the socket.</summary>
         public void MarkHeadWritten()
         {
-            Entry head = _pending.First?.Value;
-            if (head == null)
+            MarkWritten(PeekHead());
+        }
+
+        /// <summary>A frame returned by NextToSend or PeekHead was written to the socket.</summary>
+        public void MarkWritten(Entry head)
+        {
+            if (head == null || !_pending.Remove(head))
                 return;
-            _pending.RemoveFirst();
+
+            if (head.IsLog)
+                _logsInFlight++;
 
             if (head.Replayable)
             {
@@ -114,7 +219,10 @@ namespace Takaro.Services
                 // A link that never answers pings must not grow without bound;
                 // the oldest in-flight events are the likeliest to have arrived.
                 while (_inFlight.Count > _maxInFlight)
+                {
+                    Confirmed(_inFlight.First.Value.Value);
                     _inFlight.RemoveFirst();
+                }
             }
 
             if (head.IsPing)
@@ -124,11 +232,11 @@ namespace Takaro.Services
             }
         }
 
-        /// <summary>The head frame cannot be sent at all; give up on it.</summary>
-        public void DropHead()
+        /// <summary>The frame cannot be sent at all; give up on it.</summary>
+        public void Drop(Entry entry)
         {
-            if (_pending.First != null)
-                _pending.RemoveFirst();
+            if (entry != null)
+                _pending.Remove(entry);
         }
 
         /// <summary>
@@ -147,6 +255,7 @@ namespace Takaro.Services
             int confirmed = 0;
             while (_inFlight.First != null && _inFlight.First.Value.Key <= mark)
             {
+                Confirmed(_inFlight.First.Value.Value);
                 _inFlight.RemoveFirst();
                 confirmed++;
             }
@@ -170,6 +279,7 @@ namespace Takaro.Services
                 LinkedListNode<KeyValuePair<long, Entry>> next = node.Next;
                 if (node.Value.Value.Seq <= upTo)
                 {
+                    Confirmed(node.Value.Value);
                     _inFlight.Remove(node);
                     confirmed++;
                 }
@@ -179,7 +289,7 @@ namespace Takaro.Services
             for (LinkedListNode<Entry> node = _pending.First; node != null; )
             {
                 LinkedListNode<Entry> next = node.Next;
-                if (node.Value.Replayable && node.Value.Seq <= upTo)
+                if (node.Value.Replayable && node.Value.Seq > 0 && node.Value.Seq <= upTo)
                 {
                     _pending.Remove(node);
                     confirmed++;
@@ -207,11 +317,35 @@ namespace Takaro.Services
                 _pending.AddFirst(node.Value.Value);
 
             _inFlight.Clear();
+            _logsInFlight = 0;
             _pingMarks.Clear();
             _lastPingMark = _writeSequence;
             Generation = newGeneration;
             TrimPending();
             return requeued;
+        }
+
+        private Entry Number(Entry entry)
+        {
+            if (entry != null && entry.Replayable && entry.Seq == 0)
+                entry.Seq = _nextSeq++;
+            return entry;
+        }
+
+        private bool LogBudgetLeft()
+        {
+            long now = _utcTicks();
+            while (_logConfirmedAt.Count > 0 && now - _logConfirmedAt.Peek() >= _logWindowTicks)
+                _logConfirmedAt.Dequeue();
+            return _logsInFlight + _logConfirmedAt.Count < _logBudget;
+        }
+
+        private void Confirmed(Entry entry)
+        {
+            if (!entry.IsLog)
+                return;
+            _logsInFlight--;
+            _logConfirmedAt.Enqueue(_utcTicks());
         }
 
         private int TrimPending()

@@ -961,7 +961,7 @@ public static partial class ContractHarness
         ledger.MarkHeadWritten();
         Equal(0L, ledger.PeekHead().Seq, "a ping is not part of the stream");
         ledger.MarkHeadWritten();
-        Equal(2L, ledger.PeekHead().Seq, "numbering follows enqueue order, skipping non-events");
+        Equal(2L, ledger.PeekHead().Seq, "numbering follows write order, skipping non-events");
 
         string withDate = ProtocolHandshake.WithStreamPosition(
             "{\"type\":\"gameEvent\",\"payload\":{\"type\":\"log\",\"data\":{\"at\":\"2030-01-01T00:00:00Z\",\"n\":1.50}}}",
@@ -995,24 +995,25 @@ public static partial class ContractHarness
         ledger.MarkHeadWritten();
         ledger.Enqueue("e3", true, false);
         ledger.Enqueue("e4", true, false);
+        ledger.MarkHeadWritten();
         Equal(0, ledger.AcknowledgePong(), "a pong confirms nothing on v1");
-        Equal(3, ledger.InFlightCount, "events stay in flight after a pong");
+        Equal(4, ledger.InFlightCount, "events stay in flight after a pong");
 
         Equal(0, ledger.AcknowledgeUpTo("stream-b", 99), "another stream's ack confirms nothing");
-        Equal(3, ledger.InFlightCount, "events of this stream are untouched");
+        Equal(4, ledger.InFlightCount, "events of this stream are untouched");
         Equal(2, ledger.AcknowledgeUpTo("stream-a", 2), "ack up to 2 confirms events 1 and 2");
-        Equal(1, ledger.InFlightCount, "event 3 is still unconfirmed");
+        Equal(2, ledger.InFlightCount, "events 3 and 4 are still unconfirmed");
 
-        // The socket dies; event 3 returns to the backlog with its number.
-        Equal(1, ledger.RequeueInFlight(2, false), "unconfirmed event is requeued");
+        // The socket dies; events 3 and 4 return to the backlog with their numbers.
+        Equal(2, ledger.RequeueInFlight(2, false), "unconfirmed events are requeued");
         Equal(3L, ledger.PeekHead().Seq, "a requeued event keeps its number");
         Equal(
             2,
-            ledger.AcknowledgeUpTo("stream-a", 4),
-            "an ack covers requeued and written events"
+            ledger.AcknowledgeUpTo("stream-a", 99),
+            "an ack covers requeued events but never one not yet written"
         );
-        Equal(1, ledger.PendingCount, "events beyond the ack are still to be sent");
-        Equal(5L, ledger.PeekHead().Seq, "the next event to send is number 5");
+        Equal(1, ledger.PendingCount, "the event not yet written stays to be sent");
+        Equal(5L, ledger.PeekHead().Seq, "it is numbered 5 when it is picked to be written");
 
         var v0 = new OutboundLedger(10, 10, "stream-v0");
         v0.RequeueInFlight(1, true);

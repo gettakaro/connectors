@@ -391,8 +391,23 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertLess(flush.index("!IsSendable(socket)"), flush.index("socket.Send("))
         catch = flush.split("catch (Exception ex)", 1)[1]
         self.assertLess(
-            catch.index("!IsSendable(socket)"), catch.index("_ledger.DropHead()")
+            catch.index("!IsSendable(socket)"), catch.index("_ledger.Drop(head)")
         )
+
+    def test_backlog_log_lines_are_paced(self):
+        # Takaro drops log events above 100 per 5 s per server; the flush picks
+        # each frame through the ledger's log budget instead of the raw head.
+        transport = self.source("src/WebSocket/WebSocketTransport.cs")
+        flush = transport.split("private void FlushPending()", 1)[1].split(
+            "private bool AckPingDue()", 1
+        )[0]
+        self.assertIn("_ledger.NextToSend()", flush)
+        self.assertIn("_ledger.MarkWritten(head)", flush)
+        self.assertNotIn("PeekHead", flush)
+        self.assertIn("IsLog = message.IsLogEvent()", transport)
+        self.assertIn("public const int DefaultLogBudget = 80;", self.source("src/Services/OutboundLedger.cs"))
+        drain = transport.split("private void DrainOutbound()", 1)[1].split("private void Buffer(", 1)[0]
+        self.assertIn("_ledger.MillisecondsUntilLogBudget()", drain)
 
     def test_v3_3_targets_compile_against_the_v3_3_player_data_api(self):
         lib_target = self.game_file("scripts/lib-target.sh")
@@ -430,7 +445,7 @@ class SourceRegressionTests(unittest.TestCase):
             "public void SendErrorResponse", 1
         )[0]
         self.assertNotIn("Seq", send)
-        self.assertIn("Seq = replayable ? _nextSeq++ : 0", ledger)
+        self.assertIn("entry.Seq = _nextSeq++", ledger)
         self.assertIn("_session.WireFrame", transport)
 
     def test_readme_version_is_release_managed(self):
