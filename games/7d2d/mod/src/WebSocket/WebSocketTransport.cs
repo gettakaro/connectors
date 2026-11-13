@@ -221,6 +221,7 @@ namespace Takaro.WebSocket
                     Json = json,
                     Replayable = message.Type == WebSocketMessage.MessageTypes.GameEvent,
                     IsPing = message.Type == WebSocketMessage.MessageTypes.Ping,
+                    IsLog = message.IsLogEvent(),
                 }
             );
         }
@@ -252,7 +253,14 @@ namespace Takaro.WebSocket
                 bool took;
                 try
                 {
-                    took = _outbound.TryTake(out entry, SENDER_POLL_MILLISECONDS);
+                    // Parked log lines go out as soon as the log budget allows.
+                    int logWait = _ledger.MillisecondsUntilLogBudget();
+                    took = _outbound.TryTake(
+                        out entry,
+                        logWait >= 0 && _session.IsConfirmed
+                            ? Math.Min(SENDER_POLL_MILLISECONDS, Math.Max(logWait, 10))
+                            : SENDER_POLL_MILLISECONDS
+                    );
                 }
                 catch (Exception)
                 {
@@ -279,7 +287,7 @@ namespace Takaro.WebSocket
             if (entry == null)
                 return;
 
-            if (_ledger.Enqueue(entry.Json, entry.Replayable, entry.IsPing) > 0)
+            if (_ledger.Enqueue(entry.Json, entry.Replayable, entry.IsPing, entry.IsLog) > 0)
             {
                 _headFailureCount = 0;
                 if (!_pendingOverflowLogged)
@@ -356,7 +364,10 @@ namespace Takaro.WebSocket
 
             while (true)
             {
-                if (_ledger.PendingCount == 0)
+                // Log lines over Takaro's rate limit wait here (OutboundLedger);
+                // responses and other events go past them.
+                OutboundLedger.Entry head = _ledger.NextToSend();
+                if (head == null)
                 {
                     // Confirm what was just written instead of waiting for the
                     // next heartbeat; a duplicate after a dead link is then only
@@ -370,6 +381,7 @@ namespace Takaro.WebSocket
                         false,
                         true
                     );
+                    head = _ledger.NextToSend();
                 }
 
                 if (
@@ -380,7 +392,6 @@ namespace Takaro.WebSocket
                 )
                     return;
 
-                OutboundLedger.Entry head = _ledger.PeekHead();
                 try
                 {
                     lock (_sendLock)
@@ -415,13 +426,13 @@ namespace Takaro.WebSocket
                             "Dropping outbound message after "
                                 + $"{MAX_SEND_FAILURES_PER_MESSAGE} failed sends"
                         );
-                        _ledger.DropHead();
+                        _ledger.Drop(head);
                         _headFailureCount = 0;
                     }
                     return; // Back off to the next poll rather than hammering.
                 }
 
-                _ledger.MarkHeadWritten();
+                _ledger.MarkWritten(head);
                 _headFailureCount = 0;
                 _pendingOverflowLogged = false;
             }
