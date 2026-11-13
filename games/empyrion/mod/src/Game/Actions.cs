@@ -317,12 +317,15 @@ namespace TakaroEmpyrion.Game
                     {
                         PlayerRecord r = _players.Upsert(pd.Value.SteamId, entityId, pd.Value.PlayerName);
                         if (!string.IsNullOrEmpty(pd.Value.PlayfieldName)) r.Playfield = pd.Value.PlayfieldName;
+                        _log.Info("player " + entityId + " identified by IApplication.GetPlayerDataFor");
                         return r;
                     }
                 }
             }
             catch (Exception e) { _log.Debug("GetPlayerDataFor " + entityId + " failed: " + e.Message); }
-            return _players.ByEntity(entityId);
+            PlayerRecord known = _players.ByEntity(entityId);
+            if (known != null) _log.Info("player " + entityId + " identified from players.json");
+            return known;
         }
 
         public static Dictionary<int, string> ParsePlysIps(string plys)
