@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.2](https://github.com/gettakaro/connectors/compare/7d2d-v0.10.1...7d2d-v0.10.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **7d2d:** bound the reconnect so a silent TLS endpoint cannot stall it ([#917](https://github.com/gettakaro/connectors/issues/917)) ([c85247b](https://github.com/gettakaro/connectors/commit/c85247baad2bf84559b1620bdf792280e78f40d2))
+* **7d2d:** pace the log backlog below Takaro's event rate limit ([#919](https://github.com/gettakaro/connectors/issues/919)) ([adbe480](https://github.com/gettakaro/connectors/commit/adbe480b7fa48ad64379b613f15bfbf4fbedb2b1))
+
+
+### Documentation
+
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.10.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.10.0...7d2d-v0.10.1) (2026-11-12)
 
 
