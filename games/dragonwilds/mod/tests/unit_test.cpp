@@ -2,6 +2,7 @@
 // and password redaction. No game process involved.
 #include "mapsurvey.h"
 #include "chat_sender.h"
+#include "mem_ranges.h"
 #include "common.h"
 #include "config_file.h"
 #include "perf.h"
@@ -574,9 +575,39 @@ static void TestChatSender() {
     EQ(ChatSender::Render("", "Welcome back"), "Welcome back");
 }
 
+// A vtable that straddles a page whose protection a slot swap changed spans two mappings; the
+// sweep must still read it (ADominionGameMode on build 26419371 lost its PreLogin hook to this).
+static void TestRangesCover() {
+    const uintptr_t P = 0x1000;
+    std::vector<MapRange> split = {
+        {0x2284 * P, 0x2285 * P, true, false, "game"},
+        {0x2285 * P, 0x2286 * P, true, false, "game"},  // the page a swap re-protected
+        {0x2286 * P, 0x2300 * P, true, false, "game"},
+        {0x2400 * P, 0x2401 * P, true, true, "anon"},
+    };
+    const uintptr_t vt = 0x2284bf0;
+    const size_t size = 2408;
+    CHECK(RangesCover(split, vt, size, false), "vtable across adjacent read-only mappings must be readable");
+    CHECK(RangesCover(split, 0x2285488, 8, false), "slot inside one mapping");
+    CHECK(!RangesCover(split, vt, size, true), "read-only mappings are not writable");
+    CHECK(!RangesCover(split, 0x2300 * P - 8, 16, false), "a gap ends the span");
+    CHECK(!RangesCover(split, 0x2283 * P, 16, false), "below the first mapping");
+    CHECK(RangesCover(split, 0x2400 * P, 16, true), "writable mapping");
+    CHECK(!RangesCover(split, 0x2400 * P + P - 8, 16, false), "past the last mapping");
+    std::vector<MapRange> hole = {
+        {0x10 * P, 0x11 * P, true, false, ""},
+        {0x11 * P, 0x12 * P, false, false, ""},  // unreadable guard page in the middle
+        {0x12 * P, 0x13 * P, true, false, ""},
+    };
+    CHECK(!RangesCover(hole, 0x11 * P - 8, 2 * P, false), "an unreadable mapping inside the span fails");
+    CHECK(!RangesCover(split, vt, 0, false), "empty span");
+    CHECK(!RangesCover({}, vt, 8, false), "no mappings");
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && strcmp(argv[1], "--exit-flush-child") == 0) return ExitFlushChild(argv[2]);
     TestSymParser();
+    TestRangesCover();
     TestJson();
     TestRedaction();
     TestRingBuffer();
