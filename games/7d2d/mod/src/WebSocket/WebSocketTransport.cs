@@ -497,15 +497,15 @@ namespace Takaro.WebSocket
 
                 socket.OnOpen += (sender, e) =>
                 {
-                    // An attempt abandoned at the deadline can still finish
-                    // its handshake later; that socket is never identified.
-                    if (!ReferenceEquals(socket, _webSocket))
+                    // An attempt abandoned at the deadline, by a config reload
+                    // or by Shutdown can still finish its handshake later; the
+                    // session refuses it by generation and it is never identified.
+                    if (!ReferenceEquals(socket, _webSocket) || !_session.MarkOpened(generation))
                     {
                         RetireSocket(socket, "Connection attempt abandoned");
                         return;
                     }
 
-                    _session.MarkOpened();
                     LogService.Instance.Info(
                         $"WebSocket connection established ({_ledger.PendingCount} message(s) buffered)"
                     );
@@ -534,7 +534,8 @@ namespace Takaro.WebSocket
                         return;
                     }
 
-                    _session.MarkIdentifySent();
+                    if (!_session.MarkIdentifySent(generation))
+                        RetireSocket(socket, "Connection attempt abandoned");
                 };
 
                 socket.OnMessage += (sender, e) =>
@@ -721,16 +722,19 @@ namespace Takaro.WebSocket
             retire.Start();
         }
 
-        // Linux gives up an unanswered TCP connect after about 130 s.
-        private const int RETIRE_WAIT_SECONDS = 180;
+        // A socket still New this long after it was retired never started
+        // connecting (its connect thread failed first).
+        private const int RETIRE_NEW_SOCKET_SECONDS = 30;
 
         private static void CloseWhenPossible(WebSocketSharp.WebSocket socket, string reason)
         {
             try
             {
-                // Still in the TCP connect, there is no connection to shut down
-                // yet; it appears once the connect completes.
-                for (int waited = 0; waited < RETIRE_WAIT_SECONDS; waited++)
+                // While the name lookup or TCP connect is still running there is
+                // no connection to shut down yet. Both end on their own (the
+                // operating system's connect timeout), so this waits as long as
+                // the socket is connecting and closes it the moment it can.
+                for (int waited = 0; ; waited++)
                 {
                     WebSocketState state = socket.ReadyState;
                     if (state == WebSocketState.Open)
@@ -739,6 +743,8 @@ namespace Takaro.WebSocket
                         return;
                     }
                     if (state == WebSocketState.Closing || state == WebSocketState.Closed)
+                        return;
+                    if (state == WebSocketState.New && waited >= RETIRE_NEW_SOCKET_SECONDS)
                         return;
                     if (StalledSocket.AbortTransport(socket))
                         return;
@@ -767,7 +773,9 @@ namespace Takaro.WebSocket
             {
                 if (socket.ReadyState != WebSocketState.Open)
                 {
-                    StalledSocket.AbortTransport(socket);
+                    // Still resolving or in the TCP connect: close it once it connects.
+                    if (!StalledSocket.AbortTransport(socket))
+                        RetireSocket(socket, "Application shutting down");
                     LogService.Instance.Info(
                         "Shutting down while connecting to Takaro; connection attempt abandoned"
                     );

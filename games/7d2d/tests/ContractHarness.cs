@@ -66,6 +66,7 @@ public static partial class ContractHarness
             AssertBanCaptureMergesBothStores();
             AssertBanCaptureSendsOnlyRealNames();
             AssertConnectDeadline();
+            AssertAbandonedSocketCannotTouchTheSession();
             AssertIdentifyAnswerSetsTheNegotiatedVersion();
             AssertRefusedIdentifyIsNeverConfirmed();
             AssertAcknowledgementsAreRoutedByVersion();
@@ -1481,8 +1482,8 @@ public static partial class ContractHarness
         public void OpenSocket()
         {
             Socket = Session.BeginSocket();
-            Session.MarkOpened();
-            Session.MarkIdentifySent();
+            True(Session.MarkOpened(Socket), "the current socket opens");
+            True(Session.MarkIdentifySent(Socket), "the current socket identifies");
         }
 
         public InboundResult Receive(string frame)
@@ -1602,6 +1603,62 @@ public static partial class ContractHarness
         );
     }
 
+    private static void AssertAbandonedSocketCannotTouchTheSession()
+    {
+        // The connect runs off the lock, so an abandoned socket's OnOpen and
+        // frames can arrive after the transport moved on.
+        var detached = new SessionRig();
+        long gone = detached.Session.BeginSocket();
+        detached.Session.MarkDetached();
+        True(!detached.Session.MarkOpened(gone), "a detached socket cannot open the session");
+        True(
+            !detached.Session.MarkIdentifySent(gone),
+            "a detached socket cannot mark identify sent"
+        );
+        True(!detached.Session.IsConnected, "the session stays unconnected");
+        Equal(-1, detached.Session.SecondsSinceOpened(), "no uptime clock is started");
+
+        var closed = new SessionRig();
+        closed.OpenSocket();
+        closed.Session.MarkClosed(out _);
+        True(!closed.Session.MarkOpened(closed.Socket), "a closed socket cannot open again");
+
+        var replaced = new SessionRig();
+        long old = replaced.Session.BeginSocket();
+        long current = replaced.Session.BeginSocket();
+        True(!replaced.Session.MarkOpened(old), "a replaced socket cannot open the session");
+        True(
+            !replaced.Session.MarkIdentifySent(old),
+            "a replaced socket cannot mark identify sent"
+        );
+        True(
+            !replaced.Session.IsConnected,
+            "the replacement is not marked connected by the old socket"
+        );
+        True(replaced.Session.MarkOpened(current), "the replacement opens");
+        True(replaced.Session.MarkIdentifySent(current), "the replacement identifies");
+        Equal(
+            InboundKind.Ignored,
+            replaced.Session.HandleInbound(old, true, AcceptedV0).Kind,
+            "an identify answer on the replaced socket is ignored"
+        );
+        Equal(-1, replaced.Session.ProtocolVersion, "and does not set the protocol version");
+        Equal(
+            InboundKind.IdentifyAccepted,
+            replaced.Session.HandleInbound(current, true, AcceptedV1).Kind,
+            "the replacement's own answer is accepted"
+        );
+        True(replaced.Session.TryConfirm(), "and confirms it");
+
+        var reused = new SessionRig();
+        reused.OpenSocket();
+        reused.Accept(AcceptedV1);
+        reused.Socket = reused.Session.BeginSocket();
+        True(!reused.Session.IsConnected, "a new attempt starts unconnected");
+        True(!reused.Session.IsConfirmed, "a new attempt starts unconfirmed");
+        Equal(-1, reused.Session.SecondsSinceOpened(), "a new attempt has no uptime yet");
+    }
+
     private static void AssertIdentifyAnswerSetsTheNegotiatedVersion()
     {
         var rig = new SessionRig();
@@ -1632,8 +1689,8 @@ public static partial class ContractHarness
         Equal(0, legacy.Session.ProtocolVersion, "an answer without a version means protocol 0");
 
         var unsent = new SessionRig();
-        unsent.Session.BeginSocket();
-        unsent.Session.MarkOpened();
+        unsent.Socket = unsent.Session.BeginSocket();
+        unsent.Session.MarkOpened(unsent.Socket);
         unsent.Receive(AcceptedV1);
         True(
             !unsent.Session.TryConfirm(),

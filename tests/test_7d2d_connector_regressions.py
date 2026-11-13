@@ -445,6 +445,9 @@ class SourceRegressionTests(unittest.TestCase):
         self.assertNotIn(".Connect()", connect)
         self.assertIn("new Thread(() => RunConnect(socket))", connect)
         self.assertIn("StartConnectDeadline(socket, generation);", connect)
+        opened = connect.split("socket.OnOpen +=", 1)[1].split("socket.OnMessage +=", 1)[0]
+        self.assertIn("_session.MarkOpened(generation)", opened)
+        self.assertIn("_session.MarkIdentifySent(generation)", opened)
 
         shutdown = transport.split("public void Shutdown()", 1)[1].split("public void Send(", 1)[0]
         locked = shutdown.split("lock (_connectLock)", 1)[1].split("}", 1)[0]
