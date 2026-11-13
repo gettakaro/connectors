@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/gettakaro/connectors/compare/enshrouded-v0.11.0...enshrouded-v0.11.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **enshrouded:** pace log events under Takaro's per-server limit ([#916](https://github.com/gettakaro/connectors/issues/916)) ([c996a0f](https://github.com/gettakaro/connectors/commit/c996a0f15dcd5e546999b9290efa607d0d4e34fe))
+
 ## [0.11.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.10.0...enshrouded-v0.11.0) (2026-11-12)
 
 
