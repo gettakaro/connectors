@@ -21,7 +21,8 @@ Download the latest release from https://takaro.io/connectors/empyrion (or the n
 release on the [GitHub releases page](https://github.com/gettakaro/connectors/releases)). You need
 one file:
 
-- `takaro-empyrion-windows-<build>-<version>.zip`, where `<build>` is the server's Steam build.
+- `takaro-empyrion-windows-26569354-<version>.zip` for Empyrion **v1.20** (Steam build 26569354, the
+  current public build). The number in the name is the server's Steam build.
 
 Each release has a `SHA256SUMS` file to check the download with.
 
@@ -83,7 +84,7 @@ After an Empyrion update, wait for a connector release that names the new server
 
 ## What works, what doesn't
 
-Checked on Empyrion v1.19.6 build 5188 (Steam build 25490402), 2026-11-03. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Empyrion v1.20 build 5229 (Steam build 26569354), 2026-11-13. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|

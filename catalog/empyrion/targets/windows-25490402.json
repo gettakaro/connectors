@@ -4,16 +4,16 @@
   "game": "empyrion",
   "platform": "windows",
   "revision": "25490402",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
-    "since": "2026-11-03",
+    "status": "retired",
+    "since": "2026-11-13",
     "evidence": [
       "games/empyrion/README.md (What works, what doesn't)",
       "games/empyrion/capabilities.json (status and game API per action and event, kept equal to mod/src/Core/Coverage.cs by the contract tests)",
       "live-verified 2026-11-03 against build 25490402 with a real game client on a staging Takaro domain"
     ],
-    "notes": "Empyrion - Galactic Survival dedicated server v1.19.6 build 5188, Steam build 25490402 on the public branch. The connector is the C# mod TakaroEmpyrion.dll, loaded by the game's own mod loader (ModTargets: Dedi, PfServer): the dedicated server holds the Takaro WebSocket, and a small agent in every playfield server forwards game events to it. It compiles against the server's own ModApi.dll, Mif.dll and Newtonsoft.Json.dll, fetched from the pinned depot manifest and checked by sha256."
+    "notes": "Superseded by windows-26569354: Steam public moved on to v1.20 (build 26569354), and Steam no longer serves this build's depot 530871 manifest 8329430202076268665 (401), so it can no longer be installed from a clean machine. The Mod API assemblies the connector compiles against are byte-identical in v1.20."
   },
   "inputs": {
     "server": {

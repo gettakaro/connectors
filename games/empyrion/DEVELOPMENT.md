@@ -58,7 +58,7 @@ map renderer and `capabilities.json` drift against `Coverage.cs`. A status in `C
 ## Release build
 
 ```
-maintenance/bin/takaro-maint build --game empyrion --target windows-25490402 --version 0.1.0-dev --out dist --toolchain container
+maintenance/bin/takaro-maint build --game empyrion --target windows-26569354 --version 0.1.0-dev --out dist --toolchain container
 ```
 
 `build-release.sh` fetches and checks the references, stamps the version into a staged copy of
