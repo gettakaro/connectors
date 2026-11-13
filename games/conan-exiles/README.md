@@ -5,7 +5,7 @@ Linux, a `winmm.dll` on Windows. No RCON and no mod. Players do not install anyt
 
 ## Install
 
-You need: a Conan Exiles dedicated server on build **25792439**, 25738716 or 25639945 (on Linux,
+You need: a Conan Exiles dedicated server on build **26552396**, 25792439, 25738716 or 25639945 (on Linux,
 control of its start command), and a Takaro game server of type **Generic** with its registration
 token.
 
@@ -72,7 +72,7 @@ in Takaro. If it is not connected, the console shows a `****` block naming the p
 
 ## What works, what doesn't
 
-Checked on server build 25792439 (Linux and Windows), 2026-10-09. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on server build 26552396 (Linux and Windows), 2026-11-12. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -103,7 +103,7 @@ Checked on server build 25792439 (Linux and Windows), 2026-10-09. ✅ works, ⚠
 
 ## Known issues
 
-- Only server builds 25792439, 25738716 and 25639945 work; on other builds the connector stays
+- Only server builds 26552396, 25792439, 25738716 and 25639945 work; on other builds the connector stays
   connected but refuses every action until a new release.
 - Linux needs control of the start command for `LD_PRELOAD`; some rented hosts do not allow it.
 
