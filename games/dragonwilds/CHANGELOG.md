@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.8.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.7.0...dragonwilds-v0.8.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757))
+
+### Features
+
+* **dragonwilds:** support Steam build 26419371 ([#857](https://github.com/gettakaro/connectors/issues/857)) ([f623a9d](https://github.com/gettakaro/connectors/commit/f623a9d57297d4f806bd4525e1e95c1a23b28530))
+
+
+### Bug Fixes
+
+* **7d2d:** name every asset after its game build and fail loudly on the wrong build ([#757](https://github.com/gettakaro/connectors/issues/757)) ([a19350f](https://github.com/gettakaro/connectors/commit/a19350f07a3267351c4837ec06edf9a66397e7b8))
+
+
+### Documentation
+
+* **dragonwilds:** research native and silent Takaro commands ([#608](https://github.com/gettakaro/connectors/issues/608)) ([36a72ef](https://github.com/gettakaro/connectors/commit/36a72ef315a8d07f554ce0c43d363b0ca264fd6d))
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.7.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.6.0...dragonwilds-v0.7.0) (2026-10-30)
 
 
