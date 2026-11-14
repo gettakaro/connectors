@@ -136,7 +136,7 @@ jar do I want, and was it actually tested?" without the repository at hand.
 | 2 | Usage: `--out` is not empty, no compatibility record in `--assembled`, `--allow-dirty` on a stable channel, positional files outside legacy mode, or a `legacyAssetAliases` key that is not a plain file name. |
 | 5 | Bytes disagree with a hash that was already written down — a built file against its build manifest, or a file in the assembled set against `SHA256SUMS`. Nothing is uploaded. |
 | 7 | The set is wrong: a missing (target, role), two different builds of the same one, a fingerprint the catalog no longer has, a file name the catalog does not predict, two assets wanting one name, a build manifest from another commit or from a dirty tree, a verification report from a dirty tree, a report that describes different bytes, a dirty tree, an assembled set built for another repository or commit, a record that does not claim the tag it sits on, a tag that points somewhere else, or an asset already on the release with different bytes. |
-| 8 | The evidence is missing or negative: no report for a target that requires one, `outcome: fail`, a level below what the target requires, or a target requiring `gameplay` — which this harness does not produce. |
+| 8 | The evidence is missing or negative: no report for a target that requires one, `outcome: fail`, or a level below what the target requires (`gameplay` is reached only by a game whose harness drives a player, today Minecraft). |
 | 9 | GitHub: no token, or a failed request. |
 
 `missing` in the exit-7 document names every `{target, role}` that was not built, so the failure

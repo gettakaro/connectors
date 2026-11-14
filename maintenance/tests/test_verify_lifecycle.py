@@ -337,13 +337,20 @@ def test_the_full_report_validates_against_the_schema_with_lifecycle_rows(
         "catalog-items",
         "catalog-entities",
         "console",
+        "gameplay-join",
+        "gameplay-chat",
+        "gameplay-give-item",
+        "gameplay-inventory",
+        "gameplay-teleport",
+        "gameplay-leave",
         "reconnect",
         "shutdown",
         "restart",
         "negative-wrong-target",
     ]
     assert report["takaro"] == "local"
-    assert "#174" in report["coverage"]["gameplay"]
+    assert report["level"] == "gameplay"
+    assert report["coverage"]["gameplay"].startswith("covered - join, chat")
 
 
 def test_runtime_identity_is_scanned_for_every_platform_banner(tmp_path: Path) -> None:

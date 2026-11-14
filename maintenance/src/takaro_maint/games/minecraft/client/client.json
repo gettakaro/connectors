@@ -1,0 +1,19 @@
+{
+  "$comment": "Pinned inputs of the headless player the Minecraft gameplay checks drive. Mineflayer comes from package-lock.json; it speaks the protocols in nativeVersions itself and reaches every other target through ViaProxy, logged in as proxyClientVersion.",
+  "node": {
+    "image": "node",
+    "tag": "22.23.2-bookworm-slim",
+    "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+  },
+  "mineflayer": {
+    "version": "4.39.0",
+    "nativeVersions": ["1.21.11", "26.1", "26.1.1", "26.1.2"],
+    "proxyClientVersion": "26.1"
+  },
+  "viaproxy": {
+    "version": "3.4.14",
+    "url": "https://github.com/ViaVersion/ViaProxy/releases/download/v3.4.14/ViaProxy-3.4.14.jar",
+    "sha256": "2894bbfb2f4342f8fde887af6c689313efd5b0e46a8006775eea0e21e2948ab5",
+    "size": 48835170
+  }
+}
