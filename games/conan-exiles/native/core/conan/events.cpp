@@ -1,6 +1,7 @@
 #include "conan/events.h"
 
 #include "common.h"
+#include "conan/blueprint_probe.h"
 #include "conan/command_probe.h"
 #include "conan/events_payload.h"
 #include "conan/hook_dispatch.h"
@@ -859,6 +860,7 @@ void StartEvents(const EventsOptions& o) {
     }
     if (o.hooks) SubscribeAll();
     if (o.hooks) cmdprobe::Start();
+    if (o.hooks) bpprobe::Start(o.savedDir);
     s.worker = std::thread(WorkerLoop);
     LogTailOptions lo;
     lo.path = ServerLogPath(o.savedDir);
@@ -885,6 +887,7 @@ void StopEvents() {
     if (s.worker.joinable()) s.worker.join();
     if (s.logtail) s.logtail->Stop();
     cmdprobe::Stop();
+    bpprobe::Stop();
 }
 
 std::string EventsHealthJson() {
@@ -918,6 +921,7 @@ std::string EventsHealthJson() {
         .Raw("hooks", HookDispatch::HealthJson())
         .Raw("logtail", Sh().logtail ? Sh().logtail->HealthJson() : "null");
     if (cmdprobe::Enabled()) b.Raw("commandProbe", cmdprobe::HealthJson());
+    if (bpprobe::Enabled()) b.Raw("blueprintProbe", bpprobe::HealthJson());
     return b.Done();
 }
 

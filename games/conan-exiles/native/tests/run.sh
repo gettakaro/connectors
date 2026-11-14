@@ -3,6 +3,7 @@
 # --tests); --native uses the toolchain of the current machine (the container calls it that way).
 #   events_test   lane L2c: event payloads + whitelist, log tail, hook dispatch table
 #   command_probe_test  the #205 research probe: catalog, claim decision, invocation payload, off by default
+#   blueprint_probe_test  the Blueprint SDK research probe: console-route parser, payload, off by default
 #   unit_test     core logic (protocol, config, outbox, heartbeat, pins, adapter, registry, text)
 #   l2b_test      the mutation actions against a fake game and against fake UE objects built from
 #                 the reflection-dump fixture (tests/fixtures/l2b-reflection-25639945.json)
@@ -40,6 +41,10 @@ echo "== events_test"
 echo "== command_probe_test"
 "$CXX" "${FLAGS[@]}" tests/command_probe_test.cpp "${CORE[@]}" -o tests/build/command_probe_test
 ./tests/build/command_probe_test
+
+echo "== blueprint_probe_test"
+"$CXX" "${FLAGS[@]}" tests/blueprint_probe_test.cpp "${CORE[@]}" -o tests/build/blueprint_probe_test
+./tests/build/blueprint_probe_test
 
 echo "== reads_test"
 "$CXX" "${FLAGS[@]}" tests/reads_test.cpp "${CORE[@]}" -o tests/build/reads_test
