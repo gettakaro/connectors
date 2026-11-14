@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0](https://github.com/gettakaro/connectors/compare/dune-v0.6.0...dune-v0.7.0) (2026-11-14)
+
+
+### Features
+
+* **dune:** support Steam build 26332623 ([#766](https://github.com/gettakaro/connectors/issues/766)) ([9dcdf3e](https://github.com/gettakaro/connectors/commit/9dcdf3ef0c079af2966f39ba8f1dc48c567e4099))
+* **dune:** support Steam build 26591491 ([#904](https://github.com/gettakaro/connectors/issues/904)) ([76af099](https://github.com/gettakaro/connectors/commit/76af0993a47b9e68df454b3bda9f407ab402f56f))
+
+
+### Miscellaneous Chores
+
+* license connectors under AGPL-3.0 ([#820](https://github.com/gettakaro/connectors/issues/820)) ([2da9b8e](https://github.com/gettakaro/connectors/commit/2da9b8e10709398871f1bdf7310fc7ab0d8d543c))
+
+
+### Documentation
+
+* one README layout for every connector ([#703](https://github.com/gettakaro/connectors/issues/703)) ([1b4955d](https://github.com/gettakaro/connectors/commit/1b4955d01385777ea8db589c52adf5eec20173f9))
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/dune-v0.5.0...dune-v0.6.0) (2026-10-30)
 
 
