@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/gettakaro/connectors/compare/ark-v0.5.0...ark-v0.5.1) (2026-11-14)
+
+
+### Documentation
+
+* shorten every connector README to install steps and the works table ([#740](https://github.com/gettakaro/connectors/issues/740)) ([06696b3](https://github.com/gettakaro/connectors/commit/06696b39af9c7495c3d680dea7870c40607c1be6))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/ark-v0.4.0...ark-v0.5.0) (2026-11-11)
 
 
