@@ -86,6 +86,33 @@ public static partial class ContractTests
             return null;
         }
 
+        /// <summary>
+        /// Parks the first retry wait of a join until Release: a sync point that keeps that join pending for as long
+        /// as the test needs, instead of a wall-clock sleep. Later waits return at once.
+        /// </summary>
+        public void HoldFirstRetry()
+        {
+            int calls = 0;
+            Actions.Delay = d =>
+            {
+                lock (Waits) Waits.Add(d);
+                if (Interlocked.Increment(ref calls) > 1) return Task.CompletedTask;
+                Parked.Set();
+                return _gate.Task;
+            };
+        }
+        public readonly ManualResetEventSlim Parked = new ManualResetEventSlim(false);
+        readonly TaskCompletionSource<bool> _gate = new TaskCompletionSource<bool>();
+        public void Release() { _gate.TrySetResult(true); }
+
+        /// <summary>Waits for a log line; the deadline only stops a hang, it is not part of what is checked.</summary>
+        public bool WaitLogged(string level, string part, int ms = 10000)
+        {
+            DateTime end = DateTime.UtcNow.AddMilliseconds(ms);
+            while (DateTime.UtcNow < end) { if (Logged(level, part)) return true; Thread.Sleep(10); }
+            return false;
+        }
+
         public int Count(string type) { lock (Emitted) return Emitted.Count(e => e.Key == type); }
         public bool Logged(string level, string part) { lock (Log.Lines) return Log.Lines.Any(l => l.StartsWith(level) && l.Contains(part)); }
         public void Stop() { _stop = true; }
@@ -153,28 +180,33 @@ public static partial class ContractTests
 
         // 5. The player leaves while the connect is still being prepared: neither event.
         {
-            var rig = new JoinRig(int.MaxValue);
-            rig.Actions.PlayerInfoBudget = TimeSpan.FromMilliseconds(800);
-            rig.Players.Upsert("76561198000000001", 101, "Tester");
+            var rig = new JoinRig(1);
+            rig.HoldFirstRetry();
             rig.Bridge.OnGameEvent(CmdId.Event_Player_Connected, 0, new Id(101));
-            Thread.Sleep(200);
+            bool parked = rig.Parked.Wait(10000);                       // the join is pending: its first info request timed out
             rig.Bridge.OnGameEvent(CmdId.Event_Player_Disconnected, 0, new Id(101));
-            Thread.Sleep(1800);
-            Check(rig.Count("player-connected") == 0 && rig.Count("player-disconnected") == 0, "left during the join: no connect and no unpaired disconnect");
+            rig.Release();
+            bool done = rig.WaitLogged("INFO", "player-connected for entity 101 not sent");
+            Check(parked && done && rig.Count("player-connected") == 0 && rig.Count("player-disconnected") == 0, "left during the join: no connect and no unpaired disconnect",
+                  "parked " + parked + " done " + done + " connected " + rig.Count("player-connected") + " disconnected " + rig.Count("player-disconnected"));
             rig.Stop();
         }
 
         // 6. A quick leave and rejoin while the first connect is pending: one player-connected, from the rejoin.
+        //    The leave and the rejoin arrive back to back, as the game raises them; the first join is parked at a sync point.
         {
-            var rig = new JoinRig(3);
+            var rig = new JoinRig(1);
+            rig.HoldFirstRetry();
             rig.Bridge.OnGameEvent(CmdId.Event_Player_Connected, 0, new Id(101));
-            Thread.Sleep(100);
+            bool parked = rig.Parked.Wait(10000);
             rig.Bridge.OnGameEvent(CmdId.Event_Player_Disconnected, 0, new Id(101));
             rig.Bridge.OnGameEvent(CmdId.Event_Player_Connected, 0, new Id(101));
-            rig.WaitFor("player-connected", 4000);
-            Thread.Sleep(800);
-            Check(rig.Count("player-connected") == 1 && rig.Count("player-disconnected") == 0, "leave + rejoin during the join: exactly one player-connected",
-                "connected " + rig.Count("player-connected") + " disconnected " + rig.Count("player-disconnected"));
+            JObject ev = rig.WaitFor("player-connected", 10000);         // the rejoin: its info request is answered
+            rig.Release();
+            bool firstDone = rig.WaitLogged("INFO", "player-connected for entity 101 not sent: the player left, or joined again");
+            Check(parked && ev != null && firstDone && rig.Count("player-connected") == 1 && rig.Count("player-disconnected") == 0,
+                  "leave + rejoin during the join: exactly one player-connected",
+                  "parked " + parked + " first join done " + firstDone + " connected " + rig.Count("player-connected") + " disconnected " + rig.Count("player-disconnected"));
             rig.Stop();
         }
     }
