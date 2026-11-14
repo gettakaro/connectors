@@ -40,8 +40,22 @@ namespace TakaroEmpyrion.Game
         {
             switch (id)
             {
-                case CmdId.Event_Player_Connected: Fire(() => Connected(((Id)data).id)); break;
-                case CmdId.Event_Player_Disconnected: Fire(() => Disconnected(((Id)data).id)); break;
+                // The join bookkeeping runs here, in the game's event order; Fire hands each handler to its own pool
+                // task, so a leave + rejoin could otherwise reach _joining in the wrong order and send neither connect.
+                case CmdId.Event_Player_Connected:
+                    {
+                        int entityId = ((Id)data).id;
+                        long gen = BeginJoin(entityId);
+                        Fire(() => Connected(entityId, gen));
+                        break;
+                    }
+                case CmdId.Event_Player_Disconnected:
+                    {
+                        int entityId = ((Id)data).id;
+                        if (_joining.TryRemove(entityId, out long _)) { _log.Info("entity " + entityId + " left before player-connected was sent; sending neither event"); break; }
+                        Fire(() => Disconnected(entityId));
+                        break;
+                    }
                 case CmdId.Event_ChatMessage: OnLegacyChat((ChatInfo)data); break;
                 case CmdId.Event_Statistics: OnStatistics((StatisticsParam)data); break;
                 case CmdId.Event_GameEvent: OnGameEvent((GameEventData)data); break;
@@ -78,10 +92,16 @@ namespace TakaroEmpyrion.Game
         readonly System.Collections.Concurrent.ConcurrentDictionary<int, long> _joining = new System.Collections.Concurrent.ConcurrentDictionary<int, long>();
         long _joinGen;
 
-        async Task Connected(int entityId)
+        long BeginJoin(int entityId)
         {
             long gen = System.Threading.Interlocked.Increment(ref _joinGen);
             _joining[entityId] = gen;
+            return gen;
+        }
+
+        /// <summary>Prepares and sends player-connected for the join that BeginJoin numbered gen.</summary>
+        async Task Connected(int entityId, long gen)
+        {
             PlayerRecord r;
             try { r = await _actions.RefreshConnectingPlayer(entityId); }
             catch (Exception e)
@@ -110,13 +130,9 @@ namespace TakaroEmpyrion.Game
             _emit("player-connected", data);
         }
 
+        /// <summary>A leave of a player whose player-connected was sent (OnLegacyEvent already handled a pending join).</summary>
         Task Disconnected(int entityId)
         {
-            if (_joining.TryRemove(entityId, out long _))
-            {
-                _log.Info("entity " + entityId + " left before player-connected was sent; sending neither event");
-                return Task.CompletedTask;
-            }
             PlayerRecord r = _players.ByEntity(entityId);
             // A refused login (ban, wrong password) disconnects entity -1, which never connected.
             if (r == null) { _log.Debug("disconnect of unknown entity " + entityId); return Task.CompletedTask; }
