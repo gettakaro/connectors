@@ -47,7 +47,7 @@ The native transport (`native/src/transport_winhttp.cpp`, delay policy in `Recon
 ## Release build
 
 ```
-maintenance/bin/takaro-maint build --game scum --target windows-26280049 --version 0.1.0-dev --out dist --toolchain container
+maintenance/bin/takaro-maint build --game scum --target windows-26593814 --version 0.1.0-dev --out dist --toolchain container
 ```
 
 `build-release.sh` runs the Lua tests and compiles `main.dll` with clang-cl and lld-link in the pinned

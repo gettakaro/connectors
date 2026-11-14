@@ -19,11 +19,11 @@ from takaro_maint.exit_codes import ConflictError, UsageError
 from takaro_maint.games import adapter_for
 
 GAME = "scum"
-TARGET = "windows-26280049"
-PREVIOUS = "windows-25803875"
+TARGET = "windows-26593814"
+PREVIOUS = "windows-26280049"
 APP = 3792580
 DEPOT = "3792581"
-MANIFEST = "3058972062924433642"
+MANIFEST = "4510314708728724923"
 VERSION = "0.1.0-dev.abc1234"
 ARTIFACT = f"takaro-scum-{TARGET}-{VERSION}.zip"
 MOD = "ue4ss/Mods/TakaroSCUM"
@@ -61,7 +61,7 @@ def test_catalog_validate_accepts_the_scum_target(run: Any) -> None:
 def test_the_steam_pin_is_exact_and_anonymous() -> None:
     server = record()["inputs"]["server"]
 
-    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (APP, "public", 26280049, "windows")
+    assert (server["app"], server["branch"], server["buildid"], server["os"]) == (APP, "public", 26593814, "windows")
     assert server["depots"][DEPOT]["manifest"] == MANIFEST
     assert server["credentials"] is None
     assert server["files"]["SCUM/Binaries/Win64/SCUMServer.exe"]["sha256"]
@@ -100,7 +100,7 @@ def test_resolve_names_the_artifact_and_build_inputs(run: Any) -> None:
 
     assert payload["artifactFileNames"]["mod"] == f"takaro-scum-{TARGET}-{{version}}.zip"
     env = adapter_for(GAME).env(payload, "SCUM")
-    assert env["SCUM_STEAM_BUILDID"] == "26280049"
+    assert env["SCUM_STEAM_BUILDID"] == "26593814"
     assert env["SCUM_ARTIFACT_MOD"] == f"takaro-scum-{TARGET}-{{version}}.zip"
     assert env["SCUM_DEP_UE4SS_URL"].endswith("/UE4SS_v3.0.1-1181-g83330635.zip")
     assert env["SCUM_DEP_MSVC_SYSROOT_COORDINATE"] == "microsoft:msvc-crt-14.44.17.14+winsdk:10.0.26100"
@@ -111,6 +111,7 @@ def test_resolve_names_the_artifact_and_build_inputs(run: Any) -> None:
     [
         ("[2026.10.13-21.07.24:499][  0]LogSCUM: Game version: 1.3.4.2.161892", "1.3.4.2.161892"),
         ("[2026.10.29-21.04.38:001][  0]LogSCUM: Game version: 1.3.5.1.172191+172352", "1.3.5.1.172191"),
+        ("[2026.11.11-20.50.15:925][  0]LogSCUM: Game version: 1.3.6.0.177121", "1.3.6.0.177121"),
     ],
 )
 def test_the_game_version_banner_is_the_runtime_identity(line: str, version: str) -> None:

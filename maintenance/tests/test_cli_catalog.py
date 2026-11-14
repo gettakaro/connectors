@@ -353,6 +353,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "windows-26552396": "no repinner for platform 'windows'",
         "windows-25803875": "no repinner for platform 'windows'",
         "windows-26280049": "no repinner for platform 'windows'",
+        "windows-26593814": "no repinner for platform 'windows'",
         "windows-25995664": "no repinner for platform 'windows'",
         "windows-25490402": "no repinner for platform 'windows'",
         "windows-26569354": "no repinner for platform 'windows'",
