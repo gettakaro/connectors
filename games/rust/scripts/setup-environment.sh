@@ -17,14 +17,14 @@ rust_resolve_target "${TARGET}"
 cd "${PROJECT_ROOT}"
 echo "Setting up the Rust build environment for ${RUST_TARGET} (${RUST_FP16})..."
 
-GAME_REFS="./_data/rust-binaries/${RUST_FP16}"
+GAME_REFS="./_data/rust-binaries/${RUST_REFERENCES_KEY}"
 CARBON_REFS="./_data/carbon-refs/${RUST_FP16}"
 mkdir -p ./_data
 
 # Exactly the assemblies build.references selects, from the pinned depot manifests.
 # Never the whole 6 GB depot set, and never a branch head.
 "${TAKARO_MAINT}" steam references \
-    --game rust --target "${RUST_TARGET}" --dest "${GAME_REFS}" ${FORCE:+--force}
+    --game rust --target "${RUST_TARGET}" --dest "${GAME_REFS}" --reuse-by-manifests ${FORCE:+--force}
 
 # The one assembly whose hash decides whether this plugin can be built at all.
 printf '%s  %s\n' "${RUST_ASSEMBLY_CSHARP_SHA256}" "${GAME_REFS}/Assembly-CSharp.dll" \
