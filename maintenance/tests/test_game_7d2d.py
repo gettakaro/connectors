@@ -32,6 +32,20 @@ MANAGED = "7DaysToDieServer_Data/Managed"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_handshake_passes_when_the_early_mod_load_line_missed_the_log_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = FakeRun(tmp_path)
+    fake = CannedSocket({}, identify_count=1)
+    monkeypatch.setattr(hooks.checks, "wait_for_line", lambda *args, **kwargs: (1, "line"))
+    monkeypatch.setattr(hooks.checks, "find_line", lambda *args, **kwargs: None)
+
+    result = asyncio.run(hooks._check_handshake(run, fake, lambda: True))
+
+    assert result.status == "pass"
+    assert result.detail["modVersion"] is None
+
+
 def test_every_7d2d_verification_body_has_pass_and_failure_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -688,7 +702,8 @@ def test_verify_hooks_render_config_and_use_the_7d2d_ready_line(tmp_path: Path) 
     assert "<Url>ws://host.docker.internal:34567/</Url>" in body
     assert "<ReconnectIntervalSeconds>2</ReconnectIntervalSeconds>" in body
 
-    assert hooks.READY_LINE.search("2026-09-21T10:00:00 12.345 INF StartGame done")
+    assert hooks.READY_LINE is hooks.HANDSHAKE_LINE
+    assert not hooks.READY_LINE.search("2026-09-21T10:00:00 12.345 INF StartGame done")
     assert hooks.HANDSHAKE_LINE.search(
         "2026-09-21T10:00:05 17.1 [Takaro] *INFO* WebSocket connection confirmed (inbound 'identifyResponse' frame)"
     )
@@ -696,6 +711,13 @@ def test_verify_hooks_render_config_and_use_the_7d2d_ready_line(tmp_path: Path) 
     assert loaded and loaded.group("version") == "0.1.6-dev.abc1234"
     assert hooks.QUIT_LINE.search("2026-09-21T10:05:00 INF Preparing quit")
     assert hooks.RECONNECT_BUDGET >= 120.0
+
+
+def test_the_server_gets_more_memory_than_the_runner_default(tmp_path: Path) -> None:
+    """An idle server already holds 2.3 GB; the runner's 3 GB would leave it no headroom."""
+    adapter = adapter_for(GAME)
+
+    assert adapter.container_options({}, tmp_path) == ["--memory", "6g"]
 
 
 def test_the_runtime_identity_comes_from_the_server_banner() -> None:
@@ -741,7 +763,8 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True, env=env).stdout.strip()
 
 
-def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Path) -> None:
+def _assemble_without_reports(run: Any, repo: Path, tmp_path: Path) -> tuple[int, Any, str, Path]:
+    """`release assemble` over one built zip per target and no verification report."""
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "fixture")
@@ -787,6 +810,19 @@ def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Pat
         "o/r",
         repo=repo,
     )
+    return code, payload, err, out
+
+
+def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Path) -> None:
+    # The real records require the runtime leg's report; this test is about the pins, so it
+    # assembles contract-level copies. The refusal without a report is asserted below.
+    for path in sorted((repo / "catalog" / GAME / "targets").glob("*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        assert record["verification"]["required"] == "startup"
+        record["verification"]["required"] = "contract"
+        path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    code, payload, err, out = _assemble_without_reports(run, repo, tmp_path)
 
     assert code == 0, f"{err}\n{payload}"
     record = json.loads((out / f"takaro-{GAME}-{VERSION}.compat.json").read_text())
@@ -805,6 +841,15 @@ def test_compat_record_carries_the_steam_pin(run: Any, repo: Path, tmp_path: Pat
     # gettakaro/connectors#756: no zip without the game build in its name.
     assert not (out / "takaro-7d2d-mod.zip").exists()
     assert record["aliases"] == {}
+
+
+def test_a_7d2d_release_without_a_runtime_report_is_refused(run: Any, repo: Path, tmp_path: Path) -> None:
+    """Every target requires `startup`, so a set the verify leg never produced cannot ship."""
+    code, payload, _, _ = _assemble_without_reports(run, repo, tmp_path)
+
+    assert code == 8
+    assert payload["required"] == "startup"
+    assert "evidence missing" in payload["error"]
 
 
 # -- the dev-servers split ---------------------------------------------------------------
