@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/gettakaro/connectors/compare/empyrion-v0.2.0...empyrion-v0.2.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **empyrion:** bound the Takaro connect and keep join/leave in game order ([#927](https://github.com/gettakaro/connectors/issues/927)) ([6830ba1](https://github.com/gettakaro/connectors/commit/6830ba11e3fb1ccc02fe3ed89f5e2302dc184cb7))
+* **empyrion:** keep player-connected when the first join meets a playfield server start ([#925](https://github.com/gettakaro/connectors/issues/925)) ([747e44b](https://github.com/gettakaro/connectors/commit/747e44b0ec1021ba90c216d440ef1e0a41e66936))
+
 ## [0.2.0](https://github.com/gettakaro/connectors/compare/empyrion-v0.1.0...empyrion-v0.2.0) (2026-11-13)
 
 
