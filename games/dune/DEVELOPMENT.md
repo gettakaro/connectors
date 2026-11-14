@@ -43,6 +43,11 @@ settings (`TAKARO_REGISTRATION_TOKEN`, `TAKARO_IDENTITY_TOKEN`, `TAKARO_WS_URL`,
   lets a saved `.env` take effect without `up -d`. A failed read keeps the current settings.
 - A changed effective value calls `TakaroWsClient.reconfigure`: drop the socket, reset the backoff, connect at once.
   Late callbacks of the dropped socket are ignored (`this.ws !== ws`); shutdown wins over a pending reconfigure.
+- Reconnect (`reconnectDelay` in `src/takaro/client.ts`): a connection that stayed identified for 5 s counts as
+  stable; when it drops, the first retry waits 150-450 ms (`TAKARO_RECONNECT_FAST_MS`, 300, jittered 0.5x-1.5x).
+  Each further failed attempt doubles from `TAKARO_RECONNECT_BASE_MS` (2000) up to `TAKARO_RECONNECT_MAX_MS` (60000)
+  and waits a random 50-100% of that step. A dead link is closed after two unanswered pings (5 s apart) or 20 s
+  without a frame, and an opening socket gives up after 10 s.
 - No registration token: no socket, a `TAKARO_REGISTRATION_TOKEN not set` banner. A rejected identify: a banner with
   only the error's name, message and HTTP status (Takaro errors can embed an `x-takaro-token` JWT; the logger also
   redacts JWTs), then retry with backoff.
