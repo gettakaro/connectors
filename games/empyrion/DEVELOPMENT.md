@@ -52,6 +52,11 @@ map renderer and `capabilities.json` drift against `Coverage.cs`. A status in `C
 - The heartbeat pings every 10 s, and Takaro answers each ping. With no inbound frame for 30 s
   (`InboundTimeout`), the link counts as dead and is closed, and the client then reconnects like after any
   other drop. The check runs every second, so detection takes at most 31 s.
+- A connect attempt (TCP, TLS, upgrade) gets 20 s (`ConnectDeadline`). The game's Mono on Wine can leave a refused
+  connect pending forever and ignore its cancellation token, so the client waits on the connect task with a timeout and
+  aborts the socket, and runs the whole attempt on its own thread: when that thread has not returned 5 s
+  (`ConnectGrace`) later, the attempt is abandoned and the next one follows the backoff. `Stop()` never waits for a
+  connect in progress.
 - Events raised while the link is down wait in the outbox. Unacknowledged v1 events are resent with the
   same `seq` after identify.
 

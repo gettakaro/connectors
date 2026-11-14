@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.WebSockets;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ namespace TakaroEmpyrion.Protocol
     /// <summary>One WebSocket connection. Abstracted so tests can run against a fake Takaro.</summary>
     public interface IWsConnection : IDisposable
     {
+        /// <summary>Should give up after timeout, but TakaroClient does not rely on it (see ConnectDeadline).</summary>
         void Connect(Uri uri, TimeSpan timeout);
         void Send(string text);
         /// <summary>Blocks for the next text frame; returns null when the socket closed.</summary>
@@ -28,8 +30,22 @@ namespace TakaroEmpyrion.Protocol
         public void Connect(Uri uri, TimeSpan timeout)
         {
             _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
-            using (var cts = new CancellationTokenSource(timeout))
-                _ws.ConnectAsync(uri, cts.Token).GetAwaiter().GetResult();
+            var cts = new CancellationTokenSource(timeout);
+            Task t = _ws.ConnectAsync(uri, cts.Token);
+            // Under the game's Mono on Wine a refused connect can leave this task pending forever with the token
+            // ignored, so wait with a timeout instead of GetResult and abort the socket when it runs out.
+            if (!WaitBounded(t, timeout)) { Abort(); throw new TimeoutException("connect did not finish within " + (int)timeout.TotalSeconds + "s"); }
+            cts.Dispose();
+        }
+
+        /// <summary>True when the task finished within timeout (rethrowing its failure); false when it is still pending.</summary>
+        public static bool WaitBounded(Task t, TimeSpan timeout)
+        {
+            bool finished;
+            try { finished = t.Wait(timeout); }
+            catch (AggregateException e) { ExceptionDispatchInfo.Capture(e.InnerException ?? e).Throw(); throw; }
+            if (!finished) t.ContinueWith(x => { var ignored = x.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+            return finished;
         }
 
         public void Send(string text)
@@ -66,6 +82,13 @@ namespace TakaroEmpyrion.Protocol
         /// <summary>No inbound frame for this long (three missed pongs) means the socket is dead even if TCP says open.</summary>
         public TimeSpan InboundTimeout = TimeSpan.FromSeconds(30);
         public TimeSpan IdentifyDeadline = TimeSpan.FromSeconds(20);
+        /// <summary>
+        /// Hard limit for one connect attempt (TCP, TLS, WebSocket upgrade). The attempt runs on its own thread; when it
+        /// has not returned by then it is aborted and abandoned, and the next attempt follows the normal backoff.
+        /// </summary>
+        public TimeSpan ConnectDeadline = TimeSpan.FromSeconds(20);
+        /// <summary>Extra time the connection itself gets to honour ConnectDeadline before the client abandons it.</summary>
+        public TimeSpan ConnectGrace = TimeSpan.FromSeconds(5);
         public TimeSpan MaxBackoff = TimeSpan.FromSeconds(60);
         /// <summary>How long a connection must stay identified before the failure streak resets (see ReconnectPolicy).</summary>
         public TimeSpan StableAfter = TimeSpan.FromSeconds(10);
@@ -117,6 +140,8 @@ namespace TakaroEmpyrion.Protocol
         volatile bool _identified;
         volatile bool _stopping;
         volatile bool _rejected;
+        readonly ManualResetEvent _stopEvent = new ManualResetEvent(false);
+        int _abandonedConnects;
         DateTime _lastInbound = DateTime.UtcNow;
         volatile IWsConnection _deadLink;
         // UTC ticks when the oldest ping still without any inbound frame after it was written to the socket (0: none).
@@ -128,6 +153,8 @@ namespace TakaroEmpyrion.Protocol
         public bool Identified { get { return _identified; } }
         public int Reconnects { get; private set; }
         public int DroppedEvents { get; private set; }
+        /// <summary>Connect attempts that overran ConnectDeadline and whose thread has not returned yet.</summary>
+        public int AbandonedConnects { get { return Volatile.Read(ref _abandonedConnects); } }
         /// <summary>The version Takaro chose for the current connection (0 until identified).</summary>
         public int ProtocolVersion { get { return _protocolVersion; } }
         public string StreamId { get { return _streamId; } }
@@ -146,9 +173,11 @@ namespace TakaroEmpyrion.Protocol
             _loop.Start(); _sender.Start(); _heart.Start();
         }
 
+        /// <summary>Returns at once: a connect in progress is left to the run loop, which wakes on the stop signal.</summary>
         public void Stop()
         {
             _stopping = true;
+            _stopEvent.Set();
             IWsConnection c = _conn;
             if (c != null) c.Abort();
             _sendQueue.CompleteAdding();
@@ -291,16 +320,17 @@ namespace TakaroEmpyrion.Protocol
                 try
                 {
                     c = _factory();
-                    c.Connect(new Uri(_opt.Url), TimeSpan.FromSeconds(20));
+                    if (!ConnectBounded(c)) { c = null; throw new ConnectAbandonedException(); }
                     _lastInbound = DateTime.UtcNow;
                     Interlocked.Exchange(ref _unansweredPingSince, 0);
                     _conn = c;
-                    c.Send(Serialize(BuildIdentify()));
-                    _log.Info("connected to " + _opt.Url + ", identify sent");
                     DateTime deadline = DateTime.UtcNow + _opt.IdentifyDeadline;
-                    var watchdog = new Timer(_ => { if (!_identified && DateTime.UtcNow >= deadline) c.Abort(); }, null, _opt.IdentifyDeadline, Timeout.InfiniteTimeSpan);
+                    IWsConnection watched = c;
+                    var watchdog = new Timer(_ => { if (!_identified && DateTime.UtcNow >= deadline) watched.Abort(); }, null, _opt.IdentifyDeadline, Timeout.InfiniteTimeSpan);
                     try
                     {
+                        c.Send(Serialize(BuildIdentify()));
+                        _log.Info("connected to " + _opt.Url + ", identify sent");
                         while (!_stopping)
                         {
                             string text = c.Receive();
@@ -314,7 +344,7 @@ namespace TakaroEmpyrion.Protocol
                 }
                 catch (Exception e)
                 {
-                    if (!_stopping && !_rejected && _deadLink != c) _log.Warn("connection error: " + e.GetType().Name + ": " + LogText.Clip(e.Message));
+                    if (!_stopping && !_rejected && _deadLink != c && !(e is ConnectAbandonedException)) _log.Warn("connection error: " + e.GetType().Name + ": " + LogText.Clip(e.Message));
                 }
                 finally
                 {
@@ -332,8 +362,46 @@ namespace TakaroEmpyrion.Protocol
                 TimeSpan wait = policy.OnConnectionEnded(identifiedFor, _rng.NextDouble());
                 _log.Info("reconnecting in " + wait.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "s (attempt " + policy.Failures
                           + (identifiedFor.HasValue ? ", previous connection identified for " + (int)identifiedFor.Value.TotalSeconds + "s" : ", previous attempt never identified") + ")");
-                Thread.Sleep(wait);
+                _stopEvent.WaitOne(wait);
             }
+        }
+
+        /// <summary>
+        /// Runs c.Connect on its own thread and waits at most ConnectDeadline + ConnectGrace, or until Stop. True when
+        /// connected; rethrows the connect failure. False when it overran (the attempt is abandoned: its socket is
+        /// aborted and disposed off this thread, so a hung Abort cannot stall the loop either) or the client stopped.
+        /// </summary>
+        bool ConnectBounded(IWsConnection c)
+        {
+            var uri = new Uri(_opt.Url);
+            var done = new ManualResetEvent(false);
+            Exception failure = null;
+            int state = 0; // 0 running, 1 finished in time, 2 abandoned
+            var t = new Thread(() =>
+            {
+                try { c.Connect(uri, _opt.ConnectDeadline); }
+                catch (Exception e) { failure = e; }
+                if (Interlocked.CompareExchange(ref state, 1, 0) == 0) { done.Set(); return; }
+                // Abandoned: whatever the connect did, this socket is no longer wanted.
+                try { c.Abort(); c.Dispose(); } catch (Exception) { }
+                int left = Interlocked.Decrement(ref _abandonedConnects);
+                _log.Info("an abandoned connect attempt returned " + (failure == null ? "after all" : "with " + failure.GetType().Name) + " (" + left + " still pending)");
+            }) { IsBackground = true, Name = "takaro-connect" };
+            t.Start();
+            int which = WaitHandle.WaitAny(new WaitHandle[] { done, _stopEvent }, _opt.ConnectDeadline + _opt.ConnectGrace);
+            // Count before claiming the attempt, so the connect thread's decrement can never run first.
+            int pending = which == 0 ? 0 : Interlocked.Increment(ref _abandonedConnects);
+            if (which != 0 && Interlocked.CompareExchange(ref state, 2, 0) != 0) Interlocked.Decrement(ref _abandonedConnects);
+            else if (which != 0)
+            {
+                if (!_stopping)
+                    _log.Warn("connect to " + _opt.Url + " did not finish within " + (int)(_opt.ConnectDeadline + _opt.ConnectGrace).TotalSeconds
+                              + "s, abandoning it (" + pending + " abandoned attempt" + (pending == 1 ? "" : "s") + " pending)");
+                ThreadPool.QueueUserWorkItem(_ => { try { c.Abort(); } catch (Exception) { } });
+                return false;
+            }
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
+            return true;
         }
 
         JObject BuildIdentify()
@@ -427,6 +495,9 @@ namespace TakaroEmpyrion.Protocol
             while (_outbox.Count > 0) Dispatch(_outbox.Dequeue());
         }
     }
+
+    /// <summary>The connect attempt overran its deadline and was abandoned (already logged).</summary>
+    sealed class ConnectAbandonedException : Exception { }
 
     public interface ILog
     {

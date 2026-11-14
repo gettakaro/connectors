@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using TakaroEmpyrion.Protocol;
 
@@ -154,5 +156,117 @@ public static partial class ContractTests
         Check(!s.Aborted && f.Sockets.Count == 0, "RECONNECT-SLOW pings queued behind a slow send do not close a healthy socket");
         s.SendDelayMs = 0;
         client.Stop();
+    }
+
+    /// <summary>A connect that never returns, even after Abort (what the game's Mono did on a refused reconnect).</summary>
+    sealed class HangingSocket : IWsConnection
+    {
+        public volatile bool Aborted, Disposed;
+        readonly ManualResetEvent _never = new ManualResetEvent(false);
+        public void Connect(Uri uri, TimeSpan timeout) { _never.WaitOne(); }
+        public void Send(string text) { throw new IOException("not connected"); }
+        public string Receive() { return null; }
+        public void Abort() { Aborted = true; }
+        public void Dispose() { Disposed = true; }
+    }
+
+    sealed class HangingFactory
+    {
+        public readonly TimedFactory Inner = new TimedFactory();
+        public readonly List<HangingSocket> Hung = new List<HangingSocket>();
+        public volatile int Hang;
+        public IWsConnection Create()
+        {
+            if (Hang > 0)
+            {
+                Hang--;
+                lock (Inner.Attempts) Inner.Attempts.Add(DateTime.UtcNow);
+                var h = new HangingSocket(); lock (Hung) Hung.Add(h); return h;
+            }
+            return Inner.Create();
+        }
+    }
+
+    static ClientOptions StuckOptions()
+    {
+        return new ClientOptions
+        {
+            Url = "wss://fake/", IdentityToken = "id", ServerName = "Dev",
+            PingInterval = TimeSpan.FromMilliseconds(200), InboundTimeout = TimeSpan.FromMilliseconds(1500),
+            StableAfter = TimeSpan.FromMilliseconds(300), MaxBackoff = TimeSpan.FromSeconds(1),
+            ConnectDeadline = TimeSpan.FromMilliseconds(300), ConnectGrace = TimeSpan.FromMilliseconds(200),
+        };
+    }
+
+    /// <summary>
+    /// A refused reconnect whose connect never returns (gettakaro/connectors, Empyrion 0.2.1 smoke): each attempt is
+    /// abandoned at the deadline, the normal backoff schedules the next one, and the event raised meanwhile arrives.
+    /// </summary>
+    static void ReconnectStuckConnect()
+    {
+        var f = new HangingFactory();
+        var client = new TakaroClient(f.Create, StuckOptions(), new ConsoleLog(), _ => { });
+        client.Start();
+        FakeSocket s1 = Identify(f.Inner);
+        Check(s1 != null, "CONNECT-DEADLINE first connection identified");
+        if (s1 == null) { client.Stop(); return; }
+        Thread.Sleep(500);
+
+        int before; lock (f.Inner.Attempts) before = f.Inner.Attempts.Count;
+        f.Hang = 3;
+        var sw = Stopwatch.StartNew();
+        s1.ToConnector.Add("<close>");
+        Thread.Sleep(50);
+        client.SendGameEvent("chat-message", new JObject { ["msg"] = "typed while the connect hung" });
+        FakeSocket s2 = Identify(f.Inner, 8000);
+        long took = sw.ElapsedMilliseconds;
+        List<DateTime> at; lock (f.Inner.Attempts) at = f.Inner.Attempts.Skip(before).ToList();
+        string gaps = string.Join(", ", at.Select((t, i) => i == 0 ? "0" : ((t - at[i - 1]).TotalMilliseconds.ToString("0") + "ms")));
+        Check(s2 != null && at.Count == 4, "CONNECT-DEADLINE three connects that never return are abandoned and the fourth attempt identifies", took + " ms; attempts " + gaps);
+        // Each abandoned attempt costs the deadline (0.5 s) plus the backoff (0.5-1 s at this cap).
+        bool spaced = at.Count == 4 && Enumerable.Range(1, 3).All(i => (at[i] - at[i - 1]) >= TimeSpan.FromMilliseconds(900));
+        Check(spaced, "CONNECT-DEADLINE abandoned attempts follow the backoff (no tight loop)", gaps);
+        bool aborted; lock (f.Hung) aborted = f.Hung.Count == 3 && f.Hung.All(h => h.Aborted);
+        Check(aborted, "CONNECT-DEADLINE every abandoned socket is aborted");
+        Check(client.AbandonedConnects == 3, "CONNECT-DEADLINE abandoned attempts are counted while their thread is stuck", client.AbandonedConnects.ToString());
+        if (s2 != null)
+            Check(Next(s2, o => (string)o["type"] == "gameEvent" && (string)o["payload"]["data"]["msg"] == "typed while the connect hung") != null,
+                  "CONNECT-DEADLINE event raised during the stuck connects is delivered after the reconnect");
+        client.Stop();
+    }
+
+    /// <summary>Stop during a connect that never returns: Stop returns at once and no further attempt starts.</summary>
+    static void StopDuringStuckConnect()
+    {
+        var f = new HangingFactory { Hang = 1000 };
+        ClientOptions o = StuckOptions();
+        o.ConnectDeadline = TimeSpan.FromSeconds(30); // the stop must not wait for the deadline
+        var client = new TakaroClient(f.Create, o, new ConsoleLog(), _ => { });
+        client.Start();
+        Thread.Sleep(300);
+        var sw = Stopwatch.StartNew();
+        client.Stop();
+        long stopMs = sw.ElapsedMilliseconds;
+        Thread.Sleep(1500);
+        int attempts; lock (f.Inner.Attempts) attempts = f.Inner.Attempts.Count;
+        bool aborted; lock (f.Hung) aborted = f.Hung.Count == 1 && f.Hung[0].Aborted;
+        Check(stopMs < 100 && attempts == 1 && aborted, "CONNECT-DEADLINE Stop during a stuck connect returns at once, aborts it and starts no new attempt",
+              "stop " + stopMs + " ms, attempts " + attempts + ", aborted " + aborted);
+    }
+
+    /// <summary>ClientWsConnection waits on ConnectAsync with a timeout instead of trusting its cancellation token.</summary>
+    static void ConnectTaskBounded()
+    {
+        var never = new TaskCompletionSource<bool>();
+        var sw = Stopwatch.StartNew();
+        bool finished = ClientWsConnection.WaitBounded(never.Task, TimeSpan.FromMilliseconds(200));
+        Check(!finished && sw.ElapsedMilliseconds >= 180 && sw.ElapsedMilliseconds < 1000, "CONNECT-DEADLINE a ConnectAsync task that never completes is given up after the timeout", sw.ElapsedMilliseconds + " ms");
+        var failed = new TaskCompletionSource<bool>();
+        failed.SetException(new System.Net.WebSockets.WebSocketException("Unable to connect to the remote server"));
+        string thrown = null;
+        try { ClientWsConnection.WaitBounded(failed.Task, TimeSpan.FromSeconds(1)); } catch (Exception e) { thrown = e.GetType().Name; }
+        Check(thrown == "WebSocketException", "CONNECT-DEADLINE a refused connect surfaces its own exception", thrown ?? "none");
+        var ok = new TaskCompletionSource<bool>(); ok.SetResult(true);
+        Check(ClientWsConnection.WaitBounded(ok.Task, TimeSpan.FromSeconds(1)), "CONNECT-DEADLINE a completed connect returns true");
     }
 }

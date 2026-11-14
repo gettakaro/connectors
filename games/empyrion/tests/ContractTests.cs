@@ -41,6 +41,9 @@ public static partial class ContractTests
         Run("reconnect delays", ReconnectDelays);
         Run("reconnect wire", ReconnectWire);
         Run("reconnect slow uplink", ReconnectSlowUplink);
+        Run("connect deadline: task", ConnectTaskBounded);
+        Run("connect deadline: stuck connect", ReconnectStuckConnect);
+        Run("connect deadline: stop during stuck connect", StopDuringStuckConnect);
         Run("first join while a playfield starts", FirstJoinWhilePlayfieldStarts);
         Console.WriteLine("\n" + _pass + " passed, " + _fail + " failed");
         Console.Out.Flush();
