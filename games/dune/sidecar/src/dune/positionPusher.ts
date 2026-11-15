@@ -3,6 +3,7 @@ import type { TakaroSink } from '../bridge.js';
 import { logger } from '../logger.js';
 
 export const POSITION_INTERVAL_MS = 5000;
+const POSITION_CHECK_INTERVAL_MS = 250;
 export const MAX_POSITION_BATCH = 1000;
 
 /** A snapshot is ephemeral: never queue a coordinate through a Takaro outage. */
@@ -22,7 +23,9 @@ export class PositionPusher {
 
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), POSITION_INTERVAL_MS);
+    // Check ahead of the send deadline. A timer firing a millisecond early must not defer
+    // the next snapshot by another full interval.
+    this.timer = setInterval(() => void this.tick(), POSITION_CHECK_INTERVAL_MS);
     this.timer.unref?.();
   }
 

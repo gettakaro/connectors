@@ -21,6 +21,25 @@ function harness() {
 }
 
 describe('Dune position pushes', () => {
+  it('does not double the cadence when a timer fires just before the send deadline', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    const sendGameEvent = vi.fn(() => true);
+    const takaro = { sendGameEvent, identified: () => true, getProtocolVersion: () => 1 } as unknown as TakaroSink & { identified(): boolean; getProtocolVersion(): number };
+    const pusher = new PositionPusher({
+      online: () => [], location: async () => position, takaro,
+      now: () => Date.now() - (Date.now() >= 10_000 ? 1 : 0),
+    });
+    try {
+      pusher.start();
+      await vi.advanceTimersByTimeAsync(11_000);
+      expect(sendGameEvent).toHaveBeenCalledTimes(3);
+    } finally {
+      pusher.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it('sends a complete unique live batch at most once per five seconds', async () => {
     const h = harness();
     h.setOnline([{ gameId: 'a', name: 'A' }, { gameId: 'a', name: 'A' }, { gameId: 'b', name: 'B' }]);
