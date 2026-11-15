@@ -15,6 +15,7 @@ import java.net.URI;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -36,6 +37,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private volatile boolean closed;
     private final String configPath;
     private final EventOutbox outbox;
+    private String positionStreamId;
+    private long positionSeq;
     private final WorldMap worldMap;
     private final ItemIconCatalog itemIcons;
     // The protocol Takaro chose in the last identifyResponse; 0 until then and on every reconnect.
@@ -211,7 +214,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public void onOpen(ServerHandshake handshake) {
+    public synchronized void onOpen(ServerHandshake handshake) {
         if (closed) {
             // A reconnect that was already under way when a config change replaced this client.
             close();
@@ -219,6 +222,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         protocol = 0;
         identified = false;
+        positionStreamId = UUID.randomUUID().toString().replace("-", "");
+        positionSeq = 0;
         identifiedAtMillis = 0;
         attemptInFlight = false;
         lastInboundMillis = System.currentTimeMillis();
@@ -300,7 +305,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public void onClose(int code, String reason, boolean remote) {
+    public synchronized void onClose(int code, String reason, boolean remote) {
         long identifiedAt = identifiedAtMillis;
         long identifiedFor = identified && identifiedAt > 0 ? System.currentTimeMillis() - identifiedAt : -1;
         identifiedAtMillis = 0;
@@ -407,13 +412,18 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public void emitPlayerPositions(List<PositionSample> positions) {
-        // Positions are observations, not history: an old snapshot must never be replayed
-        // after reconnecting. Wait for the next tick instead.
+    public synchronized void emitPlayerPositions(List<PositionSample> positions) {
+        // Keep observations outside the durable gameplay outbox. A reconnect starts a new
+        // stream and the next tick supplies a fresh snapshot.
         if (!acceptsPlayerPositions()) return;
         JsonObject data = new JsonObject();
         data.add("positions", GSON.toJsonTree(positions));
-        sendGameEvent("player-positions", data);
+        JsonObject payload = new JsonObject();
+        payload.addProperty("type", "player-positions");
+        payload.add("data", data);
+        payload.addProperty("streamId", positionStreamId);
+        payload.addProperty("seq", ++positionSeq);
+        sendEventPayload(payload);
     }
 
     @Override

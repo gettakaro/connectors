@@ -141,10 +141,20 @@ class ProtocolV1Test {
 
         JsonObject payload = sentOfType("gameEvent").get(0).getAsJsonObject("payload");
         assertEquals("player-positions", payload.get("type").getAsString());
-        assertEquals("stream-positions", payload.get("streamId").getAsString());
+        String positionStream = payload.get("streamId").getAsString();
+        assertNotEquals("stream-positions", positionStream);
+        assertEquals(1, payload.get("seq").getAsLong());
+        assertEquals(0, outbox.size());
         JsonObject row = payload.getAsJsonObject("data").getAsJsonArray("positions").get(0).getAsJsonObject();
         assertEquals("uuid-1", row.get("gameId").getAsString());
         assertEquals(-8.5, row.getAsJsonObject("position").get("z").getAsDouble());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        client.emitPlayerPositions(sample);
+        JsonObject afterReconnect = sentOfType("gameEvent").get(1).getAsJsonObject("payload");
+        assertNotEquals(positionStream, afterReconnect.get("streamId").getAsString());
+        assertEquals(1, afterReconnect.get("seq").getAsLong());
+        assertEquals(0, outbox.size());
     }
 
     @Test
