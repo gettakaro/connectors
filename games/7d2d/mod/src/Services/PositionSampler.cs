@@ -101,11 +101,18 @@ namespace Takaro.Services
                         Ping = cInfo.ping,
                     }
                 );
-                positions.Add(new PlayerPositionEntry
-                {
-                    GameId = gameId,
-                    Position = new TakaroPosition { X = rounded.x, Y = rounded.y, Z = rounded.z },
-                });
+                positions.Add(
+                    new PlayerPositionEntry
+                    {
+                        GameId = gameId,
+                        Position = new TakaroPosition
+                        {
+                            X = rounded.x,
+                            Y = rounded.y,
+                            Z = rounded.z,
+                        },
+                    }
+                );
             }
 
             if (batch.Count > 0)

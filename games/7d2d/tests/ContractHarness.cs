@@ -2331,10 +2331,14 @@ public static partial class ContractHarness
 
     private static void AssertPushedPositions()
     {
-        var capability = ProtocolHandshake.BuildCapabilityManifest(RequestRouter.SupportedActions)
+        var capability = ProtocolHandshake
+            .BuildCapabilityManifest(RequestRouter.SupportedActions)
             .Single(c => (string)c["name"] == "events.player-positions");
-        Equal(3, (int)((Dictionary<string, object>)capability["parameters"])["intervalSeconds"],
-            "position push interval matches the sampler");
+        Equal(
+            3,
+            (int)((Dictionary<string, object>)capability["parameters"])["intervalSeconds"],
+            "position push interval matches the sampler"
+        );
 
         var transport = WebSocketTransport.Instance;
         transport.TerminalMessages.Clear();
@@ -2344,23 +2348,38 @@ public static partial class ContractHarness
             new PlayerPositionEntry
             {
                 GameId = "fixture-player",
-                Position = new TakaroPosition { X = 12, Y = 34, Z = -56 },
+                Position = new TakaroPosition
+                {
+                    X = 12,
+                    Y = 34,
+                    Z = -56,
+                },
             },
         };
         GameEventPublisher.SendPlayerPositions(positions);
-        Equal(0, transport.TerminalMessages.Count, "v0 or disconnected sessions do not queue positions");
+        Equal(
+            0,
+            transport.TerminalMessages.Count,
+            "v0 or disconnected sessions do not queue positions"
+        );
 
         transport.CanPushPositions = true;
         GameEventPublisher.SendPlayerPositions(positions);
         AssertPublishedEvent("player-positions", out JObject data);
-        Equal("fixture-player", (string)data["positions"][0]["gameId"], "position uses stable game id");
+        Equal(
+            "fixture-player",
+            (string)data["positions"][0]["gameId"],
+            "position uses stable game id"
+        );
         Equal(12, (int)data["positions"][0]["position"]["x"], "position x is sent");
         Equal(34, (int)data["positions"][0]["position"]["y"], "position y is sent");
         Equal(-56, (int)data["positions"][0]["position"]["z"], "position z is sent");
         True(DateTime.TryParse((string)data["timestamp"], out _), "batch carries an ISO timestamp");
 
         transport.TerminalMessages.Clear();
-        GameEventPublisher.SendPlayerPositions(new List<PlayerPositionEntry>(new PlayerPositionEntry[1001]));
+        GameEventPublisher.SendPlayerPositions(
+            new List<PlayerPositionEntry>(new PlayerPositionEntry[1001])
+        );
         Equal(0, transport.TerminalMessages.Count, "oversized batch is not emitted");
         transport.CanPushPositions = false;
     }
