@@ -86,7 +86,7 @@ namespace Takaro.WebSocket
                 { "msg", msg },
                 { "channel", ChatChannelFor(type) },
             };
-            if (senderPosition.HasValue)
+            if (senderPosition.HasValue && WebSocketTransport.Instance.ProtocolVersion == 1)
             {
                 Vector3i position = new Vector3i(senderPosition.Value);
                 data["position"] = new TakaroPosition

@@ -2282,6 +2282,7 @@ public static partial class ContractHarness
         );
 
         WebSocketTransport.Instance.TerminalMessages.Clear();
+        WebSocketTransport.Instance.ProtocolVersion = 1;
         GameEventPublisher.SendChatMessage(
             new ClientInfo
             {
@@ -2306,6 +2307,26 @@ public static partial class ContractHarness
         Equal(12, (int)chat["position"]["x"], "chat carries the sender's live x position");
         Equal(35, (int)chat["position"]["y"], "chat carries the sender's live y position");
         Equal(-56, (int)chat["position"]["z"], "chat carries the sender's live z position");
+        WebSocketTransport.Instance.ProtocolVersion = 0;
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendChatMessage(
+            new ClientInfo
+            {
+                CrossplatformId = new PlatformUserIdentifierAbs
+                {
+                    CombinedString = "EOS_fixture-player",
+                },
+                playerName = "Fixture Player",
+            },
+            EChatType.Global,
+            1,
+            "legacy",
+            null,
+            new UnityEngine.Vector3(12f, 34f, -56f)
+        );
+        AssertPublishedEvent("chat-message", out JObject legacyChat);
+        True(legacyChat["position"] == null, "protocol v0 chat omits the new position field");
     }
 
     private static void AssertPushedPositions()
