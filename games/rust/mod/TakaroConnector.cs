@@ -607,6 +607,30 @@ namespace Oxide.Plugins
             "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "log",
         };
 
+        internal const int PlayerPositionsIntervalSeconds = 3;
+
+        internal static JObject PlayerPositionsCapability()
+        {
+            return new JObject
+            {
+                ["name"] = "events.player-positions",
+                ["parameters"] = new JObject { ["intervalSeconds"] = PlayerPositionsIntervalSeconds }
+            };
+        }
+
+        internal static JObject PlayerPositionsData(IEnumerable<KeyValuePair<string, JObject>> samples)
+        {
+            var positions = new JArray();
+            var seen = new HashSet<string>();
+            foreach (var sample in samples)
+            {
+                if (positions.Count == 1000) break;
+                if (string.IsNullOrEmpty(sample.Key) || sample.Value == null || !seen.Add(sample.Key)) continue;
+                positions.Add(new JObject { ["gameId"] = sample.Key, ["position"] = sample.Value });
+            }
+            return new JObject { ["positions"] = positions };
+        }
+
         internal const string ErrorUnsupported = "unsupported";
         internal const string ErrorInvalidArgs = "invalid_args";
         internal const string ErrorNotFound = "not_found";
@@ -637,6 +661,7 @@ namespace Oxide.Plugins
                 manifest.Add(new JObject { ["name"] = pair[1] });
             foreach (var eventType in GameEventTypes)
                 manifest.Add(new JObject { ["name"] = "events." + eventType });
+            manifest.Add(PlayerPositionsCapability());
             foreach (var capability in extra)
                 if (capability != null) manifest.Add(capability);
             return manifest;
@@ -995,6 +1020,7 @@ namespace Oxide.Plugins
         private string _fileIdentity;
         private Timer _tickTimer;
         private int _tickCount;
+        private long _lastPositionPushTicks;
 
         private bool _debug { get { return _settings.Debug; } }
 
@@ -1231,6 +1257,7 @@ namespace Oxide.Plugins
         // pings Takaro, closes a dead socket and starts any reconnect a closed socket asked for.
         private void Tick()
         {
+            PushPlayerPositions();
             if (++_tickCount % (ConfigCheckEverySeconds * TicksPerSecond) == 0)
             {
                 try { CheckConfig(); }
@@ -1695,6 +1722,30 @@ namespace Oxide.Plugins
         private JArray CurrentManifest()
         {
             return BuildManifest(GameProfileCapability(GameBuild(), _gameIcon), _mapCapability);
+        }
+
+        private void PushPlayerPositions()
+        {
+            if (!_connected || _protocolVersion < 1) return;
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            var intervalTicks = PlayerPositionsIntervalSeconds * System.Diagnostics.Stopwatch.Frequency;
+            if (_lastPositionPushTicks != 0 && now - _lastPositionPushTicks < intervalTicks) return;
+
+            var samples = new List<KeyValuePair<string, JObject>>();
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (!IsRealPlayer(player)) continue;
+                var position = player.transform.position;
+                _lastPosition[player.UserIDString] = position;
+                samples.Add(new KeyValuePair<string, JObject>(player.UserIDString, new JObject
+                {
+                    ["x"] = position.x,
+                    ["y"] = position.y,
+                    ["z"] = position.z
+                }));
+            }
+            _lastPositionPushTicks = now;
+            SendGameEvent("player-positions", PlayerPositionsData(samples));
         }
 
         // The running game build as the server reports it (`version` prints it as Protocol).
@@ -2851,6 +2902,17 @@ namespace Oxide.Plugins
                 ["channel"] = channel.ToString().ToLower(),
                 ["msg"] = message
             };
+            if (_connected && _protocolVersion >= 1)
+            {
+                var position = player.transform.position;
+                _lastPosition[player.UserIDString] = position;
+                data["position"] = new JObject
+                {
+                    ["x"] = position.x,
+                    ["y"] = position.y,
+                    ["z"] = position.z
+                };
+            }
             SendGameEvent("chat-message", data);
             return null;
         }
