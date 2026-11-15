@@ -511,10 +511,12 @@ void HandleFrame(const NativeTransport::Notice& n) {
         const Json p = Record(f.value("payload", Json::object()));
         const Json upTo = p.value("upTo", Json());
         // Never confirm past what this connection sent: a wrong ack must not drop unsent events.
-        if (Str(p, "streamId") == StreamId() && upTo.is_number_unsigned() && upTo.get<uint64_t>() > ackedThrough)
-            ackedThrough = std::min(upTo.get<uint64_t>(), highestSentSeq);
-        if (ackedThrough >= highestSentSeq) unackedSince.reset();
-        else unackedSince = Clock::now();
+        if (Str(p, "streamId") == StreamId()) {
+            if (upTo.is_number_unsigned() && upTo.get<uint64_t>() > ackedThrough)
+                ackedThrough = std::min(upTo.get<uint64_t>(), highestSentSeq);
+            if (ackedThrough >= highestSentSeq) unackedSince.reset();
+            else unackedSince = Clock::now();
+        }
     } else if (type == "eventError") {
         // Takaro acknowledges a rejected event too, so it is never resent; keep the reason visible.
         ++eventErrorCount;
