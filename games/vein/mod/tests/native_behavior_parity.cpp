@@ -183,6 +183,23 @@ int main(){
         for(const char* name:{"players.list","players.location","moderation.listBans","server.shutdown","events.chat-message","events.log","map"})
             Check(std::find(names.begin(),names.end(),name)!=names.end(),std::string("manifest declares ")+name);
         Check(std::find(names.begin(),names.end(),"testReachability")==names.end(),"testReachability is not a capability");
+        const Json pushed=manifest[std::find(names.begin(),names.end(),"events.player-positions")-names.begin()];
+        Check(pushed["parameters"]["intervalSeconds"]==5,"player positions use a five second push interval");
+        const Json batch=Parse(NativeBehavior::PositionBatchFrame(
+            R"([{"gameId":"76561198000000001","position":{"x":1,"y":2,"z":3}}])", "vein-positions-test", 7));
+        Check(batch["payload"]["type"]=="player-positions" && batch["payload"]["seq"]==7 &&
+              batch["payload"]["data"]["positions"].size()==1,
+              "position batch has the protocol v1 event shape");
+        bool duplicateRejected=false;
+        try { NativeBehavior::PositionBatchFrame(
+            R"([{"gameId":"1","position":{"x":1,"y":2,"z":3}},{"gameId":"1","position":{"x":4,"y":5,"z":6}}])",
+            "vein-positions-test", 8); } catch (...) { duplicateRejected=true; }
+        Check(duplicateRejected,"duplicate position IDs are rejected");
+        bool invalidCoordinateRejected=false;
+        try { NativeBehavior::PositionBatchFrame(
+            R"([{"gameId":"1","position":{"x":"1","y":2,"z":3}}])", "vein-positions-test", 9);
+        } catch (...) { invalidCoordinateRejected=true; }
+        Check(invalidCoordinateRejected,"position coordinates must be numbers");
         const Json map=manifest[std::find(names.begin(),names.end(),"map")-names.begin()];
         Check(map["name"]=="map"&&map["parameters"]["dimensions"].size()==1,"one map Dimension");
         const Json dim=map["parameters"]["dimensions"][0];

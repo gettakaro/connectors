@@ -29,6 +29,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <unordered_set>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -2030,6 +2031,29 @@ Actions::Result Actions::Players() {
     std::string o = "[";
     for (size_t i = 0; i < rows.size(); i++) o += (i ? "," : "") + PlayerRowJson(rows[i]);
     return {200, o + "]"};
+}
+
+Actions::Result Actions::PlayerPositions() {
+    std::vector<PlayerRow> rows;
+    // The normal read path can fall back to an old snapshot during a stalled game thread.
+    // A push must report only a snapshot taken for this interval.
+    if (!GameThread::Run([] { Perf::Scope sc("snapshot.positions"); BuildPlayerSnapshotOnGameThread(); }, 5000))
+        return Fail(503, "game thread unavailable");
+    { Guard g(g_snapLock); rows = g_snapRows; }
+    std::string out = "[";
+    size_t count = 0;
+    std::unordered_set<std::string> seen;
+    for (const auto& row : rows) {
+        // A connected player can be on the character screen with no pawn to locate.
+        if (!row.spawned || !row.hasPawn || !row.hasLoc || row.gameId.empty()) continue;
+        if (!std::isfinite(row.loc[0]) || !std::isfinite(row.loc[1]) || !std::isfinite(row.loc[2])) continue;
+        if (!seen.insert(row.gameId).second) continue;
+        if (count == 1000) break;
+        out += (count++ ? "," : "") + std::string("{\"gameId\":") + JsonStr(row.gameId) +
+               ",\"position\":{\"x\":" + JsonNum(row.loc[0]) + ",\"y\":" +
+               JsonNum(row.loc[1]) + ",\"z\":" + JsonNum(row.loc[2]) + "}}";
+    }
+    return {200, out + "]"};
 }
 
 Actions::Result Actions::Player(const std::string& gameId) {

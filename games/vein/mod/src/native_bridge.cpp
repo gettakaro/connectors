@@ -36,7 +36,7 @@ struct Request {
     std::string id, action, args;
     uint64_t epoch = 0;
     size_t bytes = 0;
-    bool full = false, shutdownCommit = false, reconcile = false, verifyBan = false,
+    bool full = false, shutdownCommit = false, reconcile = false, positions = false, verifyBan = false,
          resolveBan = false,
          preparedReady = false;
     NativeBehavior::PreparedAction prepared;
@@ -46,7 +46,7 @@ struct Completion {
     uint64_t epoch = 0;
     size_t bytes = 0;
     size_t requestBytes = 0;
-    bool full = false, reconcile = false, verifyBan = false, resolveBan = false;
+    bool full = false, reconcile = false, positions = false, verifyBan = false, resolveBan = false;
     std::string resolvedBanId;
     NativeBehavior::PreparedAction prepared;
     NativeBehavior::ActionOutcome outcome;
@@ -88,6 +88,8 @@ std::unordered_set<std::string> completedRequestIds;
 std::deque<std::string> completedRequestOrder;
 std::unordered_set<std::string> expiryInFlight;
 bool reconcileInFlight = false;
+bool positionsInFlight = false;
+uint64_t positionsSeq = 0;
 bool banVerifyInFlight = false;
 bool banRecoveryPending = false;
 std::string banMetadataError;
@@ -846,6 +848,17 @@ void ScheduleReconciliation() {
     actionCv.notify_one();
 }
 
+void SchedulePositions() {
+    if (gateMode || !identified || protocolVersion != 1 || positionsInFlight) return;
+    std::lock_guard<std::mutex> g(mu);
+    if (actions.size() + runningActions + reservedActions >= 128) return;
+    Request r;
+    r.positions = true; r.preparedReady = true; r.epoch = currentEpoch;
+    actions.push_back(std::move(r));
+    positionsInFlight = true;
+    actionCv.notify_one();
+}
+
 void ScheduleBanVerification() {
     if (gateMode || !behavior || banVerifyInFlight) return;
     bool needed = false;
@@ -948,6 +961,7 @@ void PumpShutdown() {
 void BridgeLoop() {
     auto nextPoll = Clock::now();
     auto nextExpiry = Clock::now(), nextReconcile = Clock::now(), nextBanIntent = Clock::now(),
+         nextPositions = Clock::now(),
          nextBanMetadata = Clock::now(),
          nextDurability = Clock::now();
     while (!stopping) {
@@ -1144,6 +1158,19 @@ void BridgeLoop() {
                     catch (const std::exception& ex) { lastError = ex.what(); }
                 }
             }
+            if (completed.positions) {
+                positionsInFlight = false;
+                nextPositions = Clock::now() + std::chrono::seconds(5);
+                if (fresh && identified && protocolVersion == 1 && completed.error.empty()) {
+                    try {
+                        std::string frame = NativeBehavior::PositionBatchFrame(completed.payload,
+                            "vein-positions-" + BootId(), positionsSeq + 1);
+                        NativeTransport::Queue({NativeTransport::Kind::Event,
+                            std::make_shared<const std::string>(std::move(frame)), currentEpoch, 0, false});
+                        ++positionsSeq;
+                    } catch (const std::exception& ex) { lastError = ex.what(); }
+                }
+            }
             if (completed.full) {
                 try { applied = behavior->ApplyOutcome(completed.prepared, std::move(completed.outcome)); }
                 catch (const std::exception& ex) { applied.errorText = ex.what(); lastError = ex.what(); }
@@ -1226,6 +1253,10 @@ void BridgeLoop() {
         if (!gateMode && identified && Clock::now() >= nextReconcile) {
             ScheduleReconciliation(); nextReconcile = Clock::now() + std::chrono::seconds(30);
         }
+        if (!gateMode && identified && protocolVersion == 1 && Clock::now() >= nextPositions && !positionsInFlight) {
+            SchedulePositions();
+            if (!positionsInFlight) nextPositions = Clock::now() + std::chrono::seconds(1);
+        }
         if (protocolVersion == 1 && identified && unackedSince && Clock::now() - *unackedSince > kAckTimeout) {
             lastError = "no eventAck from Takaro for 30 s; reconnecting to resend";
             PluginLog("native: %s", lastError.c_str());
@@ -1302,6 +1333,7 @@ void ActionLoop() {
         done.requestBytes = r.bytes;
         done.full = r.full;
         done.reconcile = r.reconcile;
+        done.positions = r.positions;
         done.verifyBan = r.verifyBan;
         done.resolveBan = r.resolveBan;
         if (r.full) done.prepared = std::move(r.prepared);
@@ -1310,6 +1342,11 @@ void ActionLoop() {
                 done.payload = NativeBehavior::Engine::VerifyBanState();
                 if (done.payload.size() > 8*1024*1024)
                     throw std::runtime_error("ban verification exceeds 8 MiB");
+            } else if (r.positions) {
+                Actions::Result positions = Actions::PlayerPositions();
+                if (positions.status != 200) throw std::runtime_error("player positions unavailable");
+                if (positions.body.size() > 1024*1024) throw std::runtime_error("player positions exceed 1 MiB");
+                done.payload = std::move(positions.body);
             } else if (r.reconcile) {
                 Actions::Result players = Actions::Players();
                 bool nativeRows = false;
