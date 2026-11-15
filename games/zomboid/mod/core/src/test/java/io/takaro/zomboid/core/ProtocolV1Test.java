@@ -59,7 +59,79 @@ class ProtocolV1Test {
         Set<String> names = names(payload.getAsJsonArray("capabilities"));
         assertTrue(names.containsAll(Capabilities.ACTIONS));
         assertTrue(names.containsAll(Capabilities.EVENTS));
+        assertTrue(names.contains("events.player-positions"));
+        assertEquals(5, capability(payload.getAsJsonArray("capabilities"), "events.player-positions")
+                .getAsJsonObject("parameters").get("intervalSeconds").getAsInt());
         assertFalse(names.contains("map"), "no map before the image is ready");
+    }
+
+    @Test
+    void positionSnapshotIsCompleteAndNotQueuedWhileDisconnected() {
+        var positions = List.of(
+                new PlayerPositionSample("alice", new PlayerLocation(12, 34, 56, null)),
+                new PlayerPositionSample("bob", new PlayerLocation(70, 80, 90, null)));
+        client.onOpen(null);
+        client.emitPlayerPositions(positions);
+        assertEquals(0, outbox.size());
+
+        identify(1);
+        client.emitPlayerPositions(positions);
+        List<JsonObject> events = events();
+        assertEquals(1, events.size());
+        JsonObject event = events.get(0).getAsJsonObject("payload");
+        assertEquals("player-positions", event.get("type").getAsString());
+        JsonArray batch = event.getAsJsonObject("data").getAsJsonArray("positions");
+        assertEquals(2, batch.size());
+        assertEquals("alice", batch.get(0).getAsJsonObject().get("gameId").getAsString());
+        assertEquals(12, batch.get(0).getAsJsonObject().getAsJsonObject("position").get("x").getAsDouble());
+        assertEquals("bob", batch.get(1).getAsJsonObject().get("gameId").getAsString());
+        assertTrue(event.getAsJsonObject("data").has("timestamp"));
+
+        client.emitPlayerPositions(positions);
+        assertEquals(1, events().size(), "a second batch before the five-second interval is rejected");
+        client.onClose(1006, "gone", true);
+        client.emitPlayerPositions(positions);
+        assertEquals(0, outbox.size(), "stale position snapshots are discarded on disconnect");
+    }
+
+    @Test
+    void chatCarriesCurrentPositionOnlyOnV1() {
+        client.onOpen(null);
+        identify(1);
+        client.emitChatMessage(new PlayerInfo("alice", "Alice", null, null, null, null, null, 0),
+                "global", "hello", new PlayerLocation(12, 34, 56, null));
+        JsonObject data = events().get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals(34, data.getAsJsonObject("position").get("y").getAsDouble());
+
+        client.onClose(1006, "gone", true);
+        sent.clear();
+        client.onOpen(null);
+        identify(0);
+        client.emitChatMessage(new PlayerInfo("alice", "Alice", null, null, null, null, null, 0),
+                "global", "hello", new PlayerLocation(12, 34, 56, null));
+        List<JsonObject> v0Events = events();
+        assertFalse(v0Events.get(v0Events.size() - 1).getAsJsonObject("payload")
+                .getAsJsonObject("data").has("position"));
+    }
+
+    @Test
+    void positionSnapshotRejectsDuplicatePlayers() {
+        client.onOpen(null);
+        identify(1);
+        client.emitPlayerPositions(List.of(
+                new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null)),
+                new PlayerPositionSample("alice", new PlayerLocation(4, 5, 6, null))));
+        assertEquals(0, events().size());
+    }
+
+    @Test
+    void outboxDropsSupersededPositionSnapshots() {
+        outbox.add("player-positions", new JsonObject());
+        outbox.add("chat-message", new JsonObject());
+        outbox.add("player-positions", new JsonObject());
+        outbox.discardType("player-positions");
+        assertEquals(1, outbox.size());
+        assertEquals("chat-message", outbox.unacknowledged().get(0).payload().get("type").getAsString());
     }
 
     @Test

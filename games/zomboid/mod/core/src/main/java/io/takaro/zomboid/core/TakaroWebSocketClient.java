@@ -10,7 +10,9 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
+import java.time.Instant;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
@@ -34,6 +36,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // Per connection: set by a successful identifyResponse, cleared when the socket opens or closes.
     private volatile boolean identified = false;
     private volatile int protocolVersion = 0;
+    private volatile long lastPositionPushNanos;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "takaro-reconnect");
         t.setDaemon(true);
@@ -76,6 +79,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
+    public boolean canPushPositions() {
+        return identified && protocolVersion >= 1 && isOpen();
+    }
+
+    @Override
     public void onOpen(ServerHandshake handshake) {
         if (retired) {
             close();
@@ -83,6 +91,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         identified = false;
         protocolVersion = 0;
+        lastPositionPushNanos = 0;
+        outbox.discardType("player-positions");
         adapter.logInfo("WebSocket connected, sending identify...");
         sendIdentify();
         try {
@@ -151,6 +161,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     @Override
     public void onClose(int code, String reason, boolean remote) {
         identified = false;
+        outbox.discardType("player-positions");
         if (retired) {
             return;
         }
@@ -224,11 +235,50 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void emitChatMessage(PlayerInfo player, String channel, String message) {
+        emitChatMessage(player, channel, message, null);
+    }
+
+    @Override
+    public void emitChatMessage(PlayerInfo player, String channel, String message, PlayerLocation position) {
         JsonObject data = new JsonObject();
         data.add("player", playerIdentityToJson(player));
         data.addProperty("channel", channel);
         data.addProperty("msg", message);
+        if (position != null && identified && protocolVersion >= 1) {
+            data.add("position", positionJson(position));
+        }
         sendGameEvent("chat-message", data);
+    }
+
+    @Override
+    public void emitPlayerPositions(List<PlayerPositionSample> positions) {
+        if (!identified || protocolVersion < 1 || !isOpen() || positions == null || positions.size() > 1000) return;
+        long now = System.nanoTime();
+        if (lastPositionPushNanos != 0 && now - lastPositionPushNanos < TimeUnit.SECONDS.toNanos(Capabilities.POSITION_INTERVAL_SECONDS)) return;
+
+        JsonArray entries = new JsonArray();
+        var seen = new HashSet<String>();
+        for (PlayerPositionSample sample : positions) {
+            if (sample == null || sample.gameId() == null || sample.gameId().isEmpty()
+                    || sample.position() == null || !seen.add(sample.gameId())) return;
+            PlayerLocation loc = sample.position();
+            if (!Double.isFinite(loc.x()) || !Double.isFinite(loc.y()) || !Double.isFinite(loc.z())) return;
+            JsonObject entry = new JsonObject();
+            entry.addProperty("gameId", sample.gameId());
+            entry.add("position", positionJson(loc));
+            entries.add(entry);
+        }
+
+        JsonObject data = new JsonObject();
+        data.addProperty("timestamp", Instant.now().toString());
+        data.add("positions", entries);
+        synchronized (outbox) {
+            if (!identified || !isOpen()) return;
+            outbox.discardType("player-positions");
+            EventOutbox.Pending event = outbox.add("player-positions", data);
+            sendEventFrame(event.payload());
+            lastPositionPushNanos = System.nanoTime();
+        }
     }
 
     @Override
@@ -383,6 +433,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         if (dimension != null || protocolVersion < 1) return dimension;
         List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
         return dims.size() == 1 ? dims.get(0).id() : null;
+    }
+
+    private JsonObject positionJson(PlayerLocation location) {
+        JsonObject position = new JsonObject();
+        position.addProperty("x", location.x());
+        position.addProperty("y", location.y());
+        position.addProperty("z", location.z());
+        String dimension = positionDimension(location.dimension());
+        if (dimension != null) position.addProperty("dimension", dimension);
+        return position;
     }
 
     private String gameVersion() {

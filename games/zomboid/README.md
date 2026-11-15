@@ -71,7 +71,7 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Connection | ✅ | |
 | Player list | ✅ | Steam id, IP and ping. |
 | Player location | ✅ | |
-| Teleport | ⚠️ | The new position can take about 15 seconds to show in Takaro. |
+| Teleport | ⚠️ | Protocol v1 now pushes live positions every 5 seconds; the new timing still needs a live check. |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
 | Entity list | ✅ | Zombies and vehicles. |
@@ -87,6 +87,7 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Shut down the server | ✅ | Saves and quits; the game can take about two minutes to exit. |
 | Player joined / left | ✅ | |
 | Chat messages | ✅ | |
+| Player positions | ⚠️ | Protocol v1 batches live positions every 5 seconds; pending live verification. |
 | Player death | ✅ | |
 | Entity killed | ✅ | Zombie kills with the weapon. |
 | Server log lines | ⚠️ | Off by default (`logEvents=true`). |

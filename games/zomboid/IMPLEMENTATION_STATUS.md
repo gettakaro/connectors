@@ -1,0 +1,13 @@
+# Project Zomboid implementation status
+
+The Build 42 dedicated server exposes each connected character's coordinates through
+`IsoPlayer`. The connector reads them on the game thread.
+
+| Capability | Implementation | Validation |
+|---|---|---|
+| `players.location` | Reads a player's current coordinates on request. | Existing live coverage. |
+| `events.player-positions` | Protocol v1 declares a 5-second interval and pushes one timestamped batch for all connected players with live character positions. A batch is deferred while a connected player is dead or loading and has no character position. Superseded snapshots are removed from the event outbox. | Protocol tests pass; live Takaro check pending. |
+| `events.chat-message` position | Includes the author's live position when the chat hook can resolve their character. | Protocol tests pass; live Takaro check pending. |
+
+Protocol 0 keeps its existing event and location behavior. See [DEVELOPMENT.md](DEVELOPMENT.md)
+for the protocol details.

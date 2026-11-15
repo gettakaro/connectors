@@ -255,7 +255,7 @@ server-side way to prove the catalogue when no Takaro REST driver is available.
 ## Protocol v1 and the map
 
 `identify` offers `protocolVersions: [0, 1]` with a Capability Manifest (`core/Capabilities`:
-the 16 action capabilities, `server.shutdown`, the six `events.*`, `game.profile`, and `map`
+the 16 action capabilities, `server.shutdown`, seven `events.*`, `game.profile`, and `map`
 once ready). The version Takaro returns in `identifyResponse` holds for that connection; a
 missing value is 0.
 
@@ -278,6 +278,12 @@ missing value is 0.
   resends the rest in order, so events produced during an outage are no longer lost. Nothing
   is sent before `identifyResponse`; if Takaro picks protocol 0 the buffer is flushed in the
   old shape.
+- **Player positions:** protocol 1 declares `events.player-positions` with a 5-second interval.
+  The game-thread bridge reads every connected player's current `IsoPlayer` location and emits
+  one timestamped batch. If a connected player has no live character while loading or dead,
+  it defers that batch; it never substitutes a cached position. Chat events carry the
+  author's live position when available. Position snapshots are discarded on disconnect
+  and replaced in the outbox by newer snapshots, so reconnect does not replay stale positions.
 - **Map:** `agent/MapService` reads the server's `Map=` option, finds
   `<install>/media/maps/<map>/pyramid.zip` (the world-map raster the in-game map draws: 256 px
   PNG tiles per level plus `pyramid.txt` with the world bounds), and on a low-priority thread
@@ -295,9 +301,10 @@ missing value is 0.
 
 ## Takaro coverage
 
-**22 of 23** capabilities (17 actions + 6 events) are `live-supported`, verified end to end
+**22 of 24** capabilities (17 actions + 7 events) have prior live support, verified end to end
 through the Takaro API against a real dedicated server with a live client (game build
-42.20.4 b0bbce05d5). `listLocations` is `partial`: Build 42 exposes no named-location registry,
+42.20.4 b0bbce05d5). The new `events.player-positions` is unit-tested but awaits a live
+check. `listLocations` is `partial`: Build 42 exposes no named-location registry,
 so the connector reads `SafeHouse.safehouseList` reflectively and returns `[]` until players
 claim safehouses. Full per-capability evidence lives in the campaign docs under
 `context/games/project-zomboid/` of the gamingconnectors workspace.

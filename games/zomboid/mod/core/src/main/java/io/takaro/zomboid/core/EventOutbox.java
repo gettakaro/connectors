@@ -65,6 +65,11 @@ public final class EventOutbox {
         return event;
     }
 
+    /** Superseded snapshots must not be replayed after a reconnect. */
+    public synchronized void discardType(String type) {
+        pending.removeIf(event -> type.equals(event.payload().get("type").getAsString()));
+    }
+
     /** Every unacknowledged event, oldest first. */
     public synchronized List<Pending> unacknowledged() {
         return new ArrayList<>(pending);

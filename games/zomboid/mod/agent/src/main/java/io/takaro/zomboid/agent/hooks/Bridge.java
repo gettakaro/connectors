@@ -10,7 +10,13 @@ import io.takaro.zomboid.agent.TokenBucket;
 import io.takaro.zomboid.agent.research.CommandProbeRuntime;
 import io.takaro.zomboid.core.EventEmitter;
 import io.takaro.zomboid.core.model.PlayerInfo;
+import io.takaro.zomboid.core.model.PlayerLocation;
+import io.takaro.zomboid.core.model.PlayerPositionSample;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -29,6 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class Bridge {
 
     private static final long RECONCILE_INTERVAL_MS = 2000L;
+    private static final long POSITION_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
 
     private static final AtomicLong TICKS = new AtomicLong();
     private static final AtomicBoolean CONNECTOR_STARTED = new AtomicBoolean();
@@ -66,6 +73,7 @@ public final class Bridge {
     private static volatile boolean debugCatalog;
 
     private static volatile long lastReconcileMs;
+    private static long lastPositionCaptureNanos;
 
     private Bridge() {
     }
@@ -132,12 +140,42 @@ public final class Bridge {
                 }
             }
 
+            capturePositions();
+
             if (n % 6000L == 0L) {
                 AgentLog.log("tick count=" + n + " hooks[" + hooksFiredSummary() + "]");
             }
         } catch (Throwable t) {
             // never propagate into the game main loop
         }
+    }
+
+    private static void capturePositions() {
+        EventEmitter e = emitter;
+        if (e == null || !e.canPushPositions()) return;
+        long now = System.nanoTime();
+        if (lastPositionCaptureNanos != 0 && now - lastPositionCaptureNanos < POSITION_INTERVAL_NANOS) return;
+
+        List<PlayerInfo> online = Pz.getPlayers();
+        if (online.size() > 1000) return;
+        List<PlayerPositionSample> batch = new ArrayList<>(online.size());
+        Set<String> seen = new HashSet<>();
+        boolean complete = true;
+        for (PlayerInfo player : online) {
+            String gameId = player.gameId();
+            if (gameId == null || !seen.add(gameId)) {
+                complete = false;
+                continue;
+            }
+            PlayerLocation location = Pz.getPlayerLocation(gameId);
+            if (location == null) {
+                complete = false;
+                continue;
+            }
+            batch.add(new PlayerPositionSample(gameId, location));
+        }
+        if (complete) e.emitPlayerPositions(batch);
+        lastPositionCaptureNanos = System.nanoTime();
     }
 
     private static void startConnectorOnce() {
@@ -251,7 +289,8 @@ public final class Bridge {
             }
             String text = Pz.chatText(chatMessage);
             String channel = Pz.chatChannel(chatMessage);
-            e.emitChatMessage(eventPlayer(author, author), channel, text);
+            PlayerLocation position = Pz.getPlayerLocation(author);
+            e.emitChatMessage(eventPlayer(author, author), channel, text, position);
         } catch (Throwable t) {
             // never propagate into the chat path
         }
