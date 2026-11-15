@@ -82,7 +82,7 @@ static void TestProtocol() {
     EQ(CreateErrorResponse("r2", "bad \"x\""), "{\"type\":\"response\",\"requestId\":\"r2\",\"error\":\"bad \\\"x\\\"\"}");
     EQ(CreateGameEvent("log", J("{\"msg\":\"m\"}")), "{\"type\":\"gameEvent\",\"payload\":{\"type\":\"log\",\"data\":{\"msg\":\"m\"}}}");
     CHECK(IsAction("getMapTile") && IsAction("shutdown") && !IsAction("rcon"), "actions");
-    CHECK(IsEventType("entity-killed") && !IsEventType("player-joined"), "events");
+    CHECK(IsEventType("entity-killed") && IsEventType("player-positions") && !IsEventType("player-joined"), "events");
 
     int64_t ms = 0;
     CHECK(ParseIsoMs("2026-10-03T10:00:00.250Z", ms) && ms == 1791021600250LL, "iso %lld", (long long)ms);
@@ -362,6 +362,19 @@ static void TestOutbox() {
         for (auto& e : s.Outbox().pending) logLeft = logLeft || e.type == "log";
         CHECK(!logLeft, "the log event is dropped first");
     }
+    {
+        Store s(dir + "/positions");
+        s.Load();
+        s.Admit("chat-message", "chat");
+        s.Admit("player-positions", "old positions");
+        s.Admit("player-death", "death");
+        CHECK(s.DiscardType("player-positions") == 1, "stale position batch discarded");
+        CHECK(s.Outbox().pending.size() == 2 && s.Outbox().pendingBytes == 9,
+              "other events and byte count are preserved");
+        CHECK(s.DiscardType("player-positions") == 0, "discard is idempotent");
+        s.Admit("player-positions", "new positions");
+        CHECK(s.Outbox().pending.back().seq == 4, "a fresh batch has a new stream sequence");
+    }
     std::string text = OutboxJson(OutboxState());
     OutboxState o;
     std::string err;
@@ -590,7 +603,8 @@ static void TestCoverage() {
     for (int i = 0; i < takaro::kActionCount; i++)
         CHECK(ActionCoverage(takaro::kActions[i]) != nullptr, "action %s covered", takaro::kActions[i]);
     for (int i = 0; i < takaro::kEventTypeCount; i++)
-        CHECK(EventCoverage(takaro::kEventTypes[i]) != nullptr, "event %s covered", takaro::kEventTypes[i]);
+        if (std::string(takaro::kEventTypes[i]) != "player-positions")
+            CHECK(EventCoverage(takaro::kEventTypes[i]) != nullptr, "event %s covered", takaro::kEventTypes[i]);
     CHECK(std::string(ActionCoverage("sendMessage")->implementation) == "native", "chat native");
     CHECK(std::string(ActionCoverage("getMapInfo")->status) == "schema-fallback", "map fallback");
     CHECK(std::string(ActionCoverage("getMapTile")->status) == "unsupported", "tile unsupported");
@@ -868,6 +882,7 @@ static void TestProtocolV1() {
     AdapterOptions opts;
     opts.ready = true;
     opts.region = [&] { return region; };
+    opts.positions = [](JsonValue& out) { out = takaro::JArr(); return true; };
     opts.reads = [](const std::string& action, const JsonValue& args, ActionResult& out) {
         if (action != "getPlayerLocation") return false;
         if (Str(args.get("gameId")).value_or("") == "1") {
@@ -890,7 +905,9 @@ static void TestProtocolV1() {
        "game.profile players.get players.list players.location players.inventory items.give items.list entities.list "
        "locations.list console.execute chat.send players.teleport moderation.kick moderation.ban moderation.unban "
        "moderation.listBans server.shutdown events.player-connected events.player-disconnected events.chat-message "
-       "events.player-death events.entity-killed events.log ");
+       "events.player-death events.entity-killed events.log events.player-positions ");
+    CHECK(m.find("{\"name\":\"events.player-positions\",\"parameters\":{\"intervalSeconds\":4}}") != std::string::npos,
+          "position interval declared: %s", m.c_str());
     region = "ExiledLands";
     m = ad.CapabilityManifest();
     CHECK(m.find("{\"name\":\"map\",\"parameters\":{\"dimensions\":[{\"id\":\"exiled_lands\"") != std::string::npos,

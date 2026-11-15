@@ -77,6 +77,9 @@ static void TestPayloads() {
     pos.x = 101746.7249;
     pos.y = 319894.28;
     pos.z = -21582.481;
+    JsonValue positionedChat = ChatPayload(me, "Global", "here", pos);
+    CHECK(positionedChat.get("position") != nullptr, "chat carries the sender's live position");
+    EQ(D(Sanitize("chat-message", positionedChat)), D(positionedChat));
     EQ(D(DeathPayload(me, nullptr, pos, "Limon#67642 died (fall damage)")),
        "{\"player\":{\"gameId\":\"76561198000735875\",\"name\":\"Limon#67642\",\"steamId\":\"76561198000735875\","
        "\"platformId\":\"steam:76561198000735875\",\"ip\":\"192.168.129.15\"},\"position\":{\"x\":101746.72,"

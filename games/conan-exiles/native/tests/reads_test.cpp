@@ -734,6 +734,11 @@ static void TestReads() {
        "\"steam:76561198000735875\",\"ip\":\"192.168.129.15\",\"ping\":56},{\"gameId\":\"76561198000000002\",\"name\":"
        "\"Second\",\"steamId\":\"76561198000000002\",\"platformId\":\"steam:76561198000000002\",\"ip\":\"10.0.0.2\","
        "\"ping\":120}]");
+    JsonValue positions;
+    CHECK(rs->PositionSnapshot(positions), "online position snapshot");
+    EQ(JsonDump(positions),
+       "[{\"gameId\":\"76561198000735875\",\"position\":{\"x\":101746.72,\"y\":319894.28,\"z\":-21582.48}},"
+       "{\"gameId\":\"76561198000000002\",\"position\":{\"x\":5000.5,\"y\":-6000.25,\"z\":-100}}]");
     std::string h = rs->HealthJson();
     CHECK(h.find("\"pingCheck\":\"passed\"") != std::string::npos && h.find("\"locationCheck\":\"passed\"") != std::string::npos &&
               h.find("\"textCheck\":\"passed\"") != std::string::npos,

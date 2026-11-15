@@ -6,10 +6,13 @@
 #include "takaro/game.h"
 
 #include <deque>
+#include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 namespace conan {
 
@@ -28,6 +31,7 @@ struct AdapterOptions {
     // Defaults to the production ReadService; host tests inject a fake.
     std::function<bool(const std::string& action, const JsonValue& args, takaro::ActionResult& out)> reads;
     std::function<std::string()> readsHealth;
+    std::function<bool(JsonValue&)> positions;
     // Mutation actions (giveItem, teleport, console, kick, ban, unban, listBans, shutdown; lane
     // L2b). Created when `savedDir` is set (the server) or a game is injected (host tests).
     std::string savedDir;
@@ -47,6 +51,7 @@ bool ParseSendMessage(const JsonValue& args, ChatRequest& out, std::string& erro
 class Adapter : public takaro::Game {
 public:
     explicit Adapter(AdapterOptions o);
+    ~Adapter() override;
     takaro::ActionResult Execute(const std::string& action, const JsonValue& args) override;
     // Protocol 1: positions carry the loaded map's Dimension id, and an unknown player's location is
     // payload null (protocol 0 keeps the error Takaro needs there).
@@ -78,6 +83,10 @@ private:
     std::unique_ptr<Mutations> mutations_;
     uint64_t dropped_ = 0, chatSent_ = 0, chatFailed_ = 0;
     double lastChatMs_ = 0;
+    std::thread positionWorker_;
+    std::mutex positionMu_;
+    std::condition_variable positionCv_;
+    std::atomic<bool> positionStopping_{false};
 };
 
 }  // namespace conan

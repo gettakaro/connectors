@@ -28,6 +28,9 @@ bool Bridge::Start() {
     if (started_.exchange(true)) return false;
     stopping_ = false;
     storeNotes_ = o_.store->Load();
+    if (o_.store->DiscardType("player-positions")) {
+        o_.store->SaveOutbox();
+    }
     NativeLog("takaro: state dir %s: %s", o_.store->Dir().c_str(), storeNotes_.c_str());
     int64_t now = o_.steadyMs();
     if (o_.watcher) o_.watcher->Announce(o_.config, now);
@@ -217,6 +220,7 @@ void Bridge::HandleNotice(Notice& n) {
             open_ = false;
             identified_ = false;
             protocol_ = 0;
+            if (o_.store->DiscardType("player-positions")) outboxDirty_ = true;
             closes_++;
             NativeLog("takaro: WebSocket closed (epoch %llu): %s; %zu event(s) unconfirmed, kept for replay",
                       (unsigned long long)n.epoch, o_.config.Redact(n.text).c_str(),
@@ -476,11 +480,13 @@ void Bridge::PollEvents() {
         return;
     }
     for (auto& e : events) {
+        if (e.type == "player-positions" && (!identified_ || protocol_ < 1)) continue;
         if (!IsEventType(e.type) || e.data.type != JsonValue::Object) {
             eventsRejected_++;
             NativeLog("takaro: dropping an event with an unknown type '%s'", e.type.c_str());
             continue;
         }
+        if (e.type == "player-positions" && o_.store->DiscardType(e.type)) outboxDirty_ = true;
         uint64_t lossesBefore = o_.store->Outbox().losses;
         o_.store->Admit(e.type, CreateGameEvent(e.type, e.data));
         uint64_t losses = o_.store->Outbox().losses;

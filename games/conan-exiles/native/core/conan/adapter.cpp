@@ -11,6 +11,7 @@
 #include "takaro/protocol.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace conan {
 
@@ -72,6 +73,10 @@ Adapter::Adapter(AdapterOptions o) : o_(std::move(o)) {
             ReadService* rs = ProductionReads();
             return rs ? rs->HealthJson() : std::string("null");
         };
+        o_.positions = [](JsonValue& out) {
+            ReadService* rs = ProductionReads();
+            return rs && rs->PositionSnapshot(out);
+        };
         if (o_.ready) ProductionReads();  // starts the catalogue warm-up on its worker thread
     }
     if (!o_.region) {
@@ -98,6 +103,36 @@ Adapter::Adapter(AdapterOptions o) : o_(std::move(o)) {
                                  "update the connector to a release pinned to this server build."));
         Emit(std::move(ev));
     }
+    if (o_.ready && o_.positions) {
+        positionWorker_ = std::thread([this] {
+            std::unique_lock<std::mutex> lock(positionMu_);
+            while (!positionStopping_) {
+                if (positionCv_.wait_for(lock, std::chrono::seconds(5), [this] { return positionStopping_.load(); }))
+                    break;
+                lock.unlock();
+                JsonValue positions;
+                if (o_.positions(positions) && positions.type == JsonValue::Array && positions.arr.size() <= 1000) {
+                    if (const MapCalibration* map = MapForRegion(o_.region()))
+                        for (auto& entry : positions.arr)
+                            for (auto& field : entry.obj)
+                                if (field.first == "position")
+                                    takaro::Put(field.second, "dimension", takaro::JStr(map->id));
+                    GameEvent event;
+                    event.type = "player-positions";
+                    event.data = takaro::JObj();
+                    takaro::Put(event.data, "positions", std::move(positions));
+                    Emit(std::move(event));
+                }
+                lock.lock();
+            }
+        });
+    }
+}
+
+Adapter::~Adapter() {
+    positionStopping_ = true;
+    positionCv_.notify_all();
+    if (positionWorker_.joinable()) positionWorker_.join();
 }
 
 ActionResult Adapter::Fail(const std::string& error) {
@@ -221,6 +256,9 @@ std::string Adapter::CapabilityManifest() {
     }
     for (const Coverage* c : EventCoverages())
         if (std::string(c->status) == "live-supported") add(ObjBuilder().S("name", std::string("events.") + c->name).Done());
+    if (o_.ready && o_.positions)
+        add(ObjBuilder().S("name", "events.player-positions")
+                .Raw("parameters", ObjBuilder().N("intervalSeconds", 4).Done()).Done());
     if (const MapCalibration* map = MapForRegion(o_.region()))
         add(ObjBuilder()
                 .S("name", "map")

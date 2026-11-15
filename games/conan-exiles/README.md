@@ -79,6 +79,7 @@ Checked on server build 26552396 (Linux and Windows), 2026-11-12. ✅ works, ⚠
 | Connection | ✅ | Reconnects within about a second when a connection drops, then retries for up to 60 s apart while Takaro is down; events from an outage are delivered afterwards. |
 | Player list | ✅ | Steam64 id, IP and ping. |
 | Player location | ✅ | |
+| Position updates | ⚠️ | Protocol v1 sends a snapshot of online player positions every 5 seconds. Live Takaro verification is pending. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
@@ -94,7 +95,7 @@ Checked on server build 26552396 (Linux and Windows), 2026-11-12. ✅ works, ⚠
 | Shop | ⚠️ | `@claim` in game is not checked. |
 | Shut down the server | ✅ | Countdown in chat, then a clean exit. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | |
+| Chat messages | ✅ | The event includes the sender's position when the game exposes their pawn at the chat hook. |
 | Player death | ⚠️ | A PvP killer is not checked. |
 | Entity killed | ✅ | |
 | Server log lines | ✅ | |
