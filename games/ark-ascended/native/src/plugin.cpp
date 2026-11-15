@@ -43,6 +43,7 @@ constexpr wchar_t kCallbackId[] = L"TakaroAsa";
 constexpr auto kTickBudget = std::chrono::milliseconds(2);
 constexpr auto kBanSweep = std::chrono::seconds(30);
 constexpr auto kSurvivorSweep = std::chrono::seconds(2);
+constexpr auto kPositionInterval = std::chrono::seconds(5);
 constexpr auto kExitDelay = std::chrono::seconds(4);
 constexpr size_t kMaxConsoleOutput = 32768;
 constexpr char kGameName[] = "ARK: Survival Ascended";
@@ -88,6 +89,7 @@ std::vector<takaro::CatalogRow> g_items, g_entities;
 tj::Value g_itemsJson, g_entitiesJson, g_locationsJson;
 
 std::chrono::steady_clock::time_point g_nextBanSweep{}, g_nextSurvivorSweep{}, g_exitAt{};
+std::chrono::steady_clock::time_point g_nextPositionBatch{};
 bool g_exitPending = false;
 
 std::thread g_tail;
@@ -888,6 +890,29 @@ void SweepSurvivors() {
     }
 }
 
+void SweepPositions() {
+    if (!g_client->Identified() || g_client->ProtocolVersion() != 1) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_nextPositionBatch) return;
+    g_nextPositionBatch = now + kPositionInterval;
+    tj::Value positions = tj::Value::array();
+    size_t count = 0;
+    std::set<std::string> seen;
+    for (auto& weak : AsaApi::GetApiUtils().GetWorld()->PlayerControllerListField()) {
+        if (count == 1000) break;
+        auto* pc = static_cast<AShooterPlayerController*>(weak.Get());
+        if (pc == nullptr || pc->GetPlayerCharacter() == nullptr) continue;
+        const std::string eos = EosId(pc);
+        const auto found = g_players.find(eos);
+        if (eos.empty() || found == g_players.end() || !found->second.online || steamlink::IsPending(eos)) continue;
+        const FVector at = AsaApi::IApiUtils::GetPosition(pc);
+        if (!takaro::IsRealPosition(at.X, at.Y, at.Z) || !seen.insert(eos).second) continue;
+        positions.push(tj::obj({{"gameId", tj::str(eos)}, {"position", PositionJson(at.X, at.Y, at.Z)}}));
+        ++count;
+    }
+    g_client->EmitFreshPositions(tj::obj({{"positions", std::move(positions)}}));
+}
+
 void OnTick(float) {
     if (!g_client) return;
     TickCost cost;
@@ -910,6 +935,7 @@ void OnTick(float) {
     if (!steamlink::g_pending.empty()) FlushConnects();
     SweepBans();
     SweepSurvivors();
+    SweepPositions();
     const auto stop = std::chrono::steady_clock::now() + kTickBudget;
     takaro::GameCall call;
     while (std::chrono::steady_clock::now() < stop && g_client->NextCall(call)) {
@@ -930,7 +956,12 @@ bool OnChat(AShooterPlayerController* pc, FString* message, int mode, int, bool 
     if (eos.empty()) return false;
     const Roster& r = Refresh(eos, pc);
     const char* channel = mode == 1 ? "team" : "global";
-    g_client->Emit("chat-message", tj::obj({{"player", PlayerJson(eos, r)}, {"channel", tj::str(channel)}, {"msg", tj::str(Utf8(*message))}}));
+    tj::Value data = tj::obj({{"player", PlayerJson(eos, r)}, {"channel", tj::str(channel)}, {"msg", tj::str(Utf8(*message))}});
+    if (pc->GetPlayerCharacter() != nullptr) {
+        const FVector at = AsaApi::IApiUtils::GetPosition(pc);
+        if (takaro::IsRealPosition(at.X, at.Y, at.Z)) data.set("position", PositionJson(at.X, at.Y, at.Z));
+    }
+    g_client->Emit("chat-message", std::move(data));
     return false;
 }
 
@@ -1097,6 +1128,8 @@ std::vector<tj::Value> Manifest() {
                              "events.player-death", "events.entity-killed", "events.log"})
         out.push_back(tj::obj({{"name", tj::str(name)}}));
     out.push_back(tj::obj({{"name", tj::str("players.progression")}, {"parameters", tj::obj({{"source", tj::str("server")}})}}));
+    out.push_back(tj::obj({{"name", tj::str("events.player-positions")},
+                           {"parameters", tj::obj({{"intervalSeconds", tj::num(kPositionInterval.count())}})}}));
     // Survivors live in the server's save. A death does not end one, so `ends` stays out.
     out.push_back(tj::obj({{"name", tj::str("players.characters")}, {"parameters", tj::obj({{"held", tj::str("server")}})}}));
     tj::Value profile = tj::obj({{"name", tj::str(kGameName)}});
@@ -1278,6 +1311,7 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     cfg.identityToken = LoadIdentity(dir, g_config.identityToken);
     cfg.serverName = g_config.serverName;
     cfg.wireDebug = g_config.wireDebug;
+    cfg.positionInterval = std::chrono::duration_cast<std::chrono::milliseconds>(kPositionInterval);
     g_client = std::make_unique<takaro::Client>(cfg, g_transport.get(), RandomHex(16), [](const std::string& l) { LogLine(l); });
     g_client->SetReachability(Reachability);
     g_client->SetManifest(Manifest);

@@ -111,6 +111,7 @@ Game actions, events, levels and Characters checked on game 97.17 (Steam build 2
 | Connection | ✅ | Connects once the world has loaded and reconnects by itself after a restart or network drop. |
 | Player list | ✅ | Name, ping and IP. Steam players carry their Steam id, so they are the same player as in your other Steam games; other players carry their Epic (EOS) id. |
 | Player location | ✅ | Live position; offline players give the last position seen since the server started. |
+| Live position updates | ⚠️ | Protocol v1 sends current positions of spawned players every five seconds; live verification is pending. |
 | Teleport | ✅ | Online players. |
 | Player inventory | ⚠️ | Carried and equipped items of an online player. Account cosmetics are left out. |
 | Player levels and skills | ✅ | Character level, experience and progress to the next level. The level rises when the player spends the point, as in the game. ARK has no separate skill levels. |
@@ -128,7 +129,7 @@ Game actions, events, levels and Characters checked on game 97.17 (Steam build 2
 | Shop | ✅ | Buying, orders and claims work. Items land like Give an item. |
 | Shut down the server | ⚠️ | Needs `RCONEnabled=True`. The game saves by itself on the way out. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | Tribe chat arrives as "team", all other chat as "global". |
+| Chat messages | ✅ | Tribe chat arrives as "team", all other chat as "global". Player chat includes a current position when the character is spawned. |
 | Player death | ✅ | With position, and the killer when it was another player. |
 | Entity killed | ⚠️ | Kills by a player directly, with creature and weapon names. A kill by a tamed creature is not reported. |
 | Server log lines | ✅ | The game's own lines; lines with addresses or credentials are held back. |

@@ -232,6 +232,54 @@ static void test_events_wait_for_identify() {
     CHECK(r.CountEvents() == 1);
 }
 
+static void test_fresh_positions() {
+    Config cfg;
+    cfg.positionInterval = std::chrono::milliseconds(40);
+    Harness r(cfg);
+    auto batch = [](const char* id) {
+        tj::Value rows = tj::Value::array();
+        rows.push(tj::obj({{"gameId", tj::str(id)}, {"position", tj::obj({{"x", tj::num(1)}, {"y", tj::num(2)}, {"z", tj::num(3)}})}}));
+        return tj::obj({{"positions", std::move(rows)}});
+    };
+    r.c->EmitFreshPositions(batch("before-identify"));
+    r.Open(1);
+    CHECK(r.CountEvents() == 0);
+    r.c->EmitFreshPositions(batch("first"));
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);
+    auto sent = r.Last();
+    CHECK(sent.get("payload")->get("type")->as_string() == "player-positions");
+    CHECK(sent.get("payload")->get("data")->get("positions")->as_array()[0].get("gameId")->as_string() == "first");
+    r.c->EmitFreshPositions(batch("old"));
+    r.c->EmitFreshPositions(batch("latest"));
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);  // no burst inside the advertised interval
+    r.Notify(NoticeType::Closed, 1);
+    r.t.sent.clear();
+    r.Open(2);
+    CHECK(r.CountEvents() == 0);  // neither sent nor unsent snapshots replay
+    std::this_thread::sleep_for(std::chrono::milliseconds(45));
+    r.c->EmitFreshPositions(batch("new"));
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);
+    CHECK(r.Last().get("payload")->get("data")->get("positions")->as_array()[0].get("gameId")->as_string() == "new");
+    r.Notify(NoticeType::Closed, 2);
+    r.Open(3, 0);
+    r.c->EmitFreshPositions(batch("v0"));
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);
+
+    r.Notify(NoticeType::Closed, 3);
+    r.Open(4);
+    r.t.next = native::QueueStatus::Full;
+    r.c->EmitFreshPositions(batch("stale"));
+    r.c->PumpOnce();
+    std::this_thread::sleep_for(std::chrono::milliseconds(45));
+    r.t.next = native::QueueStatus::Accepted;
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);  // a blocked send never emits expired coordinates
+}
+
 static void test_event_window() {
     Config cfg;
     cfg.eventWindow = 2;
@@ -323,6 +371,7 @@ int main() {
     test_late_complete_dropped();
     test_events_ack_and_replay();
     test_events_wait_for_identify();
+    test_fresh_positions();
     test_event_window();
     test_event_cap_counts_drops();
     test_queue_refusal_retries();

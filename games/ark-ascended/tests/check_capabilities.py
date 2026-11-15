@@ -18,6 +18,8 @@ actions |= set(re.findall(r'action != "([A-Za-z]+)"', source))
 if "g_client->SetReachability(" in source:
     actions.add("testReachability")
 emitted = set(re.findall(r'Emit\("([a-z-]+)"', source))
+if 'EmitFreshPositions(' in source:
+    emitted.add('player-positions')
 declared = set(re.findall(r'"events\.([a-z-]+)"', source))
 
 listed_actions = {k for k, v in capabilities["actions"].items() if v["status"] == "live-supported"}

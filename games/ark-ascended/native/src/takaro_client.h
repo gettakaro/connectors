@@ -28,6 +28,7 @@ struct Config {
     std::string gameVersion;
     bool wireDebug = false;
     std::chrono::milliseconds callDeadline{9000};  // Takaro gives up after 10 s
+    std::chrono::milliseconds positionInterval{5000};
     size_t maxPendingCalls = 64;
     size_t eventWindow = 64;
     size_t maxQueuedEvents = 8192;
@@ -82,6 +83,8 @@ public:
     bool NextCall(GameCall& out);
     void Complete(const GameCall& call, Outcome outcome);
     void Emit(const std::string& type, tj::Value data);
+    // Position snapshots are replaceable and must never replay after a reconnect.
+    void EmitFreshPositions(tj::Value data);
 
     bool Identified() const { return identified_.load(); }
     int ProtocolVersion() const { return protocol_.load(); }
@@ -96,6 +99,8 @@ private:
     struct QueuedEvent {
         uint64_t seq = 0;
         std::shared_ptr<const std::string> v0, v1;
+        bool freshPositions = false;
+        std::chrono::steady_clock::time_point captured{};
     };
     struct Finished {
         GameCall call;
@@ -112,6 +117,8 @@ private:
     void ExpireCalls();
     void PumpEvents();
     void DropAcked(uint64_t upTo);
+    void DropFreshPositions();  // mu_ held
+    void QueueEvent(const std::string& type, tj::Value data, bool freshPositions);
     std::string IdentifyFrame() const;
 
     Config config_;
@@ -131,6 +138,7 @@ private:
     std::deque<QueuedEvent> events_;
     size_t eventsSent_ = 0;  // events_[0..eventsSent_) are written and await an ack
     uint64_t nextSeq_ = 1;
+    std::chrono::steady_clock::time_point lastPositionsSent_{};
     bool stopping_ = false;
 
     // Worker-only.

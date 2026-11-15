@@ -171,6 +171,12 @@
       "responseShape": "EventLogLine",
       "reason": "the game's own lines from ShooterGame.log, filtered and budgeted",
       "liveVerified": false
+    },
+    "player-positions": {
+      "status": "live-supported",
+      "responseShape": "{timestamp,positions:[{gameId,position:{x,y,z,dimension?}}]}",
+      "reason": "protocol v1 only; current positions of online spawned players from AsaApi player controllers every 5 seconds, up to 1000 unique gameIds; unsent snapshots expire and never replay after reconnect",
+      "liveVerified": false
     }
   }
 }
