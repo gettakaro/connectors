@@ -93,6 +93,15 @@ namespace Takaro
         public string Dimension { get; set; }
     }
 
+    public class PlayerPositionEntry
+    {
+        [JsonProperty("gameId")]
+        public string GameId { get; set; }
+
+        [JsonProperty("position")]
+        public TakaroPosition Position { get; set; }
+    }
+
     public class TakaroLocation
     {
         [JsonProperty("name")]

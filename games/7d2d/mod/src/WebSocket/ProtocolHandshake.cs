@@ -73,6 +73,7 @@ namespace Takaro.WebSocket
         public const string MigrationCapability = "migration.native";
 
         public const string ProgressionCapability = "players.progression";
+        public const int PositionIntervalSeconds = 3;
 
         public const string GetItemIconsAction = "getItemIcons";
 
@@ -138,6 +139,20 @@ namespace Takaro.WebSocket
 
             foreach (string eventType in GameEventTypes.All)
                 manifest.Add(new Dictionary<string, object> { { "name", "events." + eventType } });
+
+            manifest.Add(
+                new Dictionary<string, object>
+                {
+                    { "name", "events.player-positions" },
+                    {
+                        "parameters",
+                        new Dictionary<string, object>
+                        {
+                            { "intervalSeconds", PositionIntervalSeconds },
+                        }
+                    },
+                }
+            );
 
             if (mapCapability != null)
                 manifest.Add(mapCapability);

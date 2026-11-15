@@ -69,7 +69,8 @@ namespace Takaro.WebSocket
             EChatType type,
             int _senderId,
             string msg,
-            List<int> recipientEntityIds
+            List<int> recipientEntityIds,
+            Vector3? senderPosition = null
         )
         {
             // Defence in depth against server-message echo: a chat-message event
@@ -79,13 +80,40 @@ namespace Takaro.WebSocket
             if (cInfo == null || _senderId < 0)
                 return;
 
+            var data = new Dictionary<string, object>
+            {
+                { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
+                { "msg", msg },
+                { "channel", ChatChannelFor(type) },
+            };
+            if (senderPosition.HasValue)
+            {
+                Vector3i position = new Vector3i(senderPosition.Value);
+                data["position"] = new TakaroPosition
+                {
+                    X = position.x,
+                    Y = position.y,
+                    Z = position.z,
+                };
+            }
+            SendGameEvent(GameEventTypes.ChatMessage, data);
+        }
+
+        public static void SendPlayerPositions(List<PlayerPositionEntry> positions)
+        {
+            if (
+                !WebSocketTransport.Instance.CanPushPositions
+                || positions == null
+                || positions.Count > 1000
+            )
+                return;
+
             SendGameEvent(
-                GameEventTypes.ChatMessage,
+                "player-positions",
                 new Dictionary<string, object>
                 {
-                    { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
-                    { "msg", msg },
-                    { "channel", ChatChannelFor(type) },
+                    { "timestamp", System.DateTime.UtcNow.ToString("o") },
+                    { "positions", positions },
                 }
             );
         }

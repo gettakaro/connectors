@@ -279,7 +279,8 @@
       "chat-message",
       "player-death",
       "entity-killed",
-      "log"
+      "log",
+      "player-positions"
     ],
     "identify": {
       "type": "identify",
@@ -360,6 +361,12 @@
           },
           {
             "name": "events.log"
+          },
+          {
+            "name": "events.player-positions",
+            "parameters": {
+              "intervalSeconds": 3
+            }
           },
           {
             "name": "migration.native",

@@ -438,12 +438,22 @@ namespace Takaro
                 if (cInfo != null)
                 {
                     LogService.Instance.Debug($"Chat message: {cInfo.playerName}: {___msg}");
+                    Vector3? senderPosition = null;
+                    if (
+                        _world != null
+                        && _world.Players.dict.TryGetValue(
+                            __instance.senderEntityId,
+                            out EntityPlayer sender
+                        )
+                    )
+                        senderPosition = sender.GetPosition();
                     GameEventPublisher.SendChatMessage(
                         cInfo,
                         __instance.chatType,
                         __instance.senderEntityId,
                         ___msg,
-                        __instance.recipientEntityIds
+                        __instance.recipientEntityIds,
+                        senderPosition
                     );
                 }
                 return true;

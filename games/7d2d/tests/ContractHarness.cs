@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Takaro;
 using Takaro.Config;
 using Takaro.Services;
 using Takaro.WebSocket;
@@ -44,6 +45,7 @@ public static partial class ContractHarness
             AssertLegacyParityGiveQuality(legacy);
             AssertLegacyParityEntityKilled(legacy);
             AssertLegacyParityChatChannels(legacy);
+            AssertPushedPositions();
             AssertProductionNotFoundReadSemantics();
             AssertBuildTargetMatching();
             AssertWrongBuildInventoryFailsLoudly();
@@ -536,6 +538,7 @@ public static partial class ContractHarness
                 name != "migration.native"
                 && name != GameProfile.Capability
                 && name != ProtocolHandshake.ProgressionCapability
+                && name != "events.player-positions"
             )
                 True(capability["parameters"] == null, name + " declares no parameters");
         }
@@ -2295,10 +2298,50 @@ public static partial class ContractHarness
             (EChatType)99,
             1,
             "hello",
-            null
+            null,
+            new UnityEngine.Vector3(12.4f, 34.6f, -56.2f)
         );
         AssertPublishedEvent("chat-message", out JObject chat);
         Equal("global", (string)chat["channel"], "unknown chat type is published as global");
+        Equal(12, (int)chat["position"]["x"], "chat carries the sender's live x position");
+        Equal(35, (int)chat["position"]["y"], "chat carries the sender's live y position");
+        Equal(-56, (int)chat["position"]["z"], "chat carries the sender's live z position");
+    }
+
+    private static void AssertPushedPositions()
+    {
+        var capability = ProtocolHandshake.BuildCapabilityManifest(RequestRouter.SupportedActions)
+            .Single(c => (string)c["name"] == "events.player-positions");
+        Equal(3, (int)((Dictionary<string, object>)capability["parameters"])["intervalSeconds"],
+            "position push interval matches the sampler");
+
+        var transport = WebSocketTransport.Instance;
+        transport.TerminalMessages.Clear();
+        transport.CanPushPositions = false;
+        var positions = new List<PlayerPositionEntry>
+        {
+            new PlayerPositionEntry
+            {
+                GameId = "fixture-player",
+                Position = new TakaroPosition { X = 12, Y = 34, Z = -56 },
+            },
+        };
+        GameEventPublisher.SendPlayerPositions(positions);
+        Equal(0, transport.TerminalMessages.Count, "v0 or disconnected sessions do not queue positions");
+
+        transport.CanPushPositions = true;
+        GameEventPublisher.SendPlayerPositions(positions);
+        AssertPublishedEvent("player-positions", out JObject data);
+        Equal("fixture-player", (string)data["positions"][0]["gameId"], "position uses stable game id");
+        Equal(12, (int)data["positions"][0]["position"]["x"], "position x is sent");
+        Equal(34, (int)data["positions"][0]["position"]["y"], "position y is sent");
+        Equal(-56, (int)data["positions"][0]["position"]["z"], "position z is sent");
+        True(DateTime.TryParse((string)data["timestamp"], out _), "batch carries an ISO timestamp");
+
+        transport.TerminalMessages.Clear();
+        GameEventPublisher.SendPlayerPositions(new List<PlayerPositionEntry>(new PlayerPositionEntry[1001]));
+        Equal(0, transport.TerminalMessages.Count, "oversized batch is not emitted");
+        transport.CanPushPositions = false;
     }
 
     private static void AssertGiveItemProductionValidationAndCardinality()
@@ -3956,6 +3999,7 @@ namespace Takaro.WebSocket
         public readonly List<WebSocketMessage> TerminalMessages = new List<WebSocketMessage>();
         public readonly List<string> ErrorCodes = new List<string>();
         public int ProtocolVersion;
+        public bool CanPushPositions;
 
         public void Send(WebSocketMessage message)
         {

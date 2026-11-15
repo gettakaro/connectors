@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Takaro.Interfaces;
 using Takaro.Persistence;
+using Takaro.WebSocket;
 
 namespace Takaro.Services
 {
@@ -72,27 +73,40 @@ namespace Takaro.Services
                 return;
 
             var batch = new List<PositionSample>();
+            var positions = new List<PlayerPositionEntry>();
+            var seen = new HashSet<string>();
             foreach (EntityPlayer player in world.Players.list)
             {
                 ClientInfo cInfo = ConnectionManager.Instance.Clients.ForEntityId(player.entityId);
                 if (cInfo?.CrossplatformId == null)
                     continue;
 
+                string gameId = Shared.GameIdFromClientInfo(cInfo);
+                if (string.IsNullOrEmpty(gameId) || !seen.Add(gameId))
+                    continue;
+
                 UnityEngine.Vector3 position = player.GetPosition();
+                Vector3i rounded = new Vector3i(position);
                 batch.Add(
                     new PositionSample
                     {
-                        GameId = Shared.GameIdFromClientInfo(cInfo),
+                        GameId = gameId,
                         X = position.x,
                         Y = position.y,
                         Z = position.z,
                         Ping = cInfo.ping,
                     }
                 );
+                positions.Add(new PlayerPositionEntry
+                {
+                    GameId = gameId,
+                    Position = new TakaroPosition { X = rounded.x, Y = rounded.y, Z = rounded.z },
+                });
             }
 
             if (batch.Count > 0)
                 StateMirror.Instance.UpdatePositions(batch);
+            GameEventPublisher.SendPlayerPositions(positions);
         }
 
         public void OnInit() { }
