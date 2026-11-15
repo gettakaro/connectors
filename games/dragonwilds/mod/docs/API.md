@@ -109,7 +109,8 @@ player is `{gameId}`, `{epicOnlineServicesId}`, `{steamId}`, `{platformId:"epic:
 | type | data |
 |---|---|
 | `player-connected` / `player-disconnected` | `{player}` |
-| `chat-message` | `{msg, channel, player?}` (`channel` global/team/friends/whisper) |
+| `chat-message` | `{msg, channel, player?, position?}` (`position` when the sender has a readable pawn) |
+| `player-positions` | `{positions:[{gameId,position:{x,y,z,dimension}}], timestamp?}`; v1 manifest declares `intervalSeconds:5` |
 | `player-death` | `{player, position?, attacker?, msg?}` (`msg` = `<name> was killed by <creature>`) |
 | `entity-killed` | `{player, entity, weapon}` (`weapon` is a string, `""` when unresolved) |
 | `log` | `{msg}` redacted: `*Password` values, `?p=<base64>`, `*Token`/`Ticket` values; a line mentioning a password in free text becomes `[redacted: line mentions a password]` |
@@ -209,8 +210,10 @@ for it up to 15 s after login.
   latest when nothing is new.
 - `since > latestSeq` means the server restarted; reset to `0`.
 - `truncated: true` means events between `since` and the oldest buffered event were dropped.
-- Types: `player-connected`, `player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
-  `log`. All are wired (lane L2). `entity-killed` carries a readable `entity` name
+- Types: `player-connected`, `player-disconnected`, `chat-message`, `player-positions`, `player-death`, `entity-killed`,
+  `log`. `player-positions` snapshots are captured on the game thread every five seconds while a v1
+  Takaro connection is identified; players without a spawned, readable pawn are omitted. A failed
+  snapshot is skipped. Live acceptance of this new event remains unverified. `entity-killed` carries a readable `entity` name
   (`ADominionAICharacter::AIName`) with the Blueprint class in `entityCode`/`entityClass`, and the
   weapon that made the kill in `weapon`/`weaponCode`; `weaponSource` names the route that resolved
   it (the fatal damage event's source item, the killer's equipped main/off hand, the loadout scan,

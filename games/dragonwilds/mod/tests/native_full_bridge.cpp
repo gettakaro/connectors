@@ -66,6 +66,7 @@ Actions::Result Actions::PlayerLocation(const std::string& id) {
         return {200, "{\"x\":1,\"y\":2,\"z\":3,\"yaw\":90,\"ageMs\":0}"};
     return {501, "{\"error\":\"location unavailable\"}"};
 }
+Actions::Result Actions::PlayerPositions() { return {200, "[]"}; }
 Actions::Result Actions::Player(const std::string&) { return {404,"{}"}; }
 Actions::Result Actions::PlayerInventory(const std::string&) { return {200,"[]"}; }
 Actions::Result Actions::Items(const std::string&) { return {200,"[]"}; }

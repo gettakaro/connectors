@@ -111,7 +111,7 @@ bool ValidFrame(const std::string& s){
     Json p=j.value("payload",Json::object());if(!p.is_object()||!p.contains("data")||!p["data"].is_object())return false;
     const std::string type=p.value("type",std::string());
     return type=="player-connected"||type=="player-disconnected"||type=="chat-message"||
-           type=="player-death"||type=="entity-killed"||type=="log";
+           type=="player-death"||type=="entity-killed"||type=="log"||type=="player-positions";
 }
 void ApplyDerived(Snapshot& s,const NativeTransport::Frame& frame){
     Json wire=Json::parse(*frame,nullptr,false);

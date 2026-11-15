@@ -89,6 +89,7 @@ Result Player(const std::string&) { return {404, R"({"error":"player not online"
 Result PlayerLocation(const std::string&) {
     return locationDown ? Result{503, R"({"error":"player has no pawn yet"})"} : Result{200, R"({"x":10.5,"y":20,"z":-3,"yaw":90})"};
 }
+Result PlayerPositions() { return {200, "[]"}; }
 Result PlayerInventory(const std::string&) {
     return {200, R"([{"code":"Item_Log_Oak","name":"Oak Logs","amount":4,"inventory":"Inv","slot":0},{"code":"Item_Rune_Air","name":"Air Rune","amount":12,"inventory":"Inv","slot":1}])"};
 }
@@ -310,6 +311,17 @@ int main() {
               "chat-message whitelisted");
         Check(h.Event({{"seq", 5}, {"type", "chat-message"}, {"data", {{"msg", "sys"}, {"channel", "team"}}}}) ==
                   Json({{"msg", "sys"}, {"channel", "team"}}), "player-less chat");
+        Check(h.Event({{"seq", 51}, {"type", "chat-message"}, {"data", {{"msg", "here"},
+                  {"player", pluginPlayer}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}}}}})["position"] ==
+                  Json({{"x", 1}, {"y", 2}, {"z", 3}, {"dimension", "overworld"}}), "chat position mapped");
+        Check(h.Event({{"seq", 52}, {"type", "player-positions"}, {"data", {{"positions", Json::array({
+                  Json{{"gameId", A}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}}}})}}}}) ==
+                  Json({{"positions", Json::array({Json{{"gameId", A}, {"position", {{"x", 1}, {"y", 2},
+                  {"z", 3}, {"dimension", "overworld"}}}}})}}), "positions snapshot mapped");
+        Check(!h.engine->MapEvent(Json{{"seq", 53}, {"type", "player-positions"}, {"data", {{"positions", Json::array({
+                  Json{{"gameId", A}, {"position", {{"x", 1}, {"y", 2}, {"z", 3}}}},
+                  Json{{"gameId", A}, {"position", {{"x", 4}, {"y", 5}, {"z", 6}}}}})}}}}.dump()).valid,
+              "duplicate player id rejected in positions batch");
         Json death = h.Event({{"seq", 6}, {"type", "player-death"}, {"data", {{"player", pluginPlayer}, {"killerEntity", "AI_Goblin_Melee"},
                                                                               {"source", "telemetry"}}}});
         Check(death == Json({{"player", takaroPlayer}, {"msg", "Limon was killed by AI_Goblin_Melee"}}), "creature killer in msg");
@@ -649,6 +661,10 @@ int main() {
             std::vector<std::string> names;
             for (const auto& c : manifest) names.push_back(c["name"].get<std::string>());
             Check(std::set<std::string>(names.begin(), names.end()).size() == names.size(), "manifest has no duplicate names");
+            const Json positionsCap = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) {
+                return c["name"] == "events.player-positions";
+            });
+            Check(positionsCap["parameters"]["intervalSeconds"] == 5, "positions interval declared");
             for (const char* name : {"players.list", "players.get", "players.location", "moderation.listBans",
                                      "server.shutdown", "events.chat-message", "events.entity-killed", "events.log"})
                 Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);

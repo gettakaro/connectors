@@ -264,6 +264,9 @@ Json MapEvent(const Json& e) {
         if (channel != "team" && channel != "friends" && channel != "whisper") channel = "global";
         out = {{"msg", Str(d, "msg", Str(d, "message"))}, {"channel", channel}};
         if (d.contains("player") && d["player"].is_object()) out["player"] = Player(d["player"]);
+        if (d.contains("position") && d["position"].is_object()) out["position"] = d["position"];
+    } else if (type == "player-positions") {
+        out = {{"positions", d.value("positions", Json::array())}};
     } else if (type == "player-death") {
         out = {{"player", Player(d.value("player", d))}};
         if (d.contains("attacker") && d["attacker"].is_object()) {
@@ -1061,6 +1064,7 @@ void EnforceRequestDeadline() {
 
 void BridgeLoop() {
     auto nextPoll = Clock::now();
+    auto nextPositions = Clock::now();
     auto nextExpiry = Clock::now(), nextReconcile = Clock::now(), nextBanIntent = Clock::now(),
          nextBanMetadata = Clock::now(),
          nextDurability = Clock::now();
@@ -1298,6 +1302,17 @@ void BridgeLoop() {
                     if (!queued) SendError(completed.id, currentEpoch, "native response queue overloaded");
                 }
             }
+        }
+        if (!gateMode && identified && protocolVersion == 1 && Clock::now() >= nextPositions) {
+            const uint64_t snapshotEpoch = currentEpoch;
+            Actions::Result snapshot = Actions::PlayerPositions();
+            if (snapshot.status == 200 && identified && liveEpoch && currentEpoch == snapshotEpoch) {
+                PluginState::Get().EmitEvent("player-positions", "{\"positions\":" + snapshot.body + "}");
+            } else if (snapshot.status != 200) {
+                lastError = "player positions snapshot: " + snapshot.body;
+            }
+            // Anchor cadence to publication, since a game-thread job may wait behind other work.
+            nextPositions = Clock::now() + std::chrono::seconds(5);
         }
         if (Clock::now() >= nextPoll) { PollEvents(); nextPoll = Clock::now() + std::chrono::seconds(1); }
         const auto rawDeadline = Clock::now() + kRawLogPassBudget;

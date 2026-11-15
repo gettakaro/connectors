@@ -347,6 +347,18 @@ Json MapEventData(const std::string& type, const Json& raw) {
         out["channel"] = Channel(Str(d, "channel"));
         Json p = Object(d.value("player", Json::object()));
         if (!p.empty()) out["player"] = Player(p);
+        if (d.contains("position") && d["position"].is_object()) out["position"] = Position(d["position"]);
+    } else if (type == "player-positions") {
+        Json positions = d.value("positions", Json::array());
+        if (!positions.is_array() || positions.size() > 1000) throw std::runtime_error("invalid player positions batch");
+        std::set<std::string> seen;
+        out["positions"] = Json::array();
+        for (const Json& row : positions) {
+            Json object = Object(row);
+            std::string id = Str(object, "gameId");
+            if (id.empty() || !seen.insert(id).second) throw std::runtime_error("invalid player positions batch");
+            out["positions"].push_back({{"gameId", id}, {"position", Position(object.value("position", Json::object()))}});
+        }
     } else if (type == "player-death") {
         withPlayer();
         Json a = Object(d.value("attacker", Json::object()));
@@ -1374,6 +1386,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
                              "events.entity-killed", "events.log"})
         manifest.push_back(Json{{"name", name}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
+    manifest.push_back(Json{{"name", "events.player-positions"}, {"parameters", {{"intervalSeconds", 5}}}});
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
 }
