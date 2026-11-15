@@ -91,6 +91,7 @@ Checked on Empyrion v1.20 build 5229 (Steam build 26569354), 2026-11-13. ✅ wor
 | Connection | ✅ | Reconnects by itself after a server restart, a network drop or a refused connection: within about 2 s after a short drop, and within the next retry (at most 60 s apart) after a longer outage. A silently dead link is noticed within about 30 s. Events from the outage are sent afterwards. |
 | Player list | ✅ | Name, ping and IP. Steam players by SteamID64; Epic Games Store players by the game's own numeric id. Offline players answer with their last known data. |
 | Player location | ✅ | Live position, with the planet or playfield as the map layer. |
+| Position updates | ⚠️ | Protocol v1 sends a fresh snapshot of every online player every 5 seconds; a failed game read skips that snapshot. Chat carries a freshly read position. Live proof for this update is pending. |
 | Teleport | ✅ | Within the player's playfield, or to another planet or playfield. |
 | Player inventory | ✅ | Toolbelt and backpack, with stack sizes. |
 | Item list | ✅ | All items and blocks, with their in-game names. |

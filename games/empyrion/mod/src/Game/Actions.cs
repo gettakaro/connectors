@@ -222,6 +222,24 @@ namespace TakaroEmpyrion.Game
             return list;
         }
 
+        /// <summary>Reads positions from the game for one v1 snapshot.</summary>
+        public async Task<JArray> CurrentPositions()
+        {
+            var ids = (IdList)await _game.Request(CmdId.Request_Player_List, null);
+            var online = ids?.list ?? new List<int>();
+            var positions = new JArray();
+            var seen = new HashSet<string>();
+            foreach (int id in online)
+            {
+                PlayerRecord r = await RefreshPlayer(id);
+                if (!seen.Add(r.SteamId)) continue;
+                JObject position = PlayerRegistry.PositionOf(r);
+                if (position == null) throw new ActionFailure("player " + id + " has no current position");
+                positions.Add(new JObject { ["gameId"] = r.SteamId, ["position"] = position });
+            }
+            return positions;
+        }
+
         /// <summary>Test seam: replaces the telnet "plys" read when set.</summary>
         public Func<string> PlysReader;
 

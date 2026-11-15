@@ -32,6 +32,7 @@ namespace TakaroEmpyrion
         bool _started;
         PlayfieldAgent _agent;
         MapService _map;
+        PositionPublisher _positions;
         System.Threading.Timer _mapTimer;
 
         // ------------------------------------------------------------ IMod (v2)
@@ -96,6 +97,11 @@ namespace TakaroEmpyrion
             // manifest already names every planet, then once a minute for planets whose terrain appears later.
             try { _map.Rescan(); } catch (Exception e) { _log.Warn("map: scan failed: " + e.Message); }
             _client.Start();
+            if (_cfg.ProtocolVersion >= 1)
+            {
+                _positions = new PositionPublisher(_actions, _client, _log);
+                _positions.Start();
+            }
             _mapTimer = new System.Threading.Timer(_ => RescanMap(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             _started = true;
         }
@@ -126,6 +132,7 @@ namespace TakaroEmpyrion
             _agent?.Stop();
             if (!_started) return;
             _mapTimer?.Dispose();
+            _positions?.Stop();
             _log.Info("Takaro connector stopping");
             try { _players.SaveSoon(force: true); } catch (Exception) { }
             _client.Stop();

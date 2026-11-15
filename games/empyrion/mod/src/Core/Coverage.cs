@@ -45,6 +45,7 @@ namespace TakaroEmpyrion.Core
             new Entry("player-connected", "event", Live, "EventPlayerConnected", "Event_Player_Connected"),
             new Entry("player-disconnected", "event", Live, "EventPlayerDisconnected", "Event_Player_Disconnected"),
             new Entry("chat-message", "event", Live, "EventChatMessage", "IApplication.ChatMessageSent (Event_ChatMessage fallback)"),
+            new Entry("player-positions", "event", Live, "{timestamp,positions:[{gameId,position:{x,y,z,dimension}}]}", "Request_Player_List plus fresh PlayerInfo.pos for each online player, every 5 seconds on protocol v1"),
             new Entry("player-death", "event", Live, "EventPlayerDeath", "Event_Statistics PlayerDied"),
             new Entry("entity-killed", "event", Live, "EventEntityKilled", "Event_GameEvent KilledEntity"),
             new Entry("log", "event", Live, "EventLogLine", "playfield load/unload, budgeted"),
