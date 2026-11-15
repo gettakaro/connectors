@@ -137,8 +137,9 @@ All published via `mod/src/WebSocket/GameEventPublisher.cs` (non-blocking outbou
   online-player readback; shutdown disconnects remain excluded
 - **`chat-message`** — Live-supported; unique vanilla-client message is correlated through native and Takaro event timestamps
 - **`player-positions`** — implemented for protocol v1; the existing main-thread
-  sampler pushes the full online-player snapshot every 3 seconds. Live Takaro
-  verification is pending.
+  sampler pushes the full online-player snapshot every 3 seconds. Pending snapshots
+  replace older ones, expire after 5 seconds, and are discarded on reconnect rather
+  than replayed. Live Takaro verification is pending.
 - **`entity-killed`** — Live-supported; real vanilla-client non-player kill with
   player attribution and non-empty held weapon
 - **`player-death`** — Live-supported; real vanilla-client fall death with

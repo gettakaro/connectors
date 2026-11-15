@@ -48,6 +48,10 @@ namespace Takaro.Services
             /// <summary>A `log` game event, written within the log budget.</summary>
             public bool IsLog;
 
+            public bool IsPosition;
+            public long Generation;
+            public long CreatedAtTicks;
+
             /// <summary>Position in the event stream; 0 for frames that are not events and for events not yet picked to be written.</summary>
             public long Seq;
         }
@@ -116,10 +120,21 @@ namespace Takaro.Services
             ConfirmsByPong && _inFlight.Count > 0 && _lastPingMark < _writeSequence;
 
         /// <summary>Appends a frame; returns how many oldest frames were dropped to stay under the cap.</summary>
-        public int Enqueue(string json, bool replayable, bool isPing, bool isLog = false)
+        public int Enqueue(
+            string json,
+            bool replayable,
+            bool isPing,
+            bool isLog = false,
+            bool isPosition = false,
+            long generation = 0,
+            long createdAtTicks = 0
+        )
         {
             if (string.IsNullOrEmpty(json))
                 return 0;
+
+            if (isPosition)
+                DropPendingPositions();
 
             _pending.AddLast(
                 new Entry
@@ -128,6 +143,9 @@ namespace Takaro.Services
                     Replayable = replayable,
                     IsPing = isPing,
                     IsLog = replayable && isLog,
+                    IsPosition = isPosition,
+                    Generation = generation,
+                    CreatedAtTicks = createdAtTicks,
                 }
             );
             return TrimPending();
@@ -136,6 +154,7 @@ namespace Takaro.Services
         /// <summary>The oldest frame, numbered if it is an event, whatever the log budget.</summary>
         public Entry PeekHead()
         {
+            DropExpiredPositions();
             return Number(_pending.First?.Value);
         }
 
@@ -145,6 +164,7 @@ namespace Takaro.Services
         /// </summary>
         public Entry NextToSend()
         {
+            DropExpiredPositions();
             bool logsOpen = LogBudgetLeft();
             bool eventsHeld = false;
             for (LinkedListNode<Entry> node = _pending.First; node != null; node = node.Next)
@@ -308,13 +328,26 @@ namespace Takaro.Services
         public int RequeueInFlight(long newGeneration, bool confirmsByPong = true)
         {
             ConfirmsByPong = confirmsByPong;
-            int requeued = _inFlight.Count;
+            int requeued = 0;
             for (
                 LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.Last;
                 node != null;
                 node = node.Previous
             )
+            {
+                if (node.Value.Value.IsPosition)
+                    continue;
                 _pending.AddFirst(node.Value.Value);
+                requeued++;
+            }
+
+            for (LinkedListNode<Entry> node = _pending.First; node != null; )
+            {
+                LinkedListNode<Entry> next = node.Next;
+                if (node.Value.IsPosition && node.Value.Generation != newGeneration)
+                    _pending.Remove(node);
+                node = next;
+            }
 
             _inFlight.Clear();
             _logsInFlight = 0;
@@ -330,6 +363,32 @@ namespace Takaro.Services
             if (entry != null && entry.Replayable && entry.Seq == 0)
                 entry.Seq = _nextSeq++;
             return entry;
+        }
+
+        private void DropPendingPositions()
+        {
+            for (LinkedListNode<Entry> node = _pending.First; node != null; )
+            {
+                LinkedListNode<Entry> next = node.Next;
+                if (node.Value.IsPosition)
+                    _pending.Remove(node);
+                node = next;
+            }
+        }
+
+        private void DropExpiredPositions()
+        {
+            long now = _utcTicks();
+            for (LinkedListNode<Entry> node = _pending.First; node != null; )
+            {
+                LinkedListNode<Entry> next = node.Next;
+                if (
+                    node.Value.IsPosition
+                    && now - node.Value.CreatedAtTicks >= TimeSpan.FromSeconds(5).Ticks
+                )
+                    _pending.Remove(node);
+                node = next;
+            }
         }
 
         private bool LogBudgetLeft()

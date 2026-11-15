@@ -63,6 +63,7 @@ public static partial class ContractHarness
             AssertListLocationsMatchesLocationDto();
             AssertMissingLocalisationIsNotShown();
             AssertOutboundLedgerReplaysUnconfirmedEvents();
+            AssertPositionSnapshotsStayCurrentAcrossReconnects();
             AssertBanCaptureKeepsOneRecordPerPlayer();
             AssertUnbanLiftsTheEntriesTheMirrorReports();
             AssertBanCaptureMergesBothStores();
@@ -1234,6 +1235,62 @@ public static partial class ContractHarness
         Equal(2, capped.InFlightCount, "in-flight list is capped");
         Equal(2, capped.RequeueInFlight(1), "capped in-flight events are requeued");
         Equal("x2", capped.PeekHead().Json, "requeue keeps the newest unconfirmed events in order");
+    }
+
+    private static void AssertPositionSnapshotsStayCurrentAcrossReconnects()
+    {
+        long now = DateTime.UtcNow.Ticks;
+        var ledger = new OutboundLedger(10, 10, utcTicks: () => now);
+        ledger.RequeueInFlight(1, false);
+
+        ledger.Enqueue(
+            "old-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        ledger.Enqueue(
+            "new-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        Equal(1, ledger.PendingCount, "new snapshot replaces an unsent position batch");
+        Equal("new-position", ledger.PeekHead().Json, "latest position is sent");
+
+        ledger.Enqueue("gameplay", true, false);
+        ledger.MarkHeadWritten();
+        ledger.MarkHeadWritten();
+        Equal(2, ledger.InFlightCount, "position and gameplay await acknowledgement");
+        Equal(1, ledger.RequeueInFlight(2, false), "only gameplay replays after reconnect");
+        Equal("gameplay", ledger.PeekHead().Json, "durable gameplay keeps its order");
+
+        ledger.Enqueue(
+            "stale-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        ledger.RequeueInFlight(3, false);
+        Equal(1, ledger.PendingCount, "a queued position from the old socket is discarded");
+
+        ledger.Enqueue(
+            "expiring-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 3,
+            createdAtTicks: now
+        );
+        now += TimeSpan.FromSeconds(5).Ticks;
+        Equal("gameplay", ledger.NextToSend().Json, "an expired snapshot never reaches the socket");
+        Equal(1, ledger.PendingCount, "expired snapshot is removed without dropping gameplay");
     }
 
     private static Takaro.Persistence.BanRecord BanRecordFor(
@@ -4044,6 +4101,11 @@ namespace Takaro.WebSocket
         public void Send(WebSocketMessage message)
         {
             TerminalMessages.Add(message);
+        }
+
+        public void SendPosition(WebSocketMessage message)
+        {
+            Send(message);
         }
 
         public void SendErrorResponse(

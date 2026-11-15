@@ -226,6 +226,23 @@ namespace Takaro.WebSocket
             );
         }
 
+        public void SendPosition(WebSocketMessage message)
+        {
+            if (!CanPushPositions || _outbound == null || _outbound.IsAddingCompleted)
+                return;
+
+            _outbound.Add(
+                new OutboundLedger.Entry
+                {
+                    Json = Newtonsoft.Json.JsonConvert.SerializeObject(message),
+                    Replayable = true,
+                    IsPosition = true,
+                    Generation = _session.Generation,
+                    CreatedAtTicks = DateTime.UtcNow.Ticks,
+                }
+            );
+        }
+
         /// <summary>The protocol version Takaro selected; 0 before identify.</summary>
         public int ProtocolVersion => Math.Max(0, _session.ProtocolVersion);
 
@@ -289,7 +306,27 @@ namespace Takaro.WebSocket
             if (entry == null)
                 return;
 
-            if (_ledger.Enqueue(entry.Json, entry.Replayable, entry.IsPing, entry.IsLog) > 0)
+            if (
+                entry.IsPosition
+                && (
+                    !CanPushPositions
+                    || entry.Generation != _session.Generation
+                    || DateTime.UtcNow.Ticks - entry.CreatedAtTicks >= TimeSpan.FromSeconds(5).Ticks
+                )
+            )
+                return;
+
+            if (
+                _ledger.Enqueue(
+                    entry.Json,
+                    entry.Replayable,
+                    entry.IsPing,
+                    entry.IsLog,
+                    entry.IsPosition,
+                    entry.Generation,
+                    entry.CreatedAtTicks
+                ) > 0
+            )
             {
                 _headFailureCount = 0;
                 if (!_pendingOverflowLogged)

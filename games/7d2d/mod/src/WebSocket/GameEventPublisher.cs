@@ -108,13 +108,22 @@ namespace Takaro.WebSocket
             )
                 return;
 
-            SendGameEvent(
-                "player-positions",
-                new Dictionary<string, object>
-                {
-                    { "timestamp", System.DateTime.UtcNow.ToString("o") },
-                    { "positions", positions },
-                }
+            WebSocketTransport.Instance.SendPosition(
+                WebSocketMessage.Create(
+                    WebSocketMessage.MessageTypes.GameEvent,
+                    new Dictionary<string, object>
+                    {
+                        { "type", "player-positions" },
+                        {
+                            "data",
+                            new Dictionary<string, object>
+                            {
+                                { "timestamp", System.DateTime.UtcNow.ToString("o") },
+                                { "positions", positions },
+                            }
+                        },
+                    }
+                )
             );
         }
 
