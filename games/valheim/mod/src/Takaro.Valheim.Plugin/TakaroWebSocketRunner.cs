@@ -28,6 +28,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly PlayerLifecyclePollCoordinator lifecycleCoordinator = new();
     private readonly SuppressedResponseLogLimiter suppressedResponseLogs = new(TimeSpan.FromMinutes(1));
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
+    private DateTimeOffset lastPositionBatchAt = DateTimeOffset.MinValue;
     private readonly PendingEventQueue pendingEvents = new(capacity: 1000);
     private readonly SemaphoreSlim flushLock = new(1, 1);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
@@ -536,15 +537,43 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
                 var onlinePlayers = players.ToArray();
                 var playersWithObservedPositions = new List<string>();
-                foreach (var player in onlinePlayers)
+                IReadOnlyList<PlayerPositionSample>? positions = null;
+                if (protocolVersion >= 1 && adapter is IValheimPositionSnapshotAdapter positionAdapter)
                 {
-                    var location = await RunAdapterActionAsync(
-                        () => adapter.GetPlayerLocationAsync(player.GameId, cancellationToken),
+                    positions = await mainThreadActions.ScheduleAsync(
+                        positionAdapter.CaptureOnlinePositions,
                         cancellationToken);
-                    if (location.Success)
+                }
+
+                if (positions is not null)
+                {
+                    playersWithObservedPositions.AddRange(positions.Select(position => position.GameId));
+                }
+                else
+                {
+                    foreach (var player in onlinePlayers)
                     {
-                        playersWithObservedPositions.Add(player.GameId);
+                        var location = await RunAdapterActionAsync(
+                            () => adapter.GetPlayerLocationAsync(player.GameId, cancellationToken),
+                            cancellationToken);
+                        if (location.Success)
+                        {
+                            playersWithObservedPositions.Add(player.GameId);
+                        }
                     }
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                if (identified && protocolVersion >= 1 && positions is not null
+                    && positions.Count == onlinePlayers.Length
+                    && new HashSet<string>(positions.Select(position => position.GameId), StringComparer.Ordinal)
+                        .SetEquals(onlinePlayers.Select(player => player.GameId))
+                    && now - lastPositionBatchAt >= PlayerLifecyclePollInterval)
+                {
+                    pendingEvents.Enqueue(TakaroProtocol.CreateGameEvent(
+                        GameEventTypes.PlayerPositions,
+                        EventFactory.PlayerPositions(now, positions)));
+                    lastPositionBatchAt = now;
                 }
 
                 var events = lifecycleCoordinator.Update(

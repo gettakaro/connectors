@@ -37,7 +37,8 @@ public sealed class CapabilityRegistryTests
         "player-disconnected",
         "chat-message",
         "player-death",
-        "entity-killed"
+        "entity-killed",
+        "player-positions"
     ];
 
     private static readonly HashSet<string> AllowedStatuses =
@@ -113,7 +114,8 @@ public sealed class CapabilityRegistryTests
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         foreach (var eventName in RequiredEvents)
         {
-            Assert.AreEqual("live-supported", root.GetProperty("events").GetProperty(eventName).GetString(), eventName);
+            Assert.AreEqual(eventName == "player-positions" ? "schema-fallback" : "live-supported",
+                root.GetProperty("events").GetProperty(eventName).GetString(), eventName);
         }
 
         var ownership = root.GetProperty("ownership");
