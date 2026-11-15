@@ -29,6 +29,7 @@ export const GAME_EVENT_TYPES = [
   'chat-message',
   'player-death',
   'entity-killed',
+  'player-positions',
 ] as const;
 
 export type GameEventType = (typeof GAME_EVENT_TYPES)[number];

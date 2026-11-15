@@ -457,9 +457,10 @@ describe('every outgoing gameEvent stays inside Takaro’s DTO whitelist', () =>
     log: ['timestamp', 'msg'],
     'player-connected': ['timestamp', 'msg', 'player'],
     'player-disconnected': ['timestamp', 'msg', 'player'],
-    'chat-message': ['timestamp', 'msg', 'player', 'channel', 'recipient'],
+    'chat-message': ['timestamp', 'msg', 'player', 'channel', 'recipient', 'position'],
     'player-death': ['timestamp', 'msg', 'player', 'attacker', 'position'],
     'entity-killed': ['timestamp', 'msg', 'player', 'entity', 'weapon'],
+    'player-positions': ['timestamp', 'msg', 'positions'],
   };
 
   it('the whitelist matches Takaro’s gameEvents DTOs field for field', () => {

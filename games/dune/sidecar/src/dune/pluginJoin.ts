@@ -72,6 +72,7 @@ export class PluginJoin {
   private byRef = new Map<string, JoinResult>();
   private byFlsId = new Map<string, JoinResult>();
   private lastRefreshAt = 0;
+  private refreshInFlight: Promise<void> | null = null;
   private lastError: string | null = null;
   private counters = { refreshes: 0, resolved: 0, unresolved: 0, ambiguousNames: 0, disagreements: 0 };
 
@@ -162,7 +163,13 @@ export class PluginJoin {
   private async ensureFresh(): Promise<void> {
     const ttl = this.options.ttlMs ?? 5000;
     if (this.lastRefreshAt && this.now() - this.lastRefreshAt < ttl) return;
-    await this.refresh();
+    if (!this.refreshInFlight) this.refreshInFlight = this.refresh();
+    const pending = this.refreshInFlight;
+    try {
+      await pending;
+    } finally {
+      if (this.refreshInFlight === pending) this.refreshInFlight = null;
+    }
   }
 
   /** The FLS id (Takaro `gameId`) for a plugin ref, or null. */
