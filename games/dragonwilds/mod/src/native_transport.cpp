@@ -25,8 +25,8 @@ NoticeSink sink;
 std::thread worker;
 std::atomic<bool> stopping{false};
 lws_context* context = nullptr; // read by Queue only while mu is held
-std::deque<Outbound> controls, criticalResponses, responses, events;
-size_t controlBytes = 0, criticalBytes = 0, responseBytes = 0, eventBytes = 0;
+std::deque<Outbound> controls, criticalResponses, responses, positions, events;
+size_t controlBytes = 0, criticalBytes = 0, responseBytes = 0, positionBytes = 0, eventBytes = 0;
 uint64_t rejected = 0, epoch = 0, nextWriteId = 0;
 uint64_t prunedEvents = 0, minDeliverableOutboxId = 0;
 std::atomic<size_t> transientBytes{0};
@@ -70,6 +70,7 @@ bool Pop(Outbound& out) {
     if (!controls.empty()) { q = &controls; bytes = &controlBytes; }
     else if (!criticalResponses.empty()) { q = &criticalResponses; bytes = &criticalBytes; }
     else if (!responses.empty()) { q = &responses; bytes = &responseBytes; }
+    else if (!positions.empty()) { q = &positions; bytes = &positionBytes; }
     else if (!events.empty()) { q = &events; bytes = &eventBytes; }
     if (!q) return false;
     out = std::move(q->front());
@@ -197,8 +198,8 @@ int Callback(lws* wsi, lws_callback_reasons reason, void* /*user*/, void* in, si
         connected = false;
         // Every queued outbound frame belongs to the old connection. The bridge
         // retains event ownership and replays after the next identify.
-        controls.clear(); criticalResponses.clear(); responses.clear(); events.clear();
-        controlBytes = criticalBytes = responseBytes = eventBytes = 0;
+        controls.clear(); criticalResponses.clear(); responses.clear(); positions.clear(); events.clear();
+        controlBytes = criticalBytes = responseBytes = positionBytes = eventBytes = 0;
         closeRequest.reset();
         return 0;
     }
@@ -339,8 +340,8 @@ void Stop() {
     { std::lock_guard<std::mutex> g(mu); if (context) lws_cancel_service(context); }
     if (worker.joinable()) worker.join();
     std::lock_guard<std::mutex> g(mu);
-    controls.clear(); criticalResponses.clear(); responses.clear(); events.clear();
-    controlBytes = criticalBytes = responseBytes = eventBytes = 0;
+    controls.clear(); criticalResponses.clear(); responses.clear(); positions.clear(); events.clear();
+    controlBytes = criticalBytes = responseBytes = positionBytes = eventBytes = 0;
     closeRequest.reset();
     connected = false;
     transientBytes = 0;
@@ -375,6 +376,7 @@ QueueResult Queue(Send send) {
     // The bridge reserves 16 MiB of the aggregate 32 MiB response budget.
     // Normal and critical responses share this transport half.
     case Kind::Response: q=&responses; bytes=&responseBytes; maxCount=128; maxBytes=16*1024*1024; break;
+    case Kind::Position: q=&positions; bytes=&positionBytes; maxCount=1; maxBytes=1024*1024; break;
     // The bridge's durable outbox owns the same immutable frame reference.
     // This logical byte tally limits staging, but the payload is not copied.
     case Kind::Event: q=&events; bytes=&eventBytes; maxCount=5000; maxBytes=32*1024*1024; break;
@@ -382,6 +384,7 @@ QueueResult Queue(Send send) {
     if ((send.kind == Kind::Response && n > 8*1024*1024) || n > maxBytes) {
         ++rejected; return {QueueStatus::TooLarge, {}};
     }
+    if (send.kind == Kind::Position) { q->clear(); *bytes = 0; }
     if (q->size() >= maxCount || *bytes + n > maxBytes ||
         ((send.kind == Kind::Response || send.kind == Kind::CriticalResponse) &&
          responseBytes + criticalBytes + n > 16*1024*1024)) {
@@ -416,8 +419,8 @@ bool Retarget(std::string url, bool connect) {
 }
 Stats Snapshot() {
     std::lock_guard<std::mutex> g(mu);
-    return {connected, epoch, controls.size()+criticalResponses.size()+responses.size()+events.size(),
-            controlBytes+criticalBytes+responseBytes+eventBytes, transientBytes.load(),
+    return {connected, epoch, controls.size()+criticalResponses.size()+responses.size()+positions.size()+events.size(),
+            controlBytes+criticalBytes+responseBytes+positionBytes+eventBytes, transientBytes.load(),
             rejected, prunedEvents, lastError};
 }
 } // namespace NativeTransport

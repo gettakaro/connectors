@@ -63,11 +63,12 @@ an installation. `plugin.log` lines are redacted (`*Password`, `*Token`, `Ticket
   error; a running one is answered with an error, finishes, and its late response is suppressed).
   Unknown action → error frame `Unknown Takaro action '<x>'`. Request ids over 128 bytes close the
   socket; duplicates are refused.
-- Events: every outgoing `gameEvent` is built by one whitelist (`NativeBehavior::MapEventData`) with
-  exactly the keys Takaro's DTOs accept, plus `timestamp` (the moment the game produced it). Events
-  are admitted durably, sent only on an OPEN and identified socket, and confirmed only by a pong that
-  follows the write (F10, F20); unconfirmed events are re-sent after the next identify, also after a
-  crash.
+- Events: gameplay `gameEvent` frames are built by one whitelist (`NativeBehavior::MapEventData`) with
+  exactly the keys Takaro's DTOs accept, plus `timestamp` (the moment the game produced it). They
+  are admitted durably and sent only on an OPEN and identified socket. Version 0 confirms them by a
+  pong after the write (F10, F20); version 1 uses `eventAck`. Unconfirmed gameplay events are re-sent
+  after the next identify, also after a crash. Position snapshots use a separate replaceable,
+  connection-scoped queue and are never replayed.
 - Shutdown (`shutdown`, or `executeConsoleCommand shutdown`): the response is written and pong-
   confirmed first (bounded, 2 s), then the plugin saves (`CanSave` → `RequestSaveGame`) and sends
   itself `SIGTERM`. A response that cannot be written cancels the shutdown. Not gated, as in 0.2.x.
@@ -212,7 +213,7 @@ for it up to 15 s after login.
 - `truncated: true` means events between `since` and the oldest buffered event were dropped.
 - Types: `player-connected`, `player-disconnected`, `chat-message`, `player-positions`, `player-death`, `entity-killed`,
   `log`. `player-positions` snapshots are captured on the game thread every five seconds while a v1
-  Takaro connection is identified; send-side replay also preserves that interval. Players without a spawned, readable pawn are omitted. A failed
+  Takaro connection is identified. These connection-scoped snapshots are discarded on disconnect rather than replayed. Players without a spawned, readable pawn are omitted. A failed
   snapshot is skipped. Live acceptance of this new event remains unverified. `entity-killed` carries a readable `entity` name
   (`ADominionAICharacter::AIName`) with the Blueprint class in `entityCode`/`entityClass`, and the
   weapon that made the kill in `weapon`/`weaponCode`; `weaponSource` names the route that resolved

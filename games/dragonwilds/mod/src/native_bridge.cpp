@@ -749,7 +749,6 @@ void PollEvents() {
 // confirmed together with the next delivered event (counted in rawLogLosses). Every other event
 // type is sent in order, never delayed by logs.
 std::deque<int64_t> logSendTimes;
-Clock::time_point nextPositionSend;
 bool LogSendAllowed() {
     static const int limit = [] {
         const char* v = ConfigFile::Get("DRAGONWILDS_LOG_RATE");
@@ -781,13 +780,10 @@ void FlushEvents() {
                 ++rawLogLosses;
                 continue;
             }
-            // Replays after a reconnect also obey the manifest interval. Keep stream order intact.
-            if (type == "player-positions" && Clock::now() < nextPositionSend) break;
             const auto sent = protocolVersion == 1 ? StampEvent(e.frame, e.outboxId) : e.frame;
             auto queued = NativeTransport::Queue({NativeTransport::Kind::Event, sent,
                                                   currentEpoch, e.outboxId, false});
             if (!queued) break;
-            if (type == "player-positions") nextPositionSend = Clock::now() + std::chrono::seconds(5);
             sentEpochByOutboxId[e.outboxId] = currentEpoch;
             if (protocolVersion == 1) {
                 highestSentSeq = std::max(highestSentSeq, e.outboxId);
@@ -1069,6 +1065,7 @@ void EnforceRequestDeadline() {
 void BridgeLoop() {
     auto nextPoll = Clock::now();
     auto nextPositions = Clock::now();
+    uint64_t positionSeq = 0;
     auto nextExpiry = Clock::now(), nextReconcile = Clock::now(), nextBanIntent = Clock::now(),
          nextBanMetadata = Clock::now(),
          nextDurability = Clock::now();
@@ -1120,6 +1117,7 @@ void BridgeLoop() {
                 flushConfirm();
             if (n.type == NativeTransport::NoticeType::Open) {
                 currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0;
+                positionSeq = 0;
                 highestSentSeq = 0; unackedSince.reset();
                 sentEpochByOutboxId.clear();
                 Json p = {{"identityToken", identity}};
@@ -1311,7 +1309,15 @@ void BridgeLoop() {
             const uint64_t snapshotEpoch = currentEpoch;
             Actions::Result snapshot = Actions::PlayerPositions();
             if (snapshot.status == 200 && identified && liveEpoch && currentEpoch == snapshotEpoch) {
-                PluginState::Get().EmitEvent("player-positions", "{\"positions\":" + snapshot.body + "}");
+                Json frame = {{"type", "gameEvent"}, {"payload", {
+                    {"type", "player-positions"},
+                    {"data", {{"positions", Json::parse(snapshot.body)}}},
+                    {"streamId", StreamId() + "-positions-" + std::to_string(currentEpoch)},
+                    {"seq", positionSeq + 1}
+                }}};
+                if (NativeTransport::Queue({NativeTransport::Kind::Position,
+                                            std::make_shared<const std::string>(frame.dump()),
+                                            currentEpoch, 0, false})) ++positionSeq;
             } else if (snapshot.status != 200) {
                 lastError = "player positions snapshot: " + snapshot.body;
             }
