@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Takaro.Interfaces;
 using Takaro.Persistence;
 using Takaro.WebSocket;
@@ -19,7 +20,7 @@ namespace Takaro.Services
         private static readonly TimeSpan SampleInterval = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan BanSyncInterval = TimeSpan.FromSeconds(60);
 
-        private DateTime _nextSampleUtc = DateTime.MinValue;
+        private long _nextSampleTicks;
         private DateTime _nextBanSyncUtc = DateTime.MinValue;
 
         // GameUpdate runs before GameStartDone, when the database is not open yet.
@@ -53,9 +54,10 @@ namespace Takaro.Services
 
             DateTime now = DateTime.UtcNow;
 
-            if (now >= _nextSampleUtc)
+            long ticks = Stopwatch.GetTimestamp();
+            if (ticks >= _nextSampleTicks)
             {
-                _nextSampleUtc = now + SampleInterval;
+                _nextSampleTicks = ticks + (long)(SampleInterval.TotalSeconds * Stopwatch.Frequency);
                 SamplePositions();
             }
 
