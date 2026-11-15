@@ -25,9 +25,10 @@ games/conan-exiles/
 
 catalog/conan-exiles/
     game.json                     # the Steam watch: app 443030, depot 443032, branch public
-    targets/linux-26552396.json   # Linux: the current pinned server build, images, deps, file hashes
-    targets/windows-26552396.json # Windows: the same Steam build, depot 443031, zig toolchain
-    targets/*-25792439.json       # the previous builds, still pinned and still built
+    targets/linux-26672347.json   # Linux: the current pinned server build, images, deps, file hashes
+    targets/windows-26672347.json # Windows: the same Steam build, depot 443031, zig toolchain
+    targets/*-26552396.json       # the previous builds, still pinned and still built
+    targets/*-25792439.json
     targets/*-25738716.json
     targets/*-25639945.json
 ```
@@ -35,10 +36,10 @@ catalog/conan-exiles/
 ## The pinned server build
 
 The connector is built and verified against exact server builds. The default is declared in
-`catalog/conan-exiles/targets/linux-26552396.json`: Steam app `443030`, branch `public`, build
-`26552396`, depot `443032` manifest `8701611541212685717` plus the Steamworks redistributable depot
+`catalog/conan-exiles/targets/linux-26672347.json`: Steam app `443030`, branch `public`, build
+`26672347`, depot `443032` manifest `3558775145338167613` plus the Steamworks redistributable depot
 `1006` manifest `4559160656493359681`, with six declared file hashes. The previous builds
-`25792439`, `25738716` and `25639945` keep their targets: the library pins all four, so each target's zip carries the same code. Nothing here runs the Steam
+`26552396`, `25792439`, `25738716` and `25639945` keep their targets: the library pins all five, so each target's zip carries the same code. Nothing here runs the Steam
 updater any more — the depot manifests are the bytes:
 
 ```bash
@@ -92,7 +93,7 @@ games/conan-exiles/native/platform/windows/build.sh  # winmm.dll, with the pinne
 A release is built per catalog target, through the shared maintenance command:
 
 ```bash
-maintenance/bin/takaro-maint build --game conan-exiles [--target linux-26552396] \
+maintenance/bin/takaro-maint build --game conan-exiles [--target linux-26672347] \
   --version 1.0.2 --out dist
 ```
 
@@ -165,8 +166,8 @@ native/
   `GUObjectArray.ObjObjects` and the `FNamePool` block table. At load the library scans the
   server's executable mappings for their signatures (`core/pins/pins.cpp`, derived with
   `tools/sigderive.py`, about 140 ms) and accepts the build only when every signature matches
-  exactly once and the GNU build-id is pinned with the same addresses (26552396:
-  `613b5964…`; 25792439: `ad0c0103…`; 25738716: `8d5382c1…`; 25639945: `3a05a6ef…`). On any other build it installs no hook, still connects and identifies, sends one
+  exactly once and the GNU build-id is pinned with the same addresses (26672347:
+  `1d6c0ac6…`; 26552396: `613b5964…`; 25792439: `ad0c0103…`; 25738716: `8d5382c1…`; 25639945: `3a05a6ef…`). On any other build it installs no hook, still connects and identifies, sends one
   critical notice (a `log` event) and refuses every action with a structured error.
   `TAKARO_CONAN_ALLOW_UNPINNED_BUILD=1` accepts a clean scan of an unpinned build, for re-pin work.
 - **Everything else is reflection.** At first use the library walks the object array in
@@ -265,7 +266,7 @@ verification and nothing more.
 **Startup level — a real pinned server.** On a host that can boot it:
 
 ```bash
-maintenance/bin/takaro-maint verify --game conan-exiles --target linux-26552396 \
+maintenance/bin/takaro-maint verify --game conan-exiles --target linux-26672347 \
   --artifacts dist --out reports --checks build,startup \
   --startup-timeout 600 --cleanup-orphans
 ```
