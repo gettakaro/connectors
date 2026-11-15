@@ -28,6 +28,8 @@ test('the manifest declares live-supported actions and events only, plus the map
   assert.ok(names.includes('players.location'));
   assert.ok(names.includes('players.inventory'));
   assert.ok(names.includes('events.chat-message'));
+  assert.deepEqual(buildManifest(null).find((entry) => entry.name === 'events.player-positions'),
+    { name: 'events.player-positions', parameters: { intervalSeconds: 5 } });
   assert.ok(!names.includes('entities.list'), 'schema-fallback actions are never declared');
   assert.ok(!names.includes('locations.list'));
   assert.ok(!names.includes('map'));

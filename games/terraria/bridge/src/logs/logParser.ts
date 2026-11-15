@@ -34,6 +34,10 @@ export function parseLogLine(line: string): GameEvent | null {
   const takaroEvent = parseTakaroEventMarker(trimmed);
   if (takaroEvent) return takaroEvent;
 
+  // The five-second position poll is internal telemetry, not a game log event.
+  const bare = stripTshockPrefix(trimmed).message;
+  if (bare.startsWith('TAKARO_POSITIONS ') || /\bexecuted:\s+\/takaroposall(?:\s|$)/i.test(bare)) return null;
+
   const structured = trimmed.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[([^\]]+)] (.+)$/);
   if (structured) {
     return {

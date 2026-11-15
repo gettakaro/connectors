@@ -3,6 +3,22 @@ import { test } from 'node:test';
 import { normalizeGameEvent } from '../events/normalizeEvent.js';
 import { TAKARO_PLATFORM_ID, terrariaPlatformId } from '../terraria/identity.js';
 
+test('preserves a valid chat position when one is available', () => {
+  assert.deepEqual(normalizeGameEvent('chat-message', {
+    player: { gameId: 'Guide', name: 'Guide' },
+    msg: 'hello',
+    position: { x: 123.5, y: 456.25, z: 0 },
+  }), {
+    type: 'chat-message',
+    data: {
+      player: { gameId: 'Guide', name: 'Guide', platformId: 'terraria:Guide' },
+      channel: 'global',
+      msg: 'hello',
+      position: { x: 123.5, y: 456.25, z: 0 },
+    },
+  });
+});
+
 test('normalizes Terraria plugin death events to Takaro player-death schema', () => {
   assert.deepEqual(normalizeGameEvent('player-death', {
     player: { gameId: 'TestPlayer', name: 'TestPlayer', platformId: 'terraria:hash', ip: '127.0.0.1', tshockIndex: 0 },
