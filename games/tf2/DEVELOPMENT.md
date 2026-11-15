@@ -24,6 +24,12 @@ and SourceMod 1.13 are installed by the operator.
 | `tests/validate-static.mjs` | Source-level contract checks (actions, events, cvars, wire shapes, `capabilities.json`). |
 | `capabilities.json` | What each Takaro action and event does on TF2. |
 
+Protocol v1 advertises `events.player-positions` with a five-second interval. The server sends
+one fresh position for every online player with a live pawn, including the current map as the
+dimension. It defers a batch if any online player lacks a live pawn, and discards snapshots
+across reconnects. Chat events include the sender's current position when the sender is alive.
+This path still needs a real-client Takaro check before it is marked live-supported.
+
 The zip mirrors the server's `tf/` folder (`addons/sourcemod/...` and `cfg/sourcemod/...`).
 
 ## Build

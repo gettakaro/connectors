@@ -71,6 +71,9 @@ bool g_OfferedV1 = false;
 // Version 0 sends the queue once and clears it.
 char g_StreamId[48];
 int g_NextSeq = 1;
+// Position samples are transient. They use a separate stream and are never replayed after reconnect.
+char g_PositionStreamId[48];
+int g_PositionSeq = 1;
 // Intel home positions per team (index 2 = RED, 3 = BLU), cached at round start while flags are home.
 float g_FlagHome[4][3];
 bool g_FlagHomeSet[4];
@@ -136,6 +139,7 @@ public void OnPluginStart()
   RegServerCmd("takaro_tf2_state", Command_State);
 
   CreateTimer(5.0, Timer_CheckEventAck, _, TIMER_REPEAT);
+  CreateTimer(5.0, Timer_PlayerPositions, _, TIMER_REPEAT);
   CreateTimer(0.1, Timer_Connection, _, TIMER_REPEAT);
 
   EmitLogEvent("info", "Takaro TF2 connector loaded");
@@ -335,6 +339,11 @@ void EmitChatMessage(int client, bool teamOnly, const char[] text)
     data.SetString("channel", "global");
   }
   data.SetString("msg", text);
+  if (g_ProtocolVersion == 1 && IsPlayerAlive(client)) {
+    JSONObject position = CurrentPlayerPosition(client);
+    data.Set("position", position);
+    delete position;
+  }
   EmitGameEvent("chat-message", data);
   delete data;
   delete player;
@@ -662,6 +671,8 @@ void OnTakaroMessage(WebSocket ws, const JSON message, int wireSize)
         }
         float now = GetEngineTime();
         g_LastAckTime = now;
+        Format(g_PositionStreamId, sizeof(g_PositionStreamId), "tf2-pos-%d-%d", GetTime(), GetRandomInt(100000, 999999));
+        g_PositionSeq = 1;
         g_IdentifiedAt = now;
         if (g_LostAt > 0.0) {
           LogMessage("[TakaroTF2] Takaro identity accepted: gameServerId=%s protocol=%d, %.2f s after the connection was lost (%d event(s) queued)",
@@ -767,6 +778,14 @@ JSONArray BuildCapabilityManifest()
     capabilities.Push(capability);
     delete capability;
   }
+  JSONObject positions = new JSONObject();
+  positions.SetString("name", "events.player-positions");
+  JSONObject parameters = new JSONObject();
+  parameters.SetInt("intervalSeconds", 5);
+  positions.Set("parameters", parameters);
+  capabilities.Push(positions);
+  delete parameters;
+  delete positions;
   if (g_CvarShutdownEnabled.BoolValue) {
     JSONObject capability = new JSONObject();
     capability.SetString("name", "server.shutdown");
@@ -1525,6 +1544,67 @@ void EmitGameEvent(const char[] eventType, JSON data)
       RemoveOutboxEntry(index);
     }
   }
+}
+
+JSONObject CurrentPlayerPosition(int client)
+{
+  float origin[3];
+  GetClientAbsOrigin(client, origin);
+  JSONObject position = new JSONObject();
+  position.SetFloat("x", origin[0]);
+  position.SetFloat("y", origin[1]);
+  position.SetFloat("z", origin[2]);
+  char map[PLATFORM_MAX_PATH];
+  GetCurrentMap(map, sizeof(map));
+  position.SetString("dimension", map);
+  return position;
+}
+
+Action Timer_PlayerPositions(Handle timer)
+{
+  if (!g_Identified || g_ProtocolVersion != 1) {
+    return Plugin_Continue;
+  }
+
+  // A batch must describe every online player. Defer it while any player has no live pawn.
+  for (int client = 1; client <= MaxClients; client++) {
+    if (IsTakaroClient(client) && !IsPlayerAlive(client)) {
+      return Plugin_Continue;
+    }
+  }
+
+  JSONArray positions = new JSONArray();
+  for (int client = 1; client <= MaxClients; client++) {
+    if (!IsTakaroClient(client)) {
+      continue;
+    }
+    char gameId[64], steamId[64], platformId[80];
+    ResolveClientIdentity(client, gameId, sizeof(gameId), steamId, sizeof(steamId), platformId, sizeof(platformId));
+    JSONObject entry = new JSONObject();
+    entry.SetString("gameId", gameId);
+    JSONObject position = CurrentPlayerPosition(client);
+    entry.Set("position", position);
+    positions.Push(entry);
+    delete position;
+    delete entry;
+  }
+
+  JSONObject data = new JSONObject();
+  data.Set("positions", positions);
+  JSONObject payload = new JSONObject();
+  payload.SetString("type", "player-positions");
+  payload.Set("data", data);
+  payload.SetString("streamId", g_PositionStreamId);
+  payload.SetInt("seq", g_PositionSeq++);
+  JSONObject frame = new JSONObject();
+  frame.SetString("type", "gameEvent");
+  frame.Set("payload", payload);
+  SendJson(frame);
+  delete frame;
+  delete payload;
+  delete data;
+  delete positions;
+  return Plugin_Continue;
 }
 
 void SendOutboxEntry(int index)

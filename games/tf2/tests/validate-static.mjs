@@ -102,6 +102,12 @@ assert(plugin.includes('{\\"type\\":\\"gameEvent\\",\\"payload\\":{\\"type\\":\\
 assert(plugin.includes('\\"streamId\\":\\"%s\\",\\"seq\\":%d'), "v1 gameEvent must carry streamId and seq");
 assert(plugin.includes('"eventAck"') && plugin.includes("HandleEventAck"), "v1 events must be confirmed by eventAck");
 assert(plugin.includes('data.Set("protocolVersions", versions)') && plugin.includes('data.Set("capabilities", capabilities)'), "identify must offer protocol versions and the capability manifest");
+assert(plugin.includes('positions.SetString("name", "events.player-positions")') && plugin.includes('parameters.SetInt("intervalSeconds", 5)'), "v1 manifest must advertise five-second position snapshots");
+assert(plugin.includes('if (!g_Identified || g_ProtocolVersion != 1)') && plugin.includes('Timer_PlayerPositions'), "position snapshots must require an identified v1 session");
+assert(plugin.includes('IsTakaroClient(client) && !IsPlayerAlive(client)') && plugin.includes('data.Set("positions", positions)'), "position snapshots must defer incomplete online-player batches");
+assert(plugin.includes('entry.SetString("gameId", gameId)') && plugin.includes('entry.Set("position", position)'), "position entries must carry stable gameId and current position");
+assert(plugin.includes('Format(g_PositionStreamId') && plugin.includes('payload.SetString("streamId", g_PositionStreamId)'), "transient positions need a fresh stream on each identify");
+assert(plugin.includes('data.Set("position", position)'), "chat should carry the sender's live position");
 assert(!/"items\.give"/.test(plugin), "manifest must not declare giveItem");
 assert(/if \(g_CvarShutdownEnabled\.BoolValue\) \{\s*JSONObject capability[\s\S]{0,80}"server\.shutdown"/.test(plugin), "server.shutdown is declared only when the shutdown cvar is on");
 assert(!plugin.includes('data.SetString("game"'), "identify payload must not include connector-specific game metadata");
