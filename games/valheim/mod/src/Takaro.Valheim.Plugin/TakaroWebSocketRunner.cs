@@ -520,6 +520,8 @@ public sealed class TakaroWebSocketRunner : IDisposable
 
     private async Task PollPlayerLifecycleAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
+        var positionStreamId = Guid.NewGuid().ToString("N");
+        long positionSeq = 0;
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
             try
@@ -564,15 +566,18 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 }
 
                 var now = DateTimeOffset.UtcNow;
-                if (identified && protocolVersion >= 1 && positions is not null
+                if (identified && protocolVersion >= 1 && ReferenceEquals(socket, this.socket) && positions is not null
                     && positions.Count == onlinePlayers.Length
                     && new HashSet<string>(positions.Select(position => position.GameId), StringComparer.Ordinal)
                         .SetEquals(onlinePlayers.Select(player => player.GameId))
                     && now - lastPositionBatchAt >= PlayerLifecyclePollInterval)
                 {
-                    pendingEvents.Enqueue(TakaroProtocol.CreateGameEvent(
+                    var frame = TakaroProtocol.CreateGameEvent(
                         GameEventTypes.PlayerPositions,
-                        EventFactory.PlayerPositions(now, positions)));
+                        EventFactory.PlayerPositions(now, positions));
+                    await SendOpenAsync(socket,
+                        ProtocolHandshake.WithStreamPosition(frame, positionStreamId, ++positionSeq),
+                        cancellationToken);
                     lastPositionBatchAt = now;
                 }
 
