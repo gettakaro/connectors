@@ -736,7 +736,7 @@ static void TestReads() {
        "\"ping\":120}]");
     JsonValue positions;
     CHECK(rs->PositionSnapshot(positions), "online position snapshot");
-    EQ(JsonDump(positions),
+    EQ(takaro::JsonDump(positions),
        "[{\"gameId\":\"76561198000735875\",\"position\":{\"x\":101746.72,\"y\":319894.28,\"z\":-21582.48}},"
        "{\"gameId\":\"76561198000000002\",\"position\":{\"x\":5000.5,\"y\":-6000.25,\"z\":-100}}]");
     std::string h = rs->HealthJson();
