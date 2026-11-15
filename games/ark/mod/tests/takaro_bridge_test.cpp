@@ -698,15 +698,20 @@ void test_protocol_v1() {
   const std::string state = temp_dir();
   auto config = config_for(takaro, state);
   config.ping_interval = 5000ms;  // pongs must not confirm anything on v1
+  config.position_interval = 1s;
   config.map_name = "TheIsland";
   takaro::Bridge bridge(config, gate, [](const std::string&) {});
   bridge.start();
   auto identify = takaro.wait_for([](const json::Value& m) { return is_type(m, "identify"); });
   CHECK(identify && identify->get("payload")->get("protocolVersions"));
-  bool locations = false, map = false;
+  bool locations = false, map = false, position_capability = false;
   if (identify)
     for (const auto& c : identify->get("payload")->get("capabilities")->as_array()) {
       locations |= c.get("name")->as_string() == "locations.list";
+      if (c.get("name")->as_string() == "events.player-positions") {
+        position_capability = c.get("parameters")->get("intervalSeconds")->as_number() == 1;
+        continue;
+      }
       if (c.get("name")->as_string() != "map") continue;
       const auto& dim = c.get("parameters")->get("dimensions")->as_array()[0];
       map = dim.get("id")->as_string() == "TheIsland" &&
@@ -715,7 +720,7 @@ void test_protocol_v1() {
             dim.get("axes")->get("vertical")->get("direction")->as_string() == "down" &&
             dim.get("source")->get("type")->as_string() == "none";
     }
-  CHECK(locations && map);
+  CHECK(locations && map && position_capability);
   CHECK(!takaro::map_dimension("Ragnarok"));  // no declared map without a verified calibration
   CHECK(eventually([&] { return bridge.identified(); }));
   // Structured errors instead of silence.
@@ -739,6 +744,27 @@ void test_protocol_v1() {
         connected->get("payload")->get("data")->get("player")->get("ping")->as_number() == 35);
   // Positions name the declared Dimension; teleports accept it and refuse any other.
   gate.record_position(kId, -113926.75f, 234912.75f, -14334.5f);
+  auto batch = takaro.wait_for([](const json::Value& m) {
+    if (!is_type(m, "gameEvent")) return false;
+    const auto* payload = m.get("payload");
+    return payload->get("type")->as_string() == "player-positions" &&
+        !payload->get("data")->get("positions")->as_array().empty();
+  }, 2500ms);
+  CHECK(batch && batch->get("payload")->get("data")->get("positions")->as_array().size() == 1);
+  if (batch) {
+    CHECK(batch->get("payload")->get("streamId") && batch->get("payload")->get("seq") &&
+          batch->get("payload")->get("streamId")->as_string() != "boot-v1");
+    const auto& row = batch->get("payload")->get("data")->get("positions")->as_array()[0];
+    CHECK(row.get("gameId")->as_string() == kId &&
+          row.get("position")->get("dimension")->as_string() == "TheIsland" &&
+          row.get("position")->get("x")->as_number() == -113926.75 &&
+          batch->get("payload")->get("data")->get("timestamp"));
+  }
+  gate.record_chat(kId, "Limon", "positioned chat");
+  auto chat = takaro.wait_for([](const json::Value& m) {
+    return is_type(m, "gameEvent") && m.get("payload")->get("type")->as_string() == "chat-message";
+  }, 2000ms);
+  CHECK(chat && chat->get("payload")->get("data")->get("position")->get("dimension")->as_string() == "TheIsland");
   auto location = takaro.request("v1-loc", "getPlayerLocation", json::obj({{"gameId", json::str(kId)}}), 2000ms);
   CHECK(location && location->get("payload")->get("dimension")->as_string() == "TheIsland" &&
         location->get("payload")->get("y")->as_number() == 234912.75);
@@ -749,11 +775,12 @@ void test_protocol_v1() {
       {"y", json::num(2)}, {"z", json::num(3)}, {"dimension", json::str("Ragnarok")}}), 2000ms);
   CHECK(tp_other && tp_other->get("error")->get("code")->as_string() == "unsupported");
   std::this_thread::sleep_for(1500ms);
+  CHECK(gate.live_positions().empty());
   CHECK(bridge.persisted_cursor() == 0);
   takaro.acks = true;
   gate.record_chat(kId, "Limon", "acked");
-  CHECK(eventually([&] { return bridge.persisted_cursor() == 2; }));
-  CHECK(takaro::load_cursor(state + "/event-cursor.json").seq == 2);
+  CHECK(eventually([&] { return bridge.persisted_cursor() == 3; }));
+  CHECK(takaro::load_cursor(state + "/event-cursor.json").seq == 3);
   // A death position names the Dimension too, so Takaro files that sample under it.
   gate.record_death_position(kId, 5, 6, 7, 1, 1);
   gate.record_player_death(kId, "Limon", "");
