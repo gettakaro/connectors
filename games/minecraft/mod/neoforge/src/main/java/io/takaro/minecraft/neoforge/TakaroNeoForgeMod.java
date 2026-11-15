@@ -1,6 +1,7 @@
 package io.takaro.minecraft.neoforge;
 
 import io.takaro.minecraft.core.EventEmitter;
+import io.takaro.minecraft.core.PositionPublisher;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.config.PropertiesConfigFormat;
 import io.takaro.minecraft.core.TakaroConnector;
@@ -29,6 +30,7 @@ public class TakaroNeoForgeMod {
     private static final Logger LOGGER = LogManager.getLogger("Takaro");
     private volatile TakaroConnector connector;
     private volatile NeoForgeGameAdapter adapter;
+    private final PositionPublisher positionPublisher = new PositionPublisher();
     private int ticks;
 
     public TakaroNeoForgeMod() {
@@ -118,7 +120,8 @@ public class TakaroNeoForgeMod {
                 player.getUUID().toString(),
                 player.getGameProfile().name(),
                 "global",
-                event.getRawText()
+                event.getRawText(),
+                adapter.getPlayerLocation(player.getUUID().toString())
         );
     }
 
@@ -164,6 +167,9 @@ public class TakaroNeoForgeMod {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
-        if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
+        if (adapter == null) return;
+        int tick = ++ticks;
+        if (tick % 20 == 0) adapter.liftExpiredBans();
+        if (tick % 80 == 0) positionPublisher.capture(adapter, adapter.getEventEmitter());
     }
 }

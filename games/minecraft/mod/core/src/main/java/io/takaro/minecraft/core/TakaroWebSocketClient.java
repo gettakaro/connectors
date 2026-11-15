@@ -66,6 +66,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             "moderation.kick", "moderation.ban", "moderation.unban", "moderation.listBans", "server.shutdown"};
     static final String[] EVENT_TYPES = {
             "log", "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed"};
+    static final int POSITION_INTERVAL_SECONDS = 4;
     // Takaro gives a connector 10 s per request; leave room for the round trip.
     static final long MAP_TILE_WAIT_MILLIS = 6000;
     // An Item sync replaces the reported hashes, so an early answer would drop icons Takaro has.
@@ -384,6 +385,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void emitChatMessage(String gameId, String playerName, String channel, String message) {
+        emitChatMessage(gameId, playerName, channel, message, null);
+    }
+
+    @Override
+    public void emitChatMessage(String gameId, String playerName, String channel, String message, PlayerLocation position) {
         JsonObject data = new JsonObject();
         JsonObject player = new JsonObject();
         player.addProperty("gameId", gameId);
@@ -391,7 +397,23 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         data.add("player", player);
         data.addProperty("channel", channel);
         data.addProperty("msg", message);
+        if (position != null) data.add("position", GSON.toJsonTree(position));
         sendGameEvent("chat-message", data);
+    }
+
+    @Override
+    public boolean acceptsPlayerPositions() {
+        return isV1() && isOpen() && identified;
+    }
+
+    @Override
+    public void emitPlayerPositions(List<PositionSample> positions) {
+        // Positions are observations, not history: an old snapshot must never be replayed
+        // after reconnecting. Wait for the next tick instead.
+        if (!acceptsPlayerPositions()) return;
+        JsonObject data = new JsonObject();
+        data.add("positions", GSON.toJsonTree(positions));
+        sendGameEvent("player-positions", data);
     }
 
     @Override
@@ -496,6 +518,11 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         for (String event : EVENT_TYPES) {
             caps.add(capability("events." + event));
         }
+        JsonObject positions = capability("events.player-positions");
+        JsonObject positionParameters = new JsonObject();
+        positionParameters.addProperty("intervalSeconds", POSITION_INTERVAL_SECONDS);
+        positions.add("parameters", positionParameters);
+        caps.add(positions);
         JsonObject profile = capability("game.profile");
         profile.add("parameters", GameProfile.parameters(runningGameVersion()));
         caps.add(profile);

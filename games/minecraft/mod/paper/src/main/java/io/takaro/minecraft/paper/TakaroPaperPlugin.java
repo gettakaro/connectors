@@ -3,6 +3,7 @@ package io.takaro.minecraft.paper;
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.GameAdapter;
 import io.takaro.minecraft.core.PlayerNotOnlineException;
+import io.takaro.minecraft.core.PositionPublisher;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.map.RegionRenderer;
 import io.takaro.minecraft.core.map.WorldMap;
@@ -29,6 +30,7 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
 
     private TakaroConnector connector;
     private volatile EventEmitter eventEmitter;
+    private final PositionPublisher positionPublisher = new PositionPublisher();
     private final ConcurrentHashMap<String, PlayerLocation> lastKnownLocations = new ConcurrentHashMap<>();
 
     @Override
@@ -44,6 +46,9 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
                 getDataFolder().toPath().resolve("config.yml"), new PaperYamlConfigFormat(), this);
         connector = new TakaroConnector(this, configFile);
         connector.start();
+        // 80 server ticks is at least four real seconds at Minecraft's 20 TPS ceiling.
+        Bukkit.getScheduler().runTaskTimer(this,
+                () -> positionPublisher.capture(this, eventEmitter), 80L, 80L);
     }
 
     @Override

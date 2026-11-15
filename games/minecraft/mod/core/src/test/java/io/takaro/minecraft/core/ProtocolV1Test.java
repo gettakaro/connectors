@@ -9,6 +9,8 @@ import io.takaro.minecraft.core.map.PngWriter;
 import io.takaro.minecraft.core.map.TestRegions;
 import io.takaro.minecraft.core.map.WorldMap;
 import io.takaro.minecraft.core.model.GameItem;
+import io.takaro.minecraft.core.model.PlayerLocation;
+import io.takaro.minecraft.core.model.PositionSample;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -112,6 +114,9 @@ class ProtocolV1Test {
         caps.forEach(c -> names.add(c.getAsJsonObject().get("name").getAsString()));
         for (String action : TakaroWebSocketClient.ACTION_CAPABILITIES) assertTrue(names.contains(action), action);
         assertTrue(names.contains("events.chat-message"));
+        JsonObject positions = caps.asList().stream().map(JsonElement::getAsJsonObject)
+                .filter(c -> c.get("name").getAsString().equals("events.player-positions")).findFirst().orElseThrow();
+        assertEquals(4, positions.getAsJsonObject("parameters").get("intervalSeconds").getAsInt());
         JsonObject map = caps.asList().stream().map(JsonElement::getAsJsonObject)
                 .filter(c -> c.get("name").getAsString().equals("map")).findFirst().orElseThrow();
         JsonObject dim = map.getAsJsonObject("parameters").getAsJsonArray("dimensions").get(0).getAsJsonObject();
@@ -119,6 +124,39 @@ class ProtocolV1Test {
         assertEquals("down", dim.getAsJsonObject("axes").getAsJsonObject("vertical").get("direction").getAsString());
         assertEquals(-512, dim.getAsJsonObject("bounds").getAsJsonObject("horizontal").get("min").getAsInt());
         assertEquals("tiled", dim.getAsJsonObject("source").get("type").getAsString());
+    }
+
+    @Test
+    void positionSnapshotsUseV1AndDoNotQueueWhileDisconnected() throws Exception {
+        EventOutbox outbox = new EventOutbox("stream-positions");
+        TakaroWebSocketClient client = client(false, outbox);
+        List<PositionSample> sample = List.of(new PositionSample("uuid-1",
+                new PlayerLocation(1.25, 64, -8.5, "overworld")));
+
+        client.emitPlayerPositions(sample);
+        assertEquals(0, outbox.size());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        client.emitPlayerPositions(sample);
+
+        JsonObject payload = sentOfType("gameEvent").get(0).getAsJsonObject("payload");
+        assertEquals("player-positions", payload.get("type").getAsString());
+        assertEquals("stream-positions", payload.get("streamId").getAsString());
+        JsonObject row = payload.getAsJsonObject("data").getAsJsonArray("positions").get(0).getAsJsonObject();
+        assertEquals("uuid-1", row.get("gameId").getAsString());
+        assertEquals(-8.5, row.getAsJsonObject("position").get("z").getAsDouble());
+    }
+
+    @Test
+    void chatEventIncludesPositionWhenKnown() throws Exception {
+        TakaroWebSocketClient client = client(false, new EventOutbox());
+        client.onOpen(null);
+        client.onMessage(identifyResponse(1));
+        client.emitChatMessage("uuid-1", "Steve", "global", "save here",
+                new PlayerLocation(100, 70, 200, "nether"));
+        JsonObject data = sentOfType("gameEvent").get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals(100, data.getAsJsonObject("position").get("x").getAsDouble());
+        assertEquals("nether", data.getAsJsonObject("position").get("dimension").getAsString());
     }
 
     @Test
