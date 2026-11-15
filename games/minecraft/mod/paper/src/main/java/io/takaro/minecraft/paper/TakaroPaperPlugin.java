@@ -46,9 +46,9 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
                 getDataFolder().toPath().resolve("config.yml"), new PaperYamlConfigFormat(), this);
         connector = new TakaroConnector(this, configFile);
         connector.start();
-        // 80 server ticks is at least four real seconds at Minecraft's 20 TPS ceiling.
+        // Check twice a second; PositionPublisher enforces the four-second wire interval.
         Bukkit.getScheduler().runTaskTimer(this,
-                () -> positionPublisher.capture(this, eventEmitter), 80L, 80L);
+                () -> positionPublisher.capture(this, eventEmitter), 10L, 10L);
     }
 
     @Override

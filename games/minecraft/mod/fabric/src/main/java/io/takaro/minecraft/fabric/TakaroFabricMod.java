@@ -45,7 +45,7 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
             if (adapter == null) return;
             int tick = ++ticks;
             if (tick % 20 == 0) adapter.liftExpiredBans();
-            if (tick % 80 == 0) positionPublisher.capture(adapter, adapter.getEventEmitter());
+            if (tick % 10 == 0) positionPublisher.capture(adapter, adapter.getEventEmitter());
         });
 
         // Register game event callbacks
