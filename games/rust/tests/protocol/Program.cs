@@ -265,9 +265,11 @@ internal static class Program
         Check(positions.Count == 2 && (string)positions[0]["gameId"] == samples[0].Key
             && (double)positions[0]["position"]["x"] == 12.5, "positions: all players retain IDs and coordinates");
         Check(data.Properties().Select(p => p.Name).SequenceEqual(new[] { "positions" }), "positions: event data has only the protocol field");
-        var eventFrame = new Connector.EventStream("positions-stream").Add("player-positions", data, keep: true);
+        var eventFrame = Connector.PositionEventFrame(data, "positions-stream", 1);
         Check((string)eventFrame["payload"]["type"] == "player-positions"
-            && eventFrame["payload"]["data"]["positions"] is JArray, "positions: v1 event frame");
+            && eventFrame["payload"]["data"]["positions"] is JArray
+            && (string)eventFrame["payload"]["streamId"] == "positions-stream"
+            && (long)eventFrame["payload"]["seq"] == 1, "positions: separate v1 event stream");
 
         var duplicate = Connector.PlayerPositionsData(samples.Concat(new[] { samples[0] }));
         Check(((JArray)duplicate["positions"]).Count == 2, "positions: duplicate game IDs are omitted");

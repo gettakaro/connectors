@@ -631,6 +631,19 @@ namespace Oxide.Plugins
             return new JObject { ["positions"] = positions };
         }
 
+        internal static JObject PositionEventFrame(JObject data, string streamId, long seq)
+        {
+            return new JObject
+            {
+                ["type"] = "gameEvent",
+                ["payload"] = new JObject
+                {
+                    ["type"] = "player-positions", ["data"] = data,
+                    ["streamId"] = streamId, ["seq"] = seq
+                }
+            };
+        }
+
         internal const string ErrorUnsupported = "unsupported";
         internal const string ErrorInvalidArgs = "invalid_args";
         internal const string ErrorNotFound = "not_found";
@@ -1059,6 +1072,8 @@ namespace Oxide.Plugins
         private bool _sendDraining;
         // One event stream per process: a reload or restart is a new streamId starting at 1.
         private readonly EventStream _events = new EventStream(Guid.NewGuid().ToString());
+        private string _positionStreamId;
+        private long _positionSeq;
         // The map capability, set on the main thread once the raster is ready.
         private volatile JObject _mapCapability;
         // Null only if the embedded icon cannot be decoded; the profile then has no icon.
@@ -1068,6 +1083,8 @@ namespace Oxide.Plugins
         {
             public ClientWebSocket Socket;
             public string Text;
+            public bool Position;
+            public int Generation;
             // The connection's token: a reconnect cancels a send stuck on the old socket.
             public CancellationToken Token;
         }
@@ -1671,7 +1688,7 @@ namespace Oxide.Plugins
 
         // Identify and responses go out on the socket they belong to, never on one a config
         // reconnect has put in its place.
-        private void WsSendOn(ClientWebSocket ws, string message)
+        private void WsSendOn(ClientWebSocket ws, string message, bool replacePosition = false)
         {
             if (ws?.State != WebSocketState.Open) return;
 
@@ -1680,7 +1697,15 @@ namespace Oxide.Plugins
 
             lock (_sendQueue)
             {
-                _sendQueue.Enqueue(new OutgoingFrame { Socket = ws, Text = message, Token = _cts?.Token ?? CancellationToken.None });
+                if (replacePosition)
+                {
+                    var retained = _sendQueue.Where(frame => !frame.Position).ToArray();
+                    _sendQueue.Clear();
+                    foreach (var frame in retained) _sendQueue.Enqueue(frame);
+                }
+                _sendQueue.Enqueue(new OutgoingFrame { Socket = ws, Text = message,
+                    Position = replacePosition, Generation = Volatile.Read(ref _generation),
+                    Token = _cts?.Token ?? CancellationToken.None });
                 if (_sendDraining) return;
                 _sendDraining = true;
             }
@@ -1702,6 +1727,7 @@ namespace Oxide.Plugins
                     next = _sendQueue.Dequeue();
                 }
                 var ws = next.Socket;
+                if (next.Position && next.Generation != Volatile.Read(ref _generation)) continue;
                 if (ws.State != WebSocketState.Open) continue;
                 try
                 {
@@ -1745,7 +1771,17 @@ namespace Oxide.Plugins
                 }));
             }
             _lastPositionPushTicks = now;
-            SendGameEvent("player-positions", PlayerPositionsData(samples));
+            SendPositionSnapshot(PlayerPositionsData(samples));
+        }
+
+        private void SendPositionSnapshot(JObject data)
+        {
+            lock (_events.Lock)
+            {
+                if (!_connected || _protocolVersion < 1 || _ws?.State != WebSocketState.Open) return;
+                var frame = PositionEventFrame(data, _positionStreamId, ++_positionSeq);
+                WsSendOn(_ws, frame.ToString(Formatting.None), replacePosition: true);
+            }
         }
 
         // The running game build as the server reports it (`version` prints it as Protocol).
@@ -1803,6 +1839,8 @@ namespace Oxide.Plugins
                 if (!IsCurrent(generation)) return;
                 _protocolVersion = reply.ProtocolVersion;
                 _connected = true;
+                _positionStreamId = Guid.NewGuid().ToString();
+                _positionSeq = 0;
                 var backlog = reply.ProtocolVersion >= 1 ? _events.Pending() : _events.TakeAll().Select(V0EventFrame).ToList();
                 if (backlog.Count > 0)
                     LogInfo($"Sending {backlog.Count} buffered event(s)");
