@@ -749,6 +749,7 @@ void PollEvents() {
 // confirmed together with the next delivered event (counted in rawLogLosses). Every other event
 // type is sent in order, never delayed by logs.
 std::deque<int64_t> logSendTimes;
+Clock::time_point nextPositionSend;
 bool LogSendAllowed() {
     static const int limit = [] {
         const char* v = ConfigFile::Get("DRAGONWILDS_LOG_RATE");
@@ -780,10 +781,13 @@ void FlushEvents() {
                 ++rawLogLosses;
                 continue;
             }
+            // Replays after a reconnect also obey the manifest interval. Keep stream order intact.
+            if (type == "player-positions" && Clock::now() < nextPositionSend) break;
             const auto sent = protocolVersion == 1 ? StampEvent(e.frame, e.outboxId) : e.frame;
             auto queued = NativeTransport::Queue({NativeTransport::Kind::Event, sent,
                                                   currentEpoch, e.outboxId, false});
             if (!queued) break;
+            if (type == "player-positions") nextPositionSend = Clock::now() + std::chrono::seconds(5);
             sentEpochByOutboxId[e.outboxId] = currentEpoch;
             if (protocolVersion == 1) {
                 highestSentSeq = std::max(highestSentSeq, e.outboxId);
