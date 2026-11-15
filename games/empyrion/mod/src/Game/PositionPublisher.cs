@@ -44,7 +44,7 @@ namespace TakaroEmpyrion.Game
                     if (offset > 0)
                         await Task.Delay(TimeSpan.FromSeconds(Capabilities.PositionIntervalSeconds), _stop.Token);
                     if (!_client.Identified || _client.ProtocolVersion < 1 || _stop.IsCancellationRequested) return false;
-                    _client.SendGameEvent("player-positions", new JObject
+                    _client.SendPositionSnapshot(new JObject
                     {
                         ["timestamp"] = DateTime.UtcNow.ToString("o"),
                         ["positions"] = new JArray(positions.Skip(offset).Take(1000).Select(p => p.DeepClone())),

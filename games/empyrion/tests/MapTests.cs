@@ -451,6 +451,9 @@ public static partial class ContractTests
                 Check(publisher.PublishOnce().Result, "V1 position publisher reads and sends a snapshot");
                 JObject positionEvent = Next(sock2, o => (string)o["type"] == "gameEvent" && (string)o["payload"]?["type"] == "player-positions");
                 JToken positionData = positionEvent?["payload"]?["data"];
+                Check(positionEvent != null && (string)positionEvent["payload"]["streamId"] != client.StreamId
+                      && (long)positionEvent["payload"]["seq"] == 1,
+                    "V1 position snapshots use a separate connection-scoped stream");
                 Check(positionData?["positions"] is JArray batch && batch.Count == 1
                       && (string)batch[0]["gameId"] == "76561198000000001"
                       && (double)batch[0]["position"]["x"] == 12

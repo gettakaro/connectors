@@ -127,6 +127,12 @@ namespace TakaroEmpyrion.Protocol
         readonly object _outboxLock = new object();
         readonly string _streamId = Guid.NewGuid().ToString();
         long _seq;
+        const string PositionMarker = "\0position";
+        string _positionStreamId;
+        long _positionSeq;
+        string _latestPositionFrame;
+        IWsConnection _positionConnection;
+        bool _positionQueued;
         volatile int _protocolVersion;
 
         sealed class PendingEvent
@@ -222,6 +228,26 @@ namespace TakaroEmpyrion.Protocol
             }
         }
 
+        /// <summary>Publishes the newest snapshot only for the currently identified connection.</summary>
+        public void SendPositionSnapshot(JObject data)
+        {
+            lock (_outboxLock)
+            {
+                if (!_identified || _protocolVersion < 1 || _conn == null) return;
+                var payload = new JObject
+                {
+                    ["type"] = "player-positions", ["data"] = data,
+                    ["streamId"] = _positionStreamId, ["seq"] = ++_positionSeq
+                };
+                _latestPositionFrame = Serialize(new JObject { ["type"] = "gameEvent", ["payload"] = payload });
+                _positionConnection = _conn;
+                if (_positionQueued) return;
+                _positionQueued = true;
+                try { _sendQueue.Add(PositionMarker); }
+                catch (InvalidOperationException) { _positionQueued = false; _latestPositionFrame = null; }
+            }
+        }
+
         /// <summary>Queues one event for the socket; on v1 numbers it and keeps it until acked. Caller holds _outboxLock.</summary>
         void Dispatch(PendingEvent ev)
         {
@@ -259,11 +285,25 @@ namespace TakaroEmpyrion.Protocol
 
         void RunSender()
         {
-            foreach (string frame in _sendQueue.GetConsumingEnumerable())
+            foreach (string queued in _sendQueue.GetConsumingEnumerable())
             {
+                string frame = queued;
+                IWsConnection positionConnection = null;
+                if (queued == PositionMarker)
+                {
+                    lock (_outboxLock)
+                    {
+                        frame = _latestPositionFrame;
+                        positionConnection = _positionConnection;
+                        _latestPositionFrame = null;
+                        _positionConnection = null;
+                        _positionQueued = false;
+                    }
+                    if (frame == null || !_identified || positionConnection != _conn) continue;
+                }
                 IWsConnection c = _conn;
                 // Before identifyResponse Takaro drops the socket on anything but identify; v1 events come back from _unacked.
-                if (c == null || !_identified) continue;
+                if (c == null || !_identified || (positionConnection != null && positionConnection != c)) continue;
                 try
                 {
                     c.Send(frame);
@@ -447,6 +487,10 @@ namespace TakaroEmpyrion.Protocol
                     _protocolVersion = _opt.Manifest != null && version != null && version.Type == JTokenType.Integer && (int)version == 1 ? 1 : 0;
                     lock (_outboxLock)
                     {
+                        _positionStreamId = Guid.NewGuid().ToString();
+                        _positionSeq = 0;
+                        _latestPositionFrame = null;
+                        _positionConnection = null;
                         _identified = true;
                         FlushOutbox();
                     }
