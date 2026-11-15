@@ -43,6 +43,7 @@ t.test("identify offers protocol versions [0, 1] with the manifest: live capabil
     "events.log" }) do
     t.ok(caps[name], "declares " .. name)
   end
+  t.deep(caps["events.player-positions"].parameters, { intervalSeconds = 5 })
   t.eq(caps["locations.list"], nil, "the [] placeholder is not declared")
   local dims = caps.map.parameters.dimensions
   t.eq(#dims, 1)
@@ -120,6 +121,43 @@ t.test("version 1: an event position names the map dimension; version 0 keeps x,
   end
   t.deep(death_position(1), { x = 426071, y = 181139, z = 17063, dimension = "the_island" })
   t.deep(death_position(0), { x = 426071, y = 181139, z = 17063 })
+end)
+
+t.test("position snapshots respect 5 seconds, v1 only, and never replay after reconnect", function()
+  local app, native, tk, g = F.app()
+  local samples = 0
+  g.current_positions = function()
+    samples = samples + 1
+    return { { gameId = STEAM, position = { x = samples, y = 2, z = 3, dimension = "the_island" } } }
+  end
+  native.clock = 6000
+  tk.pump()
+  t.eq(samples, 0, "no snapshot before identify")
+  connect_v1(tk, native)
+  native.clock = 11000
+  tk.pump()
+  t.eq(samples, 1)
+  local evs = native.frames("gameEvent")
+  t.eq(#evs, 1)
+  t.eq(evs[1].msg.payload.type, "player-positions")
+  t.deep(evs[1].msg.payload.data.positions[1],
+    { gameId = STEAM, position = { x = 1, y = 2, z = 3, dimension = "the_island" } })
+  native.clock = 15999
+  tk.pump()
+  t.eq(samples, 1, "no early batch")
+  native.drop()
+  tk.pump()
+  native.open()
+  tk.pump()
+  native.deliver({ type = "identifyResponse", payload = { gameServerId = "gs-1", protocolVersion = 1 } })
+  tk.pump()
+  t.eq(#native.frames("gameEvent"), 1, "stale snapshot is not replayed")
+  native.clock = 16000
+  tk.pump()
+  t.eq(samples, 2)
+  t.eq(#native.frames("gameEvent"), 2)
+  t.eq(evs[1].msg.payload.streamId == native.frames("gameEvent")[2].msg.payload.streamId, false,
+    "fresh stream after dropping a sequence")
 end)
 
 t.test("version 1: failures become { code, message } errors; a refused console command stays a CommandOutput", function()

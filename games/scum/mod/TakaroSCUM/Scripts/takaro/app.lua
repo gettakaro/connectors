@@ -23,6 +23,7 @@ M.IDENTITY_FILE = "TakaroIdentity.txt"
 M.KNOWN_FILE = "known-players.json"
 M.WORLD_BOUNDS_RETRY_MS = 10000
 M.GAME_VERSION_RETRY_MS = 10000
+M.POSITIONS_INTERVAL_MS = 5000
 
 local App = {}
 App.__index = App
@@ -109,6 +110,7 @@ function App:start()
   self.nextBoundsTry = 0
   self.gameVersion = nil -- the running SCUM build, read from the engine once it is available
   self.nextVersionTry = 0
+  self.lastPositions = self:now()
   local icon, why = profile.load_icon(self.fs, self.dir)
   self.icon = icon
   if icon then
@@ -175,6 +177,20 @@ function App:tick()
   end
   self:read_map_bounds(now)
   self:read_game_version(now)
+  if now - self.lastPositions >= M.POSITIONS_INTERVAL_MS then
+    self.lastPositions = now
+    if self.client.version == 1 and self.client.identified and self.game.current_positions then
+      local ok, positions = pcall(self.game.current_positions, self.game)
+      if ok and type(positions) == "table" then
+        local batch = {}
+        for i = 1, math.min(#positions, 1000) do batch[#batch + 1] = positions[i] end
+        if #positions > 1000 then self.log:warn("position snapshot exceeds 1000 players; truncating") end
+        self.client:send_live_event("player-positions", { positions = batch })
+      elseif not ok then
+        self.log:warn("position snapshot failed: %s", tostring(positions))
+      end
+    end
+  end
   if #self.timers > 0 then
     local due, keep = {}, {}
     for _, t in ipairs(self.timers) do

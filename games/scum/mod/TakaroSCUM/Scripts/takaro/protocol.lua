@@ -255,6 +255,22 @@ function Client:send_event(eventType, data)
   return true
 end
 
+-- Position snapshots are ephemeral: they are never queued or replayed after a disconnect.
+function Client:send_live_event(eventType, data)
+  if not (self.identified and self.epoch and self.version == 1) then return false end
+  local ok, encoded = pcall(json.encode, { type = "gameEvent",
+    payload = { type = eventType, data = data, streamId = self.streamId, seq = self.nextSeq } })
+  if not ok then return false end
+  local status, outbox = self.transport.send(encoded, "event", self.epoch)
+  if status ~= "accepted" then return false end
+  self:frame_log("out(event)", encoded)
+  local ev = { type = eventType, text = encoded, data = data, seq = self.nextSeq }
+  self.nextSeq = self.nextSeq + 1
+  self.inflight[#self.inflight + 1] = { ev = ev, outbox = outbox or 0, epoch = self.epoch, sentAt = self.now() }
+  self.stats.eventsSent = self.stats.eventsSent + 1
+  return true
+end
+
 function Client:trim_events()
   while #self.events + #self.inflight > M.EVENT_QUEUE_LIMIT and #self.events > 0 do
     table.remove(self.events, 1)
@@ -338,8 +354,17 @@ end
 function Client:requeue_inflight()
   if #self.inflight == 0 then return end
   local q = {}
-  for _, f in ipairs(self.inflight) do q[#q + 1] = f.ev end
+  local droppedSnapshot = false
+  for _, f in ipairs(self.inflight) do
+    if f.ev.type ~= "player-positions" then q[#q + 1] = f.ev else droppedSnapshot = true end
+  end
   for _, ev in ipairs(self.events) do q[#q + 1] = ev end
+  if droppedSnapshot then
+    -- The old stream has a sequence gap. Start a fresh one for retained events.
+    self.streamId = M.new_stream_id(self.now() + self.nextSeq + self.stats.opens * 1000003)
+    self.nextSeq = 1
+    for _, ev in ipairs(q) do ev.seq = self.nextSeq; self.nextSeq = self.nextSeq + 1 end
+  end
   self.events = q
   self.inflight = {}
   self:trim_events()

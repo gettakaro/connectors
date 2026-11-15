@@ -91,6 +91,8 @@ function Events:chat_message(e, key)
   local channel = util.opt_string(e.channel) or "global"
   if not M.CHANNELS[channel] then channel = "global" end
   local data = { player = p, channel = channel, msg = msg }
+  local pos = position(e.position)
+  if pos then data.position = pos end
   if channel == "whisper" and e.recipient then
     local r = self:player(e.recipient)
     if r then data.recipient = r end
