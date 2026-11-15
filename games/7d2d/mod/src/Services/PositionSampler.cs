@@ -57,8 +57,10 @@ namespace Takaro.Services
             long ticks = Stopwatch.GetTimestamp();
             if (ticks >= _nextSampleTicks)
             {
-                _nextSampleTicks = ticks + (long)(SampleInterval.TotalSeconds * Stopwatch.Frequency);
                 SamplePositions();
+                _nextSampleTicks =
+                    Stopwatch.GetTimestamp()
+                    + (long)(SampleInterval.TotalSeconds * Stopwatch.Frequency);
             }
 
             if (now >= _nextBanSyncUtc)
