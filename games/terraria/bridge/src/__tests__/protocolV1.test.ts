@@ -141,12 +141,23 @@ test('version 1: identify offers [0, 1] with the manifest, events carry seq and 
     await waitFor(() => events.length === 2);
     assert.deepEqual(events.map((e) => e.seq), [1, 2]);
     assert.equal(client.unacknowledged(), 2);
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => events.length === 3);
+    const firstPosition = events[2];
+    assert.equal(firstPosition.type, 'player-positions');
+    assert.equal(firstPosition.seq, 1);
+    assert.equal(client.unacknowledged(), 2, 'position snapshots stay outside the durable outbox');
 
     // Drop the connection without an ack: both events come back on the new connection.
     for (const socket of server.clients) socket.terminate();
-    await waitFor(() => connections === 2 && client.identified() && events.length === 4);
-    assert.deepEqual(events.slice(2).map((e) => [e.connection, e.seq]), [[2, 1], [2, 2]]);
-    assert.equal(new Set(events.map((e) => e.streamId)).size, 1, 'one stream per process');
+    await waitFor(() => connections === 2 && client.identified() && events.length === 5);
+    assert.deepEqual(events.slice(3).map((e) => [e.connection, e.seq, e.type]),
+      [[2, 1, 'chat-message'], [2, 2, 'chat-message']]);
+    assert.equal(new Set(events.filter((e) => e.type !== 'player-positions').map((e) => e.streamId)).size, 1,
+      'gameplay events retain one stream per process');
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => events.length === 6);
+    assert.notEqual(events[5].streamId, firstPosition.streamId, 'reconnect starts a new position stream');
 
     ackUpTo = 3;
     client.sendGameEvent('log', { msg: 'three' });

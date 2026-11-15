@@ -69,7 +69,9 @@ async function main(): Promise<void> {
   const emit = (type: GameEventType, data: unknown): void => {
     const event = normalizeGameEvent(type, data);
     if (!presence.accept(event)) return;
-    const sent = takaro.sendGameEvent(event.type, event.data);
+    const sent = event.type === 'player-positions'
+      ? takaro.sendPositionSnapshot(event.data)
+      : takaro.sendGameEvent(event.type, event.data);
     if (!sent) logger.warn(`Takaro event dropped: ${type}`);
   };
   const poller = new PlayerPoller(

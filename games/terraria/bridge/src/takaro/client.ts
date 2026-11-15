@@ -43,6 +43,8 @@ export class TakaroWsClient extends EventEmitter {
   // Version 1 delivery: one stream per process, seq strictly increasing across reconnects.
   private readonly streamId = randomUUID();
   private nextSeq = 1;
+  private positionStreamId = randomUUID();
+  private nextPositionSeq = 1;
   private readonly buffer: BufferedEvent[] = [];
   private dropped = 0;
 
@@ -94,6 +96,8 @@ export class TakaroWsClient extends EventEmitter {
     // reconfigure() closes later, and its close must not tear down or reschedule the new one.
     ws.on('open', () => {
       if (this.ws !== ws) return;
+      this.positionStreamId = randomUUID();
+      this.nextPositionSeq = 1;
       // An open socket is not a success: the failure streak resets only once the session
       // is identified and stable, so a peer that accepts and drops at once still backs off.
       this.watchLiveness(ws);
@@ -278,6 +282,15 @@ export class TakaroWsClient extends EventEmitter {
     }
     this.sendBuffered(event);
     return true;
+  }
+
+  /** Fresh position snapshots belong only to this identified socket. */
+  sendPositionSnapshot(data: unknown): boolean {
+    if (!this.identified() || this.protocolVersion !== 1 || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    if (this.ws.bufferedAmount > 0) return false;
+    return this.send({ type: 'gameEvent', payload: {
+      type: 'player-positions', data, streamId: this.positionStreamId, seq: this.nextPositionSeq++,
+    } });
   }
 
   private sendBuffered(event: BufferedEvent): boolean {
