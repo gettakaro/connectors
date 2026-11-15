@@ -9,6 +9,7 @@
 #include "native/mapping.h"
 #include "testlib.h"
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <regex>
@@ -937,21 +938,24 @@ void ProtocolV1Identify() {
     const JsonValue& p = AsRecord(id.get("payload"));
     CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
     const JsonValue* caps = p.get("capabilities");
-    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 24);
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 25);
     std::set<std::string> names;
     const JsonValue* map = nullptr;
     const JsonValue* profile = nullptr;
+    const JsonValue* positionBatch = nullptr;
     for (auto& c : caps->arr) {
         std::string n = c.get("name")->str;
         CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
         CHECK_MSG(names.insert(n).second, "duplicate " + n);
         if (n == "map") map = &c;
         if (n == "game.profile") profile = &c;
+        if (n == "events.player-positions") positionBatch = &c;
     }
     for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
                              "locations.list", "events.chat-message", "events.entity-killed"})
         CHECK_MSG(names.count(need), need);
     CHECK(!names.count("testReachability"));
+    CHECK(positionBatch && Num(AsRecord(positionBatch->get("parameters")).get("intervalSeconds")) == 5);
     CHECK(map != nullptr);
     if (map) {
         CHECK(t::JsonTextEq(JsonDump(*map->get("parameters")),
@@ -1282,6 +1286,52 @@ void ProtocolV1Fallbacks() {
     }
 }
 
+void ProtocolV1PositionBatch() {
+    t::Group("bridge-v1-position-batch");
+    Rig r("v1-position-batch");
+    r.Start();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return !r.Events("player-positions").empty();
+    }, 7000));
+    auto events = r.Events("player-positions");
+    CHECK_EQ(events.size(), size_t(1));
+    if (!events.empty()) {
+        const JsonValue& payload = AsRecord(events[0].get("payload"));
+        const JsonValue& data = AsRecord(payload.get("data"));
+        const JsonValue* positions = data.get("positions");
+        CHECK(positions && positions->type == JsonValue::Array && positions->arr.size() == 2);
+        if (positions && positions->arr.size() == 2) {
+            CHECK_EQ(Str(positions->arr[0].get("gameId")).value_or(""), std::string(LIMON));
+            CHECK_EQ(Num(AsRecord(positions->arr[0].get("position")).get("x")).value_or(0), 10.5);
+            CHECK_EQ(Str(positions->arr[1].get("gameId")).value_or(""), std::string(GUEST));
+        }
+        CHECK(ValidStreamId(PayloadStream(events[0])));
+        CHECK_EQ(PayloadSeq(events[0]), 1.0);
+    }
+    CHECK(r.fake.CallCount("GET /players/:id/location") >= 2);
+    r.tr.Close("reconnect");
+    r.tr.wire.clear();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    r.tr.Drain();
+    CHECK(r.Events("player-positions").empty());
+
+    Rig missing("v1-position-batch-missing");
+    missing.fake.locations.obj.erase(
+        std::remove_if(missing.fake.locations.obj.begin(), missing.fake.locations.obj.end(),
+                       [](const std::pair<std::string, JsonValue>& item) { return item.first == GUEST; }),
+        missing.fake.locations.obj.end());
+    missing.Start();
+    OpenForIdentify(missing);
+    IdentifyV1(missing);
+    CHECK(t::WaitFor([&] { return missing.fake.CallCount("GET /players/:id/location") >= 2; }, 7000));
+    missing.tr.Drain();
+    CHECK(missing.Events("player-positions").empty());
+}
+
 void RunBridgeTests() {
     IdentifyAndHeartbeat();
     IdentifyError();
@@ -1316,4 +1366,5 @@ void RunBridgeTests() {
     ServerChatName();
     ProtocolV1Events();
     ProtocolV1Fallbacks();
+    ProtocolV1PositionBatch();
 }

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <random>
+#include <set>
 
 namespace native {
 
@@ -38,6 +39,37 @@ std::string CursorJson(const SourceCursor& c) {
 const std::string* GameIdOf(const JsonValue& player) {
     const JsonValue* g = player.get("gameId");
     return g && g->type == JsonValue::String && !g->str.empty() ? &g->str : nullptr;
+}
+
+ActionOutcome ReadPositionBatch(GameApi& game) {
+    ActionOutcome out;
+    GameResponse players = game.Call("GET", "/players", "");
+    JsonValue list;
+    if (players.status != 200 || !ParseJson(players.body, list) || list.type != JsonValue::Array) return out;
+    if (list.arr.size() > 1000) return out;
+    JsonValue positions = JArr();
+    std::set<std::string> seen;
+    for (const JsonValue& player : list.arr) {
+        const JsonValue* online = player.get("online");
+        if (online && online->type == JsonValue::Bool && !online->b) continue;
+        const std::string* id = GameIdOf(player);
+        if (!id || !seen.insert(*id).second) return out;
+        GameResponse response = game.Call("GET", "/players/" + EncodeUriComponent(*id) + "/location", "");
+        JsonValue raw;
+        if (response.status != 200 || !ParseJson(response.body, raw)) return out;
+        try {
+            JsonValue entry = JObj();
+            Put(entry, "gameId", JStr(*id));
+            Put(entry, "position", MapPosition(&raw));
+            positions.arr.push_back(std::move(entry));
+        } catch (const std::exception&) {
+            return out;
+        }
+    }
+    out.ok = true;
+    out.payload = JObj();
+    Put(out.payload, "positions", std::move(positions));
+    return out;
 }
 
 // Long base64url runs (JWTs, keys) never reach a log line.
@@ -250,6 +282,7 @@ void Bridge::Loop() {
         if (reconcilePending_ || now >= nextReconcile_) Reconcile(reconcilePending_, now);
         if (now >= nextBanCheck_) CheckTimedBans(now);
         if (now >= nextSample_) SamplePositions(now);
+        if (now >= nextPositionBatch_) SchedulePositionBatch(now);
         DeliverEvents(now);
         FlushState(now, false);
         if (now >= nextPublish_) {
@@ -274,7 +307,9 @@ void Bridge::WorkerLoop() {
         int expected = kQueued;
         if (!job->state.compare_exchange_strong(expected, kRunning)) continue;  // cancelled before it started
         job->startedMs = o_.steadyMs();
-        if (job->expiry)
+        if (job->positionBatch)
+            job->outcome = ReadPositionBatch(*o_.game);
+        else if (job->expiry)
             job->outcome = ExpireTimedBan(*o_.game, job->expiryGameId);
         else
             job->outcome = ExecuteAction(*o_.game, job->action, job->args, *job->view, o_.wallMs());
@@ -425,6 +460,7 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         // Takaro without protocol 1 sends no protocolVersion: that is protocol 0.
         auto pv = Num(payload.get("protocolVersion"));
         protocol_ = o_.config.protocolV1 && pv && *pv >= 1 ? 1 : 0;
+        nextPositionBatch_ = o_.steadyMs() + 5000;
         auto gs = Str(payload.get("gameServerId"));
         if (!gs) gs = Str(AsRecord(payload.get("server")).get("id"));
         gameServerId_ = gs.value_or("");
@@ -644,6 +680,26 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     int64_t now = o_.steadyMs();
     ActionOutcome& out = job->outcome;
     int64_t wall = o_.wallMs();
+    if (job->positionBatch) {
+        positionBatchInFlight_ = false;
+        nextPositionBatch_ = now + 5000;
+        if (!out.ok || !open_ || !identified_ || protocol_ < 1 || job->epoch != epoch_ ||
+            now - job->startedMs > 5000 || now < lastPositionBatchSent_ + 5000) return;
+        const JsonValue* positions = out.payload.get("positions");
+        if (!positions || positions->type != JsonValue::Array) return;
+        if (positionBatchStream_.empty()) positionBatchStream_ = RandomStreamId();
+        std::string frame = GameEventFrameV1(CreateGameEvent("player-positions", out.payload),
+                                             positionBatchStream_, ++positionBatchSeq_);
+        if (o_.transport->Queue({FrameKind::Event, Text(frame), epoch_, 0}) == QueueStatus::Accepted) {
+            lastPositionBatchSent_ = now;
+            nextPositionBatch_ = now + 5000;
+            for (const JsonValue& entry : positions->arr) {
+                const std::string* id = GameIdOf(entry);
+                if (id) RememberPosition(*id, *entry.get("position"), now);
+            }
+        }
+        return;
+    }
     if (job->sample) {
         std::string gid = Str(job->args.get("gameId")).value_or("");
         sampleInFlight_.erase(gid);
@@ -845,6 +901,23 @@ void Bridge::SamplePositions(int64_t now) {
         }
         jobCv_.notify_one();
     }
+}
+
+void Bridge::SchedulePositionBatch(int64_t now) {
+    nextPositionBatch_ = now + 5000;
+    if (positionBatchInFlight_ || !open_ || !identified_ || protocol_ < 1 || !healthKnown_) return;
+    auto job = std::make_shared<Job>();
+    job->id = nextJobId_++;
+    job->positionBatch = true;
+    job->epoch = epoch_;
+    job->enqueuedMs = now;
+    positionBatchInFlight_ = true;
+    inflight_[job->id] = job;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        jobQueue_.push_back(job);
+    }
+    jobCv_.notify_one();
 }
 
 void Bridge::NoteConnectionEvent(const std::string& type, const JsonValue& data, int64_t nowMs) {
