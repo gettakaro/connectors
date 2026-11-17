@@ -21,13 +21,14 @@ import { FileOnlineStore } from './dune/onlineStore.js';
 import { DunePg, type Queryable } from './dune/pg.js';
 import { DunePluginClient } from './dune/pluginClient.js';
 import { PluginJoin } from './dune/pluginJoin.js';
+import { PositionPusher } from './dune/positionPusher.js';
 import { DeathCoalescer } from './dune/deathCoalescer.js';
 import { mapPluginEvent } from './dune/mapping.js';
 import { PresencePoller } from './dune/presence.js';
 import { DuneRmq, type AmqpConnection, type AmqpConnector } from './dune/rmq.js';
 import { HealthServer, type AdminRoute } from './healthServer.js';
 import { logger } from './logger.js';
-import { MAP_DIMENSIONS } from './dune/mapDimensions.js';
+import { MAP_DIMENSIONS, dimensionForMap } from './dune/mapDimensions.js';
 import { buildManifest } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
 import { GameBuild } from './takaro/gameProfile.js';
@@ -81,6 +82,7 @@ async function main(): Promise<void> {
   );
   config.serverName = initial.serverName;
   const gameBuild = new GameBuild();
+  let livePositionsAvailable = false;
   if (config.logFile) gameBuild.scanFile(config.logFile);
   logger.info(`Game build: ${gameBuild.version() ?? `unknown (${config.logFile ? 'no version line in the map-server log yet' : 'DUNE_LOG_FILE not set'})`}`);
   const takaro = new TakaroWsClient(
@@ -89,20 +91,22 @@ async function main(): Promise<void> {
     {
       baseReconnectMs: config.reconnectBaseMs,
       maxReconnectMs: config.reconnectMaxMs,
-      ...(config.takaroProtocol === 1 ? { manifest: () => buildManifest(MAP_DIMENSIONS, gameBuild.version()) } : {}),
+      ...(config.takaroProtocol === 1 ? { manifest: () => buildManifest(MAP_DIMENSIONS, gameBuild.version(), livePositionsAvailable) } : {}),
     },
   );
   takaro.setConfigHint(configHint());
 
   let rmq: DuneRmq | null = null;
-  const onChat = (message: { msg: string; senderFlsId?: string; senderFuncomId?: string; channelType?: string }): void => {
+  const onChat = (message: { msg: string; senderFlsId?: string; senderFuncomId?: string; channelType?: string; originLocation?: { x: number; y: number; z: number } | null }): void => {
     void (async () => {
       const id = message.senderFlsId ?? message.senderFuncomId;
       const player = id ? await adapter.getPlayer(id).catch(() => undefined) : undefined;
+      const row = player && message.originLocation ? await adapter.findRow(player.gameId).catch(() => undefined) : undefined;
       bridge.emit('chat-message', {
         msg: message.msg,
         channel: mapChannel(message.channelType),
         ...(player ? { player } : {}),
+        ...(message.originLocation ? { position: { ...message.originLocation, dimension: dimensionForMap(row?.worldMap, row?.map) } } : {}),
       });
     })();
   };
@@ -323,6 +327,20 @@ async function main(): Promise<void> {
     },
   });
 
+  const positions = plugin.enabled()
+    ? new PositionPusher({
+        online: () => presence.onlinePlayers(),
+        location: (gameId) => adapter.getLivePlayerLocation(gameId),
+        ready: async () => { await plugin.health(); return true; },
+        availability: (available) => {
+          if (livePositionsAvailable === available) return;
+          livePositionsAvailable = available;
+          takaro.sendCapabilities();
+        },
+        takaro,
+      })
+    : null;
+
   /**
    * Ban enforcement rides its own timer over the presence poller's online set: every online player is checked against
    * the store and kicked on sight, and `enforce()` sweeps expired timed bans first so they are lifted by us (Takaro
@@ -402,7 +420,10 @@ async function main(): Promise<void> {
   // Takaro coming and going now only affects DELIVERY. The event sources are started once, below, and stopped only on
   // shutdown — see `Bridge.startSources`.
   takaro.on('identified', () => void bridge.onTakaroUp());
-  takaro.on('disconnected', () => bridge.onTakaroDown());
+  takaro.on('disconnected', () => {
+    livePositionsAvailable = false;
+    bridge.onTakaroDown();
+  });
 
   await health.start();
   logger.info(
@@ -412,6 +433,7 @@ async function main(): Promise<void> {
   bridge.startHealthWatch();
   // Game-side duties start NOW, before Takaro is even contacted, and keep running whatever Takaro does.
   await bridge.startSources();
+  positions?.start();
   takaro.connect();
 
   const settingsWatch = setInterval(() => {
@@ -426,6 +448,7 @@ async function main(): Promise<void> {
     logger.info('Shutting down the Dune Takaro sidecar');
     clearInterval(settingsWatch);
     clearInterval(banSweep);
+    positions?.stop();
     bridge.stopSources();
     bridge.stopHealthWatch();
     // A death still waiting for the plugin's attribution is emitted rather than dropped.

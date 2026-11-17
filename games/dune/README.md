@@ -108,6 +108,7 @@ Checked on server build 26081962, 2026-10-22. ✅ works, ⚠️ works with a lim
 | Connection | ✅ | Online while the sidecar runs; reconnects by itself. |
 | Player list | ✅ | |
 | Player location | ✅ | Live with the plugin; last saved position without it. |
+| Pushed player positions | ✅ | With a healthy native plugin, protocol v1 sends complete snapshots after acknowledgement plus at least three seconds. Live-supported on server bundle 2181988 and Windows client Steam build 26592269. Plugin-free deployments use location polling. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |

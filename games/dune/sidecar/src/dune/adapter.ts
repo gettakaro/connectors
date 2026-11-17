@@ -272,6 +272,19 @@ export class DuneAdapter {
     );
   }
 
+  /** Only a current pawn transform is safe for a position push; saved transforms and chat hints are not. */
+  async getLivePlayerLocation(id: string): Promise<Position | null> {
+    const plugin = this.options.plugin;
+    const join = this.options.pluginJoin;
+    if (!plugin?.enabled() || !join) return null;
+    const row = await this.findRow(id);
+    const joined = await join.refFor(row?.flsId ?? stripPlatform(id));
+    if (!joined) return null;
+    const live = await plugin.getPlayerLocation(joined.ref);
+    if (live.source !== 'pawn' || ![live.x, live.y, live.z].every(Number.isFinite)) return null;
+    return { x: live.x, y: live.y, z: live.z, dimension: dimensionForMap(row?.worldMap, row?.map) };
+  }
+
   /**
    * Which of the three chain steps answered, for `/health` and the logs. Takaro's `getPlayerLocation`
    * DTO is a bare position, so the provenance cannot ride along in the response — and a silent chain
