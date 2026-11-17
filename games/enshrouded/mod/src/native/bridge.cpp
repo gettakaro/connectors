@@ -550,7 +550,7 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
         return;
     }
     size_t userJobs = 0;
-    for (auto& kv : inflight_) userJobs += !kv.second->expiry && !kv.second->sample;
+    for (auto& kv : inflight_) userJobs += !kv.second->expiry && !kv.second->sample && !kv.second->positionBatch;
     if (userJobs >= kMaxPendingActions) {
         overloads_++;
         remember();
@@ -697,11 +697,11 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     ActionOutcome& out = job->outcome;
     int64_t wall = o_.wallMs();
     if (job->positionBatch) {
-        if (job->epoch != epoch_) return;
+        if (job->epoch != epoch_ || job->responded) return;
         positionBatchInFlight_ = false;
         nextPositionBatch_ = now + 3000;
         if (!out.ok || !open_ || !identified_ || protocol_ < 1 || job->epoch != epoch_ ||
-            now - job->startedMs > 5000 || now < lastPositionBatchSent_ + 3000) return;
+            now > job->deadlineMs || now < lastPositionBatchSent_ + 3000) return;
         const JsonValue* positions = out.payload.get("positions");
         if (!positions || positions->type != JsonValue::Array) return;
         if (positionBatchStream_.empty()) positionBatchStream_ = RandomStreamId();
@@ -832,6 +832,30 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
 void Bridge::CheckDeadlines(int64_t now) {
     for (auto it = inflight_.begin(); it != inflight_.end();) {
         auto job = it->second;
+        if (job->positionBatch) {
+            if (!job->responded && now > job->deadlineMs) {
+                job->responded = true;  // discard a running job's eventual completion
+                int expected = kQueued;
+                bool neverStarted = job->state.compare_exchange_strong(expected, kCancelled);
+                if (job->epoch == epoch_) {
+                    positionBatchReadTimeouts_++;
+                    PluginLog("native: position snapshot read exceeded 5000ms (%s)",
+                              neverStarted ? "workers busy" : "running; reconnecting");
+                    if (neverStarted) {
+                        positionBatchInFlight_ = false;
+                        nextPositionBatch_ = now + 3000;
+                    } else {
+                        o_.transport->RequestClose(epoch_, "position snapshot read timed out");
+                    }
+                }
+                if (neverStarted) {
+                    it = inflight_.erase(it);
+                    continue;
+                }
+            }
+            ++it;
+            continue;  // internal work has no Takaro requestId or response
+        }
         if (job->expiry || job->sample || job->responded || now <= job->deadlineMs) {
             ++it;
             continue;
@@ -925,13 +949,14 @@ void Bridge::SamplePositions(int64_t now) {
 void Bridge::SchedulePositionBatch(int64_t now) {
     nextPositionBatch_ = now + 3000;
     if (positionBatchAwaitingAck_) {
-        if (now - lastPositionBatchSent_ >= 15000) o_.transport->RequestClose(epoch_, "position snapshot acknowledgement timed out");
+        if (now - lastPositionBatchSent_ >= 30000) o_.transport->RequestClose(epoch_, "position snapshot acknowledgement timed out");
         return;
     }
     if (positionBatchInFlight_ || !open_ || !identified_ || protocol_ < 1 || !healthKnown_) return;
     auto job = std::make_shared<Job>();
     job->id = nextJobId_++;
     job->positionBatch = true;
+    job->deadlineMs = now + 5000;
     job->epoch = epoch_;
     job->enqueuedMs = now;
     positionBatchInFlight_ = true;
@@ -1322,7 +1347,7 @@ void Bridge::Publish() {
     errors += "}";
     size_t userJobs = 0, running = 0;
     for (auto& kv : inflight_) {
-        userJobs += !kv.second->expiry && !kv.second->sample;
+        userJobs += !kv.second->expiry && !kv.second->sample && !kv.second->positionBatch;
         running += kv.second->state == kRunning;
     }
     uint64_t overflows;
@@ -1362,6 +1387,11 @@ void Bridge::Publish() {
                                              .N("maxLatencyMs", (double)maxRequestLatencyMs_)
                                              .S("lastAction", lastRequestAction_)
                                              .Done())
+                        .Raw("positions", ObjBuilder()
+                                              .N("readTimeouts", (double)positionBatchReadTimeouts_)
+                                              .B("readInFlight", positionBatchInFlight_)
+                                              .B("awaitingAck", positionBatchAwaitingAck_)
+                                              .Done())
                         .Raw("outbox", ObjBuilder()
                                            .B("usable", o_.store->OutboxUsable())
                                            .N("pending", (double)ob.pending.size())
