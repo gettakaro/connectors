@@ -21,7 +21,7 @@ Download the latest release from https://takaro.io/connectors/empyrion (or the n
 release on the [GitHub releases page](https://github.com/gettakaro/connectors/releases)). You need
 one file:
 
-- `takaro-empyrion-windows-26569354-<version>.zip` for Empyrion **v1.20** (Steam build 26569354, the
+- `takaro-empyrion-windows-26660180-<version>.zip` for Empyrion **v1.20** (Steam build 26660180, the
   current public build). The number in the name is the server's Steam build.
 
 Each release has a `SHA256SUMS` file to check the download with.
