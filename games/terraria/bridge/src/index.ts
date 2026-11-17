@@ -83,6 +83,7 @@ async function main(): Promise<void> {
     () => adapter.getPlayerPositions(),
     (snapshot) => emit('player-positions', snapshot),
     POSITION_INTERVAL_SECONDS * 1000,
+    () => takaro.canSendPositionSnapshot(),
   );
   const tailers = config.logFiles.map(
     (file) => new LogTailer(file, (event) => emit(event.type, event.data), undefined, undefined, config.logExcludePatterns),

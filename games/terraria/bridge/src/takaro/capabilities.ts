@@ -8,7 +8,7 @@ export interface Capability {
   parameters?: unknown;
 }
 
-export const POSITION_INTERVAL_SECONDS = 5;
+export const POSITION_INTERVAL_SECONDS = 3;
 
 /** Protocol v1 capability per action. Actions without one are not capabilities (testReachability) or v0 only. */
 export const ACTION_CAPABILITY: Partial<Record<GameServerAction, string>> = {

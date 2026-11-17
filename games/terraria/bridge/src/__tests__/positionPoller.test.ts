@@ -32,3 +32,27 @@ test('position polling does not emit a stale response or burst on reconnect', as
   assert.equal(emitted.length, 1, 'reconnect cannot violate the declared interval');
   poller.stop();
 });
+
+test('a delayed receipt prevents snapshot reads until the transport is ready', async () => {
+  let ready = false;
+  let loads = 0;
+  let emitted = 0;
+  const poller = new PositionPoller(
+    async () => { loads++; return { timestamp: new Date().toISOString(), positions: [] }; },
+    () => { emitted++; ready = false; },
+    20,
+    () => ready,
+  );
+  try {
+    poller.start();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(loads, 0, 'do not capture snapshots that would wait behind an unacknowledged send');
+    ready = true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(emitted, 1);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(loads, 1);
+  } finally {
+    poller.stop();
+  }
+});

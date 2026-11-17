@@ -11,6 +11,7 @@ export class PositionPoller {
     private readonly load: () => Promise<PlayerPositionsSnapshot>,
     private readonly emit: (snapshot: PlayerPositionsSnapshot) => void,
     private readonly intervalMs: number,
+    private readonly ready: () => boolean = () => true,
   ) {}
 
   start(): void {
@@ -29,6 +30,11 @@ export class PositionPoller {
   }
 
   private async poll(generation: number): Promise<void> {
+    if (!this.running || generation !== this.generation) return;
+    if (!this.ready()) {
+      this.timer = setTimeout(() => void this.poll(generation), 100);
+      return;
+    }
     try {
       const snapshot = await this.load();
       if (this.running && generation === this.generation) {
