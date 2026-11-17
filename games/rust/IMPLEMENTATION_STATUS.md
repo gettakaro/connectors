@@ -10,5 +10,8 @@ multiple batches into a burst. Missing position acknowledgements force reconnect
 The connection watchdog can retire a socket operation even when Mono leaves it pending after
 cancellation or Abort, so a connection attempt made during an outage cannot prevent later retries.
 
-The protocol harness checks the manifest, event shape, distinct player IDs, and 1000-entry
-limit. Live verification of Takaro's player-sync polling and `/settp` freshness is pending.
+The protocol harness checks the manifest, event shape, distinct player IDs, 1000-entry limit,
+receipt pacing, and socket operations that ignore cancellation. On Carbon `26498655`, real
+player movement updated Takaro without background location polling, and a chat `@settp`
+stored the player's current position. After a connection outage, a new position stream
+resumed with coordinates sampled after movement during the outage.
