@@ -78,7 +78,7 @@ Checked on server build 25991736, 2026-10-17. ✅ works, ⚠️ works with a lim
 | Connection | ✅ | Reconnects; events from an outage are delivered afterwards. |
 | Player list | ✅ | Character name and EOS id. |
 | Player location | ✅ | |
-| Periodic player positions | ⚠️ | Implemented for protocol v1 at a declared five-second interval; live acceptance pending. |
+| Periodic player positions | ✅ | Current positions update automatically on protocol v1 with a declared three-second minimum; verified on server build 26574459. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
@@ -94,7 +94,7 @@ Checked on server build 25991736, 2026-10-17. ✅ works, ⚠️ works with a lim
 | Shop | ✅ | |
 | Shut down the server | ✅ | Saves first. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | Includes the sender's position when a readable pawn is available; position addition awaits live acceptance. |
+| Chat messages | ✅ | Includes the sender's current position when a readable pawn is available. |
 | Player death | ✅ | Names the creature. |
 | Entity killed | ✅ | |
 | Server log lines | ✅ | The world password is removed. |

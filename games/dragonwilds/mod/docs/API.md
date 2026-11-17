@@ -216,7 +216,7 @@ for it up to 15 s after login.
   Takaro connection is identified. The next snapshot is sampled at least three seconds after Takaro
   acknowledges the previous one, so transport stalls cannot bunch receipts inside the declared interval.
   These connection-scoped snapshots are discarded on disconnect rather than replayed. Players without a spawned, readable pawn are omitted. A failed
-  snapshot is skipped. Live acceptance of this new event remains unverified. `entity-killed` carries a readable `entity` name
+  snapshot is skipped. Position delivery and the chat teleport command were verified on server build 26574459. `entity-killed` carries a readable `entity` name
   (`ADominionAICharacter::AIName`) with the Blueprint class in `entityCode`/`entityClass`, and the
   weapon that made the kill in `weapon`/`weaponCode`; `weaponSource` names the route that resolved
   it (the fatal damage event's source item, the killer's equipped main/off hand, the loadout scan,
