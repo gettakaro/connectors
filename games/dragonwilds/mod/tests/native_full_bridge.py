@@ -85,6 +85,31 @@ class V1Run(Run):
     identify_reply = {'gameServerId': 'test-server', 'protocolVersion': 1}
 
 
+def blocked_position_read(cert, key, state):
+    run = V1Run(cert, key, state)
+    try:
+        run.command('holdpositions', 'POSITIONSHELD')
+        eventually(lambda: (state / 'position-read-held.fixture').exists(), timeout=8)
+        run.peer.send(run.index, {'type': 'ping'})
+        deadline = time.monotonic() + 2
+        pong = False
+        while time.monotonic() < deadline:
+            index, opcode, raw = run.peer.frames.get(timeout=max(0.01, deadline - time.monotonic()))
+            if index == run.index and opcode == 1 and json.loads(raw).get('type') == 'pong':
+                pong = True
+                break
+        assert pong, 'a blocked game-thread snapshot stopped the bridge control loop'
+        run.peer.close_session(run.index)
+        run.index = run.identify()
+        run.pending = []
+        run.command('release', 'RELEASED')
+        fresh = run.game_event(lambda value: value['payload']['type'] == 'player-positions', timeout=10)
+        assert fresh['payload']['seq'] == 1, fresh
+        print('blocked position reads leave controls/reconnect responsive and old completions are discarded: pass', flush=True)
+    finally:
+        run.close()
+
+
 def position_ack_cadence(cert, key, state):
     run = V1Run(cert, key, state)
     is_position = lambda value: value['payload']['type'] == 'player-positions'
@@ -830,7 +855,7 @@ def main():
         subprocess.run(['openssl', 'x509', '-req', '-in', str(csr), '-signkey', str(key),
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for test in (position_ack_cadence, protocol_v1, protocol_v0_forced, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
+        for test in (blocked_position_read, position_ack_cadence, protocol_v1, protocol_v0_forced, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
                      replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
                      engine_before_plugin, ambiguous_engine_ban, newer_ban_after_crash, permanent_restart, timed_replacement,
                      failed_ban_write,

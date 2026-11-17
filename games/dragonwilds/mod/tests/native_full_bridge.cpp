@@ -26,6 +26,7 @@ std::mutex mu;
 std::condition_variable cv;
 bool released = false;
 std::atomic<bool> holdPlayers{false};
+std::atomic<bool> holdPositions{false};
 std::atomic<unsigned> shutdownCalls{0};
 std::atomic<size_t> pendingBanJobs{0};
 std::atomic<bool> lateBanNext{false};
@@ -66,7 +67,14 @@ Actions::Result Actions::PlayerLocation(const std::string& id) {
         return {200, "{\"x\":1,\"y\":2,\"z\":3,\"yaw\":90,\"ageMs\":0}"};
     return {501, "{\"error\":\"location unavailable\"}"};
 }
-Actions::Result Actions::PlayerPositions() { return {200, "[]"}; }
+Actions::Result Actions::PlayerPositions() {
+    if (holdPositions) {
+        WriteFileAtomic(PluginDataDir() + "/position-read-held.fixture", "held");
+        std::unique_lock<std::mutex> lock(mu);
+        cv.wait(lock, [] { return released; });
+    }
+    return {200, "[]"};
+}
 Actions::Result Actions::Player(const std::string&) { return {404,"{}"}; }
 Actions::Result Actions::PlayerInventory(const std::string&) { return {200,"[]"}; }
 Actions::Result Actions::Items(const std::string&) { return {200,"[]"}; }
@@ -197,6 +205,7 @@ int main(int argc, char** argv) {
     std::string command;
     while (std::getline(std::cin, command)) {
         if (command == "health") std::cout << "HEALTH " << NativeBridge::HealthJson() << std::endl;
+        else if (command == "holdpositions") { holdPositions = true; std::cout << "POSITIONSHELD" << std::endl; }
         else if (command == "hold") { holdPlayers = true; std::cout << "HELD" << std::endl; }
         else if (command == "lateban") { lateBanNext = true; std::cout << "LATEBAN" << std::endl; }
         else if (command == "holdban") { holdBanNext = true; std::cout << "HOLDBAN" << std::endl; }

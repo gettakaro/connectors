@@ -38,7 +38,7 @@ struct Request {
     uint64_t epoch = 0;
     size_t bytes = 0;
     bool full = false, shutdownCommit = false, reconcile = false, verifyBan = false,
-         resolveBan = false,
+         resolveBan = false, positions = false,
          preparedReady = false;
     NativeBehavior::PreparedAction prepared;
 };
@@ -47,7 +47,8 @@ struct Completion {
     uint64_t epoch = 0;
     size_t bytes = 0;
     size_t requestBytes = 0;
-    bool full = false, reconcile = false, verifyBan = false, resolveBan = false;
+    bool full = false, reconcile = false, verifyBan = false, resolveBan = false, positions = false;
+    Clock::time_point capturedAt;
     std::string resolvedBanId;
     NativeBehavior::PreparedAction prepared;
     NativeBehavior::ActionOutcome outcome;
@@ -138,6 +139,7 @@ constexpr auto kAckTimeout = std::chrono::seconds(30);
 uint64_t eventErrorCount = 0;
 uint64_t positionSeq = 0;
 bool positionAwaitingAck = false;
+bool positionReadInFlight = false;
 Clock::time_point nextPositions, positionQueuedAt;
 bool liveEpoch = false;
 std::string lastError;
@@ -1196,6 +1198,28 @@ void BridgeLoop() {
         }
         if (hasCompletion) {
             const bool fresh = completed.epoch == currentEpoch && liveEpoch;
+            if (completed.positions) {
+                positionReadInFlight = false;
+                const auto now = Clock::now();
+                if (fresh && identified && protocolVersion == 1 && !positionAwaitingAck &&
+                    completed.error.empty() && now - completed.capturedAt <= std::chrono::seconds(3)) {
+                    Json frame = {{"type", "gameEvent"}, {"payload", {
+                        {"type", "player-positions"},
+                        {"data", {{"positions", Json::parse(completed.payload)}}},
+                        {"streamId", PositionStreamId()}, {"seq", positionSeq + 1}
+                    }}};
+                    auto encoded = std::make_shared<const std::string>(frame.dump());
+                    if (NativeTransport::Queue({NativeTransport::Kind::Position, encoded, currentEpoch, 0, false})) {
+                        ++positionSeq;
+                        positionAwaitingAck = true;
+                        positionQueuedAt = now;
+                        if (wireDebug) WireLog("SEND", *encoded);
+                    }
+                } else if (fresh && !completed.error.empty()) {
+                    lastError = "player positions snapshot: " + completed.error;
+                }
+                nextPositions = std::max(nextPositions, now + std::chrono::seconds(3));
+            }
             if (completed.verifyBan) {
                 banVerifyInFlight = false;
                 if (completed.error.empty()) {
@@ -1320,27 +1344,16 @@ void BridgeLoop() {
         }
         if (positionAwaitingAck && Clock::now() - positionQueuedAt >= std::chrono::seconds(30))
             NativeTransport::RequestClose(currentEpoch, 1013, "position acknowledgement timeout");
-        if (!gateMode && identified && protocolVersion == 1 && !positionAwaitingAck && Clock::now() >= nextPositions) {
-            const uint64_t snapshotEpoch = currentEpoch;
-            Actions::Result snapshot = Actions::PlayerPositions();
-            if (snapshot.status == 200 && identified && liveEpoch && currentEpoch == snapshotEpoch) {
-                Json frame = {{"type", "gameEvent"}, {"payload", {
-                    {"type", "player-positions"},
-                    {"data", {{"positions", Json::parse(snapshot.body)}}},
-                    {"streamId", PositionStreamId()},
-                    {"seq", positionSeq + 1}
-                }}};
-                auto encoded = std::make_shared<const std::string>(frame.dump());
-                if (NativeTransport::Queue({NativeTransport::Kind::Position, encoded, currentEpoch, 0, false})) {
-                    ++positionSeq;
-                    positionAwaitingAck = true;
-                    positionQueuedAt = Clock::now();
-                    if (wireDebug) WireLog("SEND", *encoded);
-                }
-            } else if (snapshot.status != 200) {
-                lastError = "player positions snapshot: " + snapshot.body;
+        if (!gateMode && identified && protocolVersion == 1 && !positionAwaitingAck &&
+            !positionReadInFlight && Clock::now() >= nextPositions) {
+            std::lock_guard<std::mutex> g(mu);
+            if (actions.size() + runningActions + reservedActions < 128) {
+                Request r;
+                r.positions = true; r.preparedReady = true; r.epoch = currentEpoch;
+                actions.push_back(std::move(r));
+                positionReadInFlight = true;
+                actionCv.notify_one();
             }
-            // Anchor cadence to publication, since a game-thread job may wait behind other work.
             nextPositions = Clock::now() + std::chrono::seconds(3);
         }
         if (Clock::now() >= nextPoll) { PollEvents(); nextPoll = Clock::now() + std::chrono::seconds(1); }
@@ -1459,11 +1472,20 @@ void ActionLoop() {
         done.requestBytes = r.bytes;
         done.full = r.full;
         done.reconcile = r.reconcile;
+        done.positions = r.positions;
         done.verifyBan = r.verifyBan;
         done.resolveBan = r.resolveBan;
         if (r.full) done.prepared = std::move(r.prepared);
         try {
-            if (r.verifyBan) {
+            if (r.positions) {
+                Actions::Result snapshot = Actions::PlayerPositions();
+                done.capturedAt = Clock::now();
+                if (snapshot.status != 200) throw std::runtime_error(snapshot.body);
+                Json rows = Json::parse(snapshot.body);
+                if (!rows.is_array() || rows.size() > 1000)
+                    throw std::runtime_error("invalid position snapshot");
+                done.payload = rows.dump();
+            } else if (r.verifyBan) {
                 done.payload = NativeBehavior::Engine::VerifyBanState();
                 if (done.payload.size() > 8*1024*1024)
                     throw std::runtime_error("ban verification exceeds 8 MiB");
@@ -1577,6 +1599,7 @@ bool Start() {
         unsigned long ms = deadline && *deadline ? std::strtoul(deadline, &end, 10) : 8500;
         requestDeadline = std::chrono::milliseconds(end && *end == '\0' && ms >= 1000 && ms <= 9500 ? ms : 8500);
     }
+    positionReadInFlight = false;
     reconcileInFlight = banVerifyInFlight = banRecoveryPending = false;
     currentEpoch = scanSeq = confirmedSeq = deliveryLosses = requestCount = protocolErrorCount = 0;
     identified = liveEpoch = false; lastError.clear(); banMetadataError.clear(); lastRequestAction.clear();
@@ -1684,6 +1707,7 @@ void Stop() {
     FlushPluginLogs();
     behavior.reset(); durable.reset();
     sentEpochByOutboxId.clear(); shutdownResponse.reset();
+    positionReadInFlight = false;
     reconcileInFlight = banVerifyInFlight = banRecoveryPending = false;
     banMetadataError.clear();
     { std::lock_guard<std::mutex> budget(eventBudgetMu);
