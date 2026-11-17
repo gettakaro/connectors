@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <random>
+#include <set>
 
 namespace native {
 
@@ -38,6 +39,37 @@ std::string CursorJson(const SourceCursor& c) {
 const std::string* GameIdOf(const JsonValue& player) {
     const JsonValue* g = player.get("gameId");
     return g && g->type == JsonValue::String && !g->str.empty() ? &g->str : nullptr;
+}
+
+ActionOutcome ReadPositionBatch(GameApi& game) {
+    ActionOutcome out;
+    GameResponse players = game.Call("GET", "/players", "");
+    JsonValue list;
+    if (players.status != 200 || !ParseJson(players.body, list) || list.type != JsonValue::Array) return out;
+    if (list.arr.size() > 1000) return out;
+    JsonValue positions = JArr();
+    std::set<std::string> seen;
+    for (const JsonValue& player : list.arr) {
+        const JsonValue* online = player.get("online");
+        if (online && online->type == JsonValue::Bool && !online->b) continue;
+        const std::string* id = GameIdOf(player);
+        if (!id || !seen.insert(*id).second) return out;
+        GameResponse response = game.Call("GET", "/players/" + EncodeUriComponent(*id) + "/location", "");
+        JsonValue raw;
+        if (response.status != 200 || !ParseJson(response.body, raw)) return out;
+        try {
+            JsonValue entry = JObj();
+            Put(entry, "gameId", JStr(*id));
+            Put(entry, "position", MapPosition(&raw));
+            positions.arr.push_back(std::move(entry));
+        } catch (const std::exception&) {
+            return out;
+        }
+    }
+    out.ok = true;
+    out.payload = JObj();
+    Put(out.payload, "positions", std::move(positions));
+    return out;
 }
 
 // Long base64url runs (JWTs, keys) never reach a log line.
@@ -250,6 +282,7 @@ void Bridge::Loop() {
         if (reconcilePending_ || now >= nextReconcile_) Reconcile(reconcilePending_, now);
         if (now >= nextBanCheck_) CheckTimedBans(now);
         if (now >= nextSample_) SamplePositions(now);
+        if (now >= nextPositionBatch_) SchedulePositionBatch(now);
         DeliverEvents(now);
         FlushState(now, false);
         if (now >= nextPublish_) {
@@ -274,7 +307,9 @@ void Bridge::WorkerLoop() {
         int expected = kQueued;
         if (!job->state.compare_exchange_strong(expected, kRunning)) continue;  // cancelled before it started
         job->startedMs = o_.steadyMs();
-        if (job->expiry)
+        if (job->positionBatch)
+            job->outcome = ReadPositionBatch(*o_.game);
+        else if (job->expiry)
             job->outcome = ExpireTimedBan(*o_.game, job->expiryGameId);
         else
             job->outcome = ExecuteAction(*o_.game, job->action, job->args, *job->view, o_.wallMs());
@@ -297,6 +332,10 @@ void Bridge::HandleNotice(Notice& n) {
             open_ = true;
             identified_ = false;
             protocol_ = 0;
+            positionBatchAwaitingAck_ = false;
+            positionBatchInFlight_ = false;
+            positionBatchStream_ = RandomStreamId();
+            positionBatchSeq_ = 0;
             lastQueuedId_ = 0;  // everything unconfirmed goes out again on this connection
             pendingIds_.clear();
             recentIds_.clear();
@@ -425,6 +464,7 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         // Takaro without protocol 1 sends no protocolVersion: that is protocol 0.
         auto pv = Num(payload.get("protocolVersion"));
         protocol_ = o_.config.protocolV1 && pv && *pv >= 1 ? 1 : 0;
+        nextPositionBatch_ = o_.steadyMs() + 3000;
         auto gs = Str(payload.get("gameServerId"));
         if (!gs) gs = Str(AsRecord(payload.get("server")).get("id"));
         gameServerId_ = gs.value_or("");
@@ -439,6 +479,11 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         eventErrors_++;
         const JsonValue& error = AsRecord(msg.get("error"));
         const JsonValue& p = AsRecord(msg.get("payload"));
+        if (Str(p.get("streamId")).value_or("") == positionBatchStream_ &&
+            Num(p.get("seq")).value_or(0) == (double)positionBatchSeq_) {
+            positionBatchAwaitingAck_ = false;
+            nextPositionBatch_ = o_.steadyMs() + 3000;
+        }
         lastEventError_ = Str(error.get("code")).value_or("?") + ": " + Str(error.get("message")).value_or("") +
                           " (seq " + (p.get("seq") ? JsString(p.get("seq")) : std::string("?")) + ")";
         PluginLog("native: Takaro rejected an event: %s", Redact(lastEventError_).c_str());
@@ -505,7 +550,7 @@ void Bridge::HandleRequest(uint64_t epoch, const JsonValue& msg) {
         return;
     }
     size_t userJobs = 0;
-    for (auto& kv : inflight_) userJobs += !kv.second->expiry && !kv.second->sample;
+    for (auto& kv : inflight_) userJobs += !kv.second->expiry && !kv.second->sample && !kv.second->positionBatch;
     if (userJobs >= kMaxPendingActions) {
         overloads_++;
         remember();
@@ -580,6 +625,13 @@ void Bridge::HandleEventAck(const JsonValue& msg) {
     const JsonValue& p = AsRecord(msg.get("payload"));
     auto stream = Str(p.get("streamId"));
     auto upTo = Num(p.get("upTo"));
+    if (protocol_ >= 1 && stream && *stream == positionBatchStream_ && upTo &&
+        positionBatchAwaitingAck_ && *upTo == (double)positionBatchSeq_) {
+        positionBatchAwaitingAck_ = false;
+        nextPositionBatch_ = o_.steadyMs() + 3000;
+        if (o_.config.logFrames) PluginLog("native: position snapshot acknowledged seq %llu", (unsigned long long)positionBatchSeq_);
+        return;
+    }
     if (protocol_ == 0 || !stream || !upTo || *upTo < 1 || !o_.store->OutboxUsable()) return;
     if (*stream != o_.store->Outbox().streamId) return;  // an ack for a stream of an earlier outbox
     eventAcks_++;
@@ -644,6 +696,29 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     int64_t now = o_.steadyMs();
     ActionOutcome& out = job->outcome;
     int64_t wall = o_.wallMs();
+    if (job->positionBatch) {
+        if (job->epoch != epoch_ || job->responded) return;
+        positionBatchInFlight_ = false;
+        nextPositionBatch_ = now + 3000;
+        if (!out.ok || !open_ || !identified_ || protocol_ < 1 || job->epoch != epoch_ ||
+            now > job->deadlineMs || now < lastPositionBatchSent_ + 3000) return;
+        const JsonValue* positions = out.payload.get("positions");
+        if (!positions || positions->type != JsonValue::Array) return;
+        if (positionBatchStream_.empty()) positionBatchStream_ = RandomStreamId();
+        std::string frame = GameEventFrameV1(CreateGameEvent("player-positions", out.payload),
+                                             positionBatchStream_, ++positionBatchSeq_);
+        if (o_.transport->Queue({FrameKind::Control, Text(frame), epoch_, 0}) == QueueStatus::Accepted) {
+            lastPositionBatchSent_ = now;
+            positionBatchAwaitingAck_ = true;
+            nextPositionBatch_ = now + 3000;
+            if (o_.config.logFrames) PluginLog("native: frame out %s", frame.c_str());
+            for (const JsonValue& entry : positions->arr) {
+                const std::string* id = GameIdOf(entry);
+                if (id) RememberPosition(*id, *entry.get("position"), now);
+            }
+        }
+        return;
+    }
     if (job->sample) {
         std::string gid = Str(job->args.get("gameId")).value_or("");
         sampleInFlight_.erase(gid);
@@ -757,6 +832,30 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
 void Bridge::CheckDeadlines(int64_t now) {
     for (auto it = inflight_.begin(); it != inflight_.end();) {
         auto job = it->second;
+        if (job->positionBatch) {
+            if (!job->responded && now > job->deadlineMs) {
+                job->responded = true;  // discard a running job's eventual completion
+                int expected = kQueued;
+                bool neverStarted = job->state.compare_exchange_strong(expected, kCancelled);
+                if (job->epoch == epoch_) {
+                    positionBatchReadTimeouts_++;
+                    PluginLog("native: position snapshot read exceeded 5000ms (%s)",
+                              neverStarted ? "workers busy" : "running; reconnecting");
+                    if (neverStarted) {
+                        positionBatchInFlight_ = false;
+                        nextPositionBatch_ = now + 3000;
+                    } else {
+                        o_.transport->RequestClose(epoch_, "position snapshot read timed out");
+                    }
+                }
+                if (neverStarted) {
+                    it = inflight_.erase(it);
+                    continue;
+                }
+            }
+            ++it;
+            continue;  // internal work has no Takaro requestId or response
+        }
         if (job->expiry || job->sample || job->responded || now <= job->deadlineMs) {
             ++it;
             continue;
@@ -845,6 +944,28 @@ void Bridge::SamplePositions(int64_t now) {
         }
         jobCv_.notify_one();
     }
+}
+
+void Bridge::SchedulePositionBatch(int64_t now) {
+    nextPositionBatch_ = now + 3000;
+    if (positionBatchAwaitingAck_) {
+        if (now - lastPositionBatchSent_ >= 30000) o_.transport->RequestClose(epoch_, "position snapshot acknowledgement timed out");
+        return;
+    }
+    if (positionBatchInFlight_ || !open_ || !identified_ || protocol_ < 1 || !healthKnown_) return;
+    auto job = std::make_shared<Job>();
+    job->id = nextJobId_++;
+    job->positionBatch = true;
+    job->deadlineMs = now + 5000;
+    job->epoch = epoch_;
+    job->enqueuedMs = now;
+    positionBatchInFlight_ = true;
+    inflight_[job->id] = job;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        jobQueue_.push_back(job);
+    }
+    jobCv_.notify_one();
 }
 
 void Bridge::NoteConnectionEvent(const std::string& type, const JsonValue& data, int64_t nowMs) {
@@ -1226,7 +1347,7 @@ void Bridge::Publish() {
     errors += "}";
     size_t userJobs = 0, running = 0;
     for (auto& kv : inflight_) {
-        userJobs += !kv.second->expiry && !kv.second->sample;
+        userJobs += !kv.second->expiry && !kv.second->sample && !kv.second->positionBatch;
         running += kv.second->state == kRunning;
     }
     uint64_t overflows;
@@ -1266,6 +1387,11 @@ void Bridge::Publish() {
                                              .N("maxLatencyMs", (double)maxRequestLatencyMs_)
                                              .S("lastAction", lastRequestAction_)
                                              .Done())
+                        .Raw("positions", ObjBuilder()
+                                              .N("readTimeouts", (double)positionBatchReadTimeouts_)
+                                              .B("readInFlight", positionBatchInFlight_)
+                                              .B("awaitingAck", positionBatchAwaitingAck_)
+                                              .Done())
                         .Raw("outbox", ObjBuilder()
                                            .B("usable", o_.store->OutboxUsable())
                                            .N("pending", (double)ob.pending.size())

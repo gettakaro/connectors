@@ -103,6 +103,7 @@ private:
         int64_t deadlineMs = 0;
         bool expiry = false;  // internal timed-ban expiry
         bool sample = false;  // internal position read (getPlayerLocation of an online player, no response)
+        bool positionBatch = false;  // fresh online-player snapshot, never persisted
         std::string expiryGameId;
         std::string intentId;
         std::shared_ptr<const ActionView> view;
@@ -141,6 +142,7 @@ private:
     std::shared_ptr<const ActionView> View();
     void RememberPosition(const std::string& gameId, const JsonValue& position, int64_t now);
     void SamplePositions(int64_t now);
+    void SchedulePositionBatch(int64_t now);
     std::string Redact(std::string text) const;
     void ApplyPendingSettings();
 
@@ -180,6 +182,11 @@ private:
     std::set<std::string> sampleInFlight_;
     bool positionsDirty_ = false;
     int64_t lastPositionsSave_ = 0, nextSample_ = 0;
+    int64_t nextPositionBatch_ = 0, lastPositionBatchSent_ = -5000;
+    bool positionBatchInFlight_ = false;
+    bool positionBatchAwaitingAck_ = false;
+    uint64_t positionBatchSeq_ = 0, positionBatchReadTimeouts_ = 0;
+    std::string positionBatchStream_;
     std::map<std::string, int> missingStrikes_;
     bool reconcilePending_ = true;
     std::set<std::string> expiryInFlight_;
