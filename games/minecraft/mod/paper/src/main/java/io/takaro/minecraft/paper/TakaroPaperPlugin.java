@@ -46,7 +46,7 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
                 getDataFolder().toPath().resolve("config.yml"), new PaperYamlConfigFormat(), this);
         connector = new TakaroConnector(this, configFile);
         connector.start();
-        // Check twice a second; PositionPublisher enforces the four-second wire interval.
+        // Check twice a second; the shared core waits for a receipt ACK before the next capture.
         Bukkit.getScheduler().runTaskTimer(this,
                 () -> positionPublisher.capture(this, eventEmitter), 10L, 10L);
     }

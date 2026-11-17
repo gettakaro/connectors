@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import java.util.function.LongSupplier;
 
 public class TakaroWebSocketClient extends WebSocketClient implements EventEmitter {
 
@@ -39,6 +40,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private final EventOutbox outbox;
     private String positionStreamId;
     private long positionSeq;
+    private final LongSupplier positionClock;
+    private long waitingPositionSeq, positionQueuedAt, nextPositionAt, connectionOpenedAt;
+    private static final long POSITION_ACK_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
     private final WorldMap worldMap;
     private final ItemIconCatalog itemIcons;
     // The protocol Takaro chose in the last identifyResponse; 0 until then and on every reconnect.
@@ -69,7 +73,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             "moderation.kick", "moderation.ban", "moderation.unban", "moderation.listBans", "server.shutdown"};
     static final String[] EVENT_TYPES = {
             "log", "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed"};
-    static final int POSITION_INTERVAL_SECONDS = 4;
+    static final int POSITION_INTERVAL_SECONDS = 3;
     // Takaro gives a connector 10 s per request; leave room for the round trip.
     static final long MAP_TILE_WAIT_MILLIS = 6000;
     // An Item sync replaces the reported hashes, so an early answer would drop icons Takaro has.
@@ -98,8 +102,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
                           EventOutbox outbox, WorldMap worldMap, ItemIconCatalog itemIcons,
                           ReconnectPolicy reconnectPolicy) {
+        this(serverUri, adapter, config, configPath, outbox, worldMap, itemIcons, reconnectPolicy,
+                System::nanoTime);
+    }
+
+    TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, String configPath,
+                          EventOutbox outbox, WorldMap worldMap, ItemIconCatalog itemIcons,
+                          ReconnectPolicy reconnectPolicy, LongSupplier positionClock) {
         super(serverUri, new org.java_websocket.drafts.Draft_6455(), null,
                 (int) ReconnectPolicy.HANDSHAKE_TIMEOUT_MILLIS);
+        this.positionClock = positionClock;
         this.adapter = adapter;
         this.config = config;
         this.configPath = configPath;
@@ -139,6 +151,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 if (now - attemptStartedMillis > handshakeTimeoutMillis) {
                     why = "Takaro did not accept identify within " + handshakeTimeoutMillis / 1000 + " s";
                 }
+            } else if (positionReceiptTimedOut()) {
+                why = "No position acknowledgement from Takaro within 30 s";
             } else if (now - lastInboundMillis >= silenceLimitMillis) {
                 why = "No message from Takaro for " + (now - lastInboundMillis) / 1000 + " s on an open connection";
             } else if (now - lastPingMillis >= pingIntervalMillis) {
@@ -224,6 +238,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         identified = false;
         positionStreamId = UUID.randomUUID().toString().replace("-", "");
         positionSeq = 0;
+        waitingPositionSeq = 0;
+        connectionOpenedAt = positionClock.getAsLong();
+        nextPositionAt = connectionOpenedAt + TimeUnit.SECONDS.toNanos(POSITION_INTERVAL_SECONDS);
         identifiedAtMillis = 0;
         attemptInFlight = false;
         lastInboundMillis = System.currentTimeMillis();
@@ -266,13 +283,19 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
                 case "eventAck": {
                     JsonObject ack = optObject(json, "payload");
                     if (ack != null && hasValue(ack, "upTo")) {
-                        outbox.ack(optString(ack, "streamId", ""), ack.get("upTo").getAsLong());
+                        String streamId = optString(ack, "streamId", "");
+                        long upTo = ack.get("upTo").getAsLong();
+                        if (!acknowledgePosition(streamId, upTo)) outbox.ack(streamId, upTo);
                     }
                     break;
                 }
                 case "eventError": {
                     JsonObject err = optObject(json, "payload");
-                    JsonObject detail = optObject(err, "error");
+                    JsonObject detail = optObject(json, "error");
+                    if (detail == null) detail = optObject(err, "error");
+                    if (err != null && hasValue(err, "seq")) {
+                        acknowledgePosition(optString(err, "streamId", ""), err.get("seq").getAsLong());
+                    }
                     adapter.logWarning("Takaro rejected event seq " + optString(err, "seq", "?") + ": "
                             + optString(detail, "code", "?") + " " + optString(detail, "message", ""));
                     break;
@@ -312,6 +335,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         attemptInFlight = false;
         identified = false;
         protocol = 0;
+        waitingPositionSeq = 0;
         adapter.logInfo("WebSocket closed (code=" + code + ", reason=" + reason + ", remote=" + remote + ")");
 
         if (!closed && (code == 1008 || code == 4001 || code == 4003) && !isTransientRefusal(reason)) {
@@ -407,23 +431,46 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     }
 
     @Override
-    public boolean acceptsPlayerPositions() {
-        return isV1() && isOpen() && identified;
+    public synchronized boolean acceptsPlayerPositions() {
+        return !closed && isV1() && isOpen() && identified && waitingPositionSeq == 0
+                && positionClock.getAsLong() - nextPositionAt >= 0;
+    }
+
+    private synchronized boolean positionReceiptTimedOut() {
+        return waitingPositionSeq != 0 && positionClock.getAsLong() - positionQueuedAt >= POSITION_ACK_TIMEOUT_NANOS;
+    }
+
+    private synchronized boolean acknowledgePosition(String streamId, long seq) {
+        if (!streamId.equals(positionStreamId)) return false;
+        if (waitingPositionSeq != 0 && seq == waitingPositionSeq) {
+            waitingPositionSeq = 0;
+            nextPositionAt = positionClock.getAsLong() + TimeUnit.SECONDS.toNanos(POSITION_INTERVAL_SECONDS);
+        }
+        return true;
     }
 
     @Override
-    public synchronized void emitPlayerPositions(List<PositionSample> positions) {
+    public void emitPlayerPositions(List<PositionSample> positions) {
+        emitPlayerPositions(positions, positionClock.getAsLong());
+    }
+
+    @Override
+    public synchronized void emitPlayerPositions(List<PositionSample> positions, long capturedAtNanos) {
         // Keep observations outside the durable gameplay outbox. A reconnect starts a new
         // stream and the next tick supplies a fresh snapshot.
-        if (!acceptsPlayerPositions()) return;
+        long now = positionClock.getAsLong();
+        if (!acceptsPlayerPositions() || capturedAtNanos < connectionOpenedAt || capturedAtNanos > now
+                || now - capturedAtNanos >= TimeUnit.SECONDS.toNanos(POSITION_INTERVAL_SECONDS)) return;
         JsonObject data = new JsonObject();
         data.add("positions", GSON.toJsonTree(positions));
         JsonObject payload = new JsonObject();
         payload.addProperty("type", "player-positions");
         payload.add("data", data);
         payload.addProperty("streamId", positionStreamId);
-        payload.addProperty("seq", ++positionSeq);
+        payload.addProperty("seq", positionSeq + 1);
         sendEventPayload(payload);
+        waitingPositionSeq = ++positionSeq;
+        positionQueuedAt = now;
     }
 
     @Override

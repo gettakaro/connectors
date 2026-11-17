@@ -15,6 +15,9 @@ public interface EventEmitter {
     }
     default boolean acceptsPlayerPositions() { return false; }
     void emitPlayerPositions(List<PositionSample> positions);
+    default void emitPlayerPositions(List<PositionSample> positions, long capturedAtNanos) {
+        emitPlayerPositions(positions);
+    }
     void emitPlayerDeath(String gameId, String playerName, String attackerGameId, String attackerName, double x, double y, double z, String dimension);
     void emitEntityKilled(String gameId, String playerName, String entityCode, String weaponCode);
     void emitLog(String message);

@@ -36,6 +36,6 @@ public final class PositionPublisher {
         }
         lastPublishedNanos = clock.getAsLong();
         published = true;
-        emitter.emitPlayerPositions(positions);
+        emitter.emitPlayerPositions(positions, now);
     }
 }

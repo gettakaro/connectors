@@ -30,7 +30,7 @@ class PositionPublisherTest {
         EventEmitter emitter = new RecordingEmitter(batches);
 
         publisher.capture(adapter, emitter);
-        now.addAndGet(TimeUnit.SECONDS.toNanos(3));
+        now.addAndGet(TimeUnit.SECONDS.toNanos(2));
         publisher.capture(adapter, emitter);
         assertEquals(1, batches.size());
         now.addAndGet(TimeUnit.SECONDS.toNanos(1));

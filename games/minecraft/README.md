@@ -89,7 +89,7 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Connection | ✅ | Reconnects after a restart; a dropped connection is back within about 2 s. |
 | Player list | ✅ | Name, id and ping. |
 | Player location | ✅ | |
-| Live player positions | ⚠️ | Protocol v1 pushes all online positions every four seconds and attaches a position to chat; live qualification is pending. |
+| Live player positions | ⚠️ | Protocol v1 pushes all online positions after a three-second minimum following the matching receipt ACK and attaches a position to chat; live qualification is pending. |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground. |
 | Player inventory | ✅ | |
 | Item list | ✅ | |

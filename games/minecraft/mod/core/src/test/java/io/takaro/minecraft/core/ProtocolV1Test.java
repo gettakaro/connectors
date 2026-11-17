@@ -24,6 +24,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,6 +38,7 @@ class ProtocolV1Test {
     private final List<String> sent = new CopyOnWriteArrayList<>();
     private volatile boolean open = true;
     private WorldMap worldMap;
+    private final AtomicLong positionClock = new AtomicLong(TimeUnit.SECONDS.toNanos(100));
 
     @AfterEach
     void tearDown() {
@@ -55,7 +58,7 @@ class ProtocolV1Test {
                     TestRegions.colors(), s -> {});
         }
         return new TakaroWebSocketClient(new URI("ws://localhost:9999"), new TakaroConnectorTest.TestAdapter(),
-                config, "config", outbox, worldMap) {
+                config, "config", outbox, worldMap, null, new ReconnectPolicy(), positionClock::get) {
             @Override
             public void send(String text) { sent.add(text); }
 
@@ -116,7 +119,7 @@ class ProtocolV1Test {
         assertTrue(names.contains("events.chat-message"));
         JsonObject positions = caps.asList().stream().map(JsonElement::getAsJsonObject)
                 .filter(c -> c.get("name").getAsString().equals("events.player-positions")).findFirst().orElseThrow();
-        assertEquals(4, positions.getAsJsonObject("parameters").get("intervalSeconds").getAsInt());
+        assertEquals(3, positions.getAsJsonObject("parameters").get("intervalSeconds").getAsInt());
         JsonObject map = caps.asList().stream().map(JsonElement::getAsJsonObject)
                 .filter(c -> c.get("name").getAsString().equals("map")).findFirst().orElseThrow();
         JsonObject dim = map.getAsJsonObject("parameters").getAsJsonArray("dimensions").get(0).getAsJsonObject();
@@ -137,6 +140,7 @@ class ProtocolV1Test {
         assertEquals(0, outbox.size());
         client.onOpen(null);
         client.onMessage(identifyResponse(1));
+        positionClock.addAndGet(TimeUnit.SECONDS.toNanos(3));
         client.emitPlayerPositions(sample);
 
         JsonObject payload = sentOfType("gameEvent").get(0).getAsJsonObject("payload");
@@ -150,6 +154,7 @@ class ProtocolV1Test {
         assertEquals(-8.5, row.getAsJsonObject("position").get("z").getAsDouble());
         client.onOpen(null);
         client.onMessage(identifyResponse(1));
+        positionClock.addAndGet(TimeUnit.SECONDS.toNanos(3));
         client.emitPlayerPositions(sample);
         JsonObject afterReconnect = sentOfType("gameEvent").get(1).getAsJsonObject("payload");
         assertNotEquals(positionStream, afterReconnect.get("streamId").getAsString());
