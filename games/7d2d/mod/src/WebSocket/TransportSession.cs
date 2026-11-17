@@ -63,6 +63,8 @@ namespace Takaro.WebSocket
         private readonly ConcurrentQueue<long> _pongs = new ConcurrentQueue<long>();
         private readonly ConcurrentQueue<KeyValuePair<string, long>> _eventAcks =
             new ConcurrentQueue<KeyValuePair<string, long>>();
+        private readonly ConcurrentQueue<KeyValuePair<string, long>> _eventErrors =
+            new ConcurrentQueue<KeyValuePair<string, long>>();
 
         public TransportSession(OutboundLedger ledger, Func<long> utcTicks)
         {
@@ -88,6 +90,9 @@ namespace Takaro.WebSocket
         public int ProtocolVersion => _protocolVersion;
 
         public long Generation => Interlocked.Read(ref _generation);
+
+        public bool PositionReceiptOverdue =>
+            _isConfirmed && _ledger.Generation == Generation && _ledger.PositionReceiptOverdue;
 
         /// <summary>Starts a new socket generation and returns it.</summary>
         public long BeginSocket()
@@ -227,7 +232,19 @@ namespace Takaro.WebSocket
                 }
 
                 if (messageType == WebSocketMessage.MessageTypes.EventError)
+                {
+                    if (
+                        ProtocolHandshake.TryParseEventError(
+                            data,
+                            out string streamId,
+                            out long? seq,
+                            out _,
+                            out _
+                        ) && seq.HasValue
+                    )
+                        _eventErrors.Enqueue(new KeyValuePair<string, long>(streamId, seq.Value));
                     return new InboundResult { Kind = InboundKind.EventError };
+                }
             }
 
             return new InboundResult { Kind = InboundKind.Request };
@@ -312,6 +329,9 @@ namespace Takaro.WebSocket
 
             while (_eventAcks.TryDequeue(out KeyValuePair<string, long> ack))
                 _ledger.AcknowledgeUpTo(ack.Key, ack.Value);
+
+            while (_eventErrors.TryDequeue(out KeyValuePair<string, long> error))
+                _ledger.RejectPosition(error.Key, error.Value);
         }
 
         /// <summary>

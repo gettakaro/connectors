@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Takaro;
 using Takaro.Config;
 using Takaro.Services;
 using Takaro.WebSocket;
@@ -44,6 +45,7 @@ public static partial class ContractHarness
             AssertLegacyParityGiveQuality(legacy);
             AssertLegacyParityEntityKilled(legacy);
             AssertLegacyParityChatChannels(legacy);
+            AssertPushedPositions();
             AssertProductionNotFoundReadSemantics();
             AssertBuildTargetMatching();
             AssertWrongBuildInventoryFailsLoudly();
@@ -61,6 +63,10 @@ public static partial class ContractHarness
             AssertListLocationsMatchesLocationDto();
             AssertMissingLocalisationIsNotShown();
             AssertOutboundLedgerReplaysUnconfirmedEvents();
+            AssertPositionSnapshotsStayCurrentAcrossReconnects();
+            AssertPositionReceiptTimeout();
+            AssertPositionReceiptScopedToSocket();
+            AssertPositionBatchesWaitForAcknowledgement();
             AssertBanCaptureKeepsOneRecordPerPlayer();
             AssertUnbanLiftsTheEntriesTheMirrorReports();
             AssertBanCaptureMergesBothStores();
@@ -536,6 +542,7 @@ public static partial class ContractHarness
                 name != "migration.native"
                 && name != GameProfile.Capability
                 && name != ProtocolHandshake.ProgressionCapability
+                && name != "events.player-positions"
             )
                 True(capability["parameters"] == null, name + " declares no parameters");
         }
@@ -1231,6 +1238,286 @@ public static partial class ContractHarness
         Equal(2, capped.InFlightCount, "in-flight list is capped");
         Equal(2, capped.RequeueInFlight(1), "capped in-flight events are requeued");
         Equal("x2", capped.PeekHead().Json, "requeue keeps the newest unconfirmed events in order");
+    }
+
+    private static void AssertPositionSnapshotsStayCurrentAcrossReconnects()
+    {
+        long now = DateTime.UtcNow.Ticks;
+        var ledger = new OutboundLedger(10, 10, utcTicks: () => now);
+        ledger.RequeueInFlight(1, false);
+
+        ledger.Enqueue(
+            "old-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        ledger.Enqueue(
+            "new-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        Equal(1, ledger.PendingCount, "new snapshot replaces an unsent position batch");
+        Equal("new-position", ledger.PeekHead().Json, "latest position is sent");
+
+        ledger.Enqueue("gameplay", true, false);
+        ledger.MarkHeadWritten();
+        ledger.MarkHeadWritten();
+        Equal(2, ledger.InFlightCount, "position and gameplay await acknowledgement");
+        Equal(1, ledger.RequeueInFlight(2, false), "only gameplay replays after reconnect");
+        Equal("gameplay", ledger.PeekHead().Json, "durable gameplay keeps its order");
+
+        ledger.Enqueue(
+            "stale-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        ledger.RequeueInFlight(3, false);
+        Equal(1, ledger.PendingCount, "a queued position from the old socket is discarded");
+
+        ledger.Enqueue(
+            "expiring-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 3,
+            createdAtTicks: now
+        );
+        now += TimeSpan.FromSeconds(5).Ticks;
+        Equal("gameplay", ledger.NextToSend().Json, "an expired snapshot never reaches the socket");
+        Equal(1, ledger.PendingCount, "expired snapshot is removed without dropping gameplay");
+    }
+
+    private static void AssertPositionReceiptTimeout()
+    {
+        long now = 1000L * TimeSpan.TicksPerSecond;
+        var ledger = new OutboundLedger(10, 10, "position-timeout", utcTicks: () => now);
+        ledger.RequeueInFlight(1, false);
+        ledger.Enqueue(
+            "position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        ledger.MarkWritten(ledger.NextToSend());
+        True(!ledger.PositionReceiptOverdue, "a newly sent position has its full receipt budget");
+        now += TimeSpan.FromMilliseconds(29999).Ticks;
+        True(!ledger.PositionReceiptOverdue, "the deadline does not fire early");
+        now += TimeSpan.FromMilliseconds(1).Ticks;
+        True(
+            ledger.PositionReceiptOverdue,
+            "a missing receipt expires even if ping traffic continues"
+        );
+        Equal(0, ledger.AcknowledgePong(), "v1 pong cannot acknowledge the position");
+        True(
+            ledger.PositionReceiptOverdue,
+            "heartbeat traffic cannot suppress the receipt deadline"
+        );
+        Equal(
+            1,
+            ledger.AcknowledgeUpTo("position-timeout", 1),
+            "matching receipt completes the batch"
+        );
+        True(!ledger.PositionReceiptOverdue, "a completed receipt clears the deadline");
+        now += TimeSpan.FromSeconds(3).Ticks;
+        ledger.Enqueue(
+            "next-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
+        ledger.MarkWritten(ledger.NextToSend());
+        now += TimeSpan.FromSeconds(30).Ticks;
+        True(ledger.PositionReceiptOverdue, "the next batch has an independent receipt deadline");
+        ledger.RequeueInFlight(2, false);
+        True(!ledger.PositionReceiptOverdue, "reconnect discards the old position deadline");
+        Equal(0, ledger.InFlightCount, "an old position is never replayed after timeout recovery");
+    }
+
+    private static void AssertPositionReceiptScopedToSocket()
+    {
+        long now = 1000L * TimeSpan.TicksPerSecond;
+        var ledger = new OutboundLedger(10, 10, "position-recovery", utcTicks: () => now);
+        var session = new TransportSession(ledger, () => now);
+        long oldSocket = session.BeginSocket();
+        session.MarkOpened(oldSocket);
+        session.MarkIdentifySent(oldSocket);
+        session.HandleInbound(oldSocket, true, AcceptedV1);
+        session.TryConfirm();
+        session.ReplayUnconfirmedOnNewSocket();
+        ledger.Enqueue(GameEventFrame, true, false);
+        ledger.MarkWritten(ledger.NextToSend());
+        ledger.Enqueue(
+            "old-position",
+            true,
+            false,
+            isPosition: true,
+            generation: oldSocket,
+            createdAtTicks: now
+        );
+        ledger.MarkWritten(ledger.NextToSend());
+        now += TimeSpan.FromSeconds(30).Ticks;
+        True(
+            session.PositionReceiptOverdue,
+            "a current identified socket expires its missing receipt"
+        );
+
+        session.MarkDetached();
+        True(!session.PositionReceiptOverdue, "a detached socket cannot expire another connection");
+        True(
+            ledger.PositionReceiptOverdue,
+            "old entries remain owned by the sender until replay processing"
+        );
+        long newSocket = session.BeginSocket();
+        session.MarkOpened(newSocket);
+        session.MarkIdentifySent(newSocket);
+        True(
+            !session.PositionReceiptOverdue,
+            "the old receipt cannot abort a new identify attempt"
+        );
+        session.HandleInbound(newSocket, true, AcceptedV1);
+        session.TryConfirm();
+        True(
+            !session.PositionReceiptOverdue,
+            "the old receipt cannot abort the new socket before its first flush"
+        );
+        Equal(
+            1,
+            session.ReplayUnconfirmedOnNewSocket(),
+            "recovery preserves the unacknowledged gameplay event"
+        );
+        True(!session.PositionReceiptOverdue, "recovery discards the expired transient position");
+        Equal(GameEventFrame, ledger.NextToSend().Json, "gameplay is first after recovery");
+        ledger.MarkWritten(ledger.NextToSend());
+        True(ledger.NextToSend() == null, "the old position is never replayed");
+
+        now += TimeSpan.FromSeconds(3).Ticks;
+        ledger.Enqueue(
+            "fresh-position",
+            true,
+            false,
+            isPosition: true,
+            generation: newSocket,
+            createdAtTicks: now
+        );
+        OutboundLedger.Entry fresh = ledger.NextToSend();
+        Equal("fresh-position", fresh.Json, "the new socket can send a fresh capture");
+        ledger.MarkWritten(fresh);
+        now += TimeSpan.FromSeconds(30).Ticks;
+        True(session.PositionReceiptOverdue, "the new generation retains its own receipt watchdog");
+        session.HandleInbound(
+            newSocket,
+            true,
+            "{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"position-recovery\",\"upTo\":"
+                + fresh.Seq
+                + "}}"
+        );
+        session.ApplyAcknowledgements();
+        True(!session.PositionReceiptOverdue, "the new capture receipt clears its watchdog");
+    }
+
+    private static void AssertPositionBatchesWaitForAcknowledgement()
+    {
+        long now = 1000L * TimeSpan.TicksPerSecond;
+        var ledger = new OutboundLedger(10, 10, "stream-a", utcTicks: () => now);
+        var session = new TransportSession(ledger, () => now);
+        long socket = session.BeginSocket();
+        True(session.MarkOpened(socket), "position test socket opens");
+        True(session.MarkIdentifySent(socket), "position test socket identifies");
+        Equal(
+            InboundKind.IdentifyAccepted,
+            session.HandleInbound(socket, true, AcceptedV1).Kind,
+            "position test negotiates v1"
+        );
+        True(session.TryConfirm(), "position test identifies fully");
+        session.ReplayUnconfirmedOnNewSocket();
+
+        ledger.Enqueue(
+            "position-1",
+            true,
+            false,
+            isPosition: true,
+            generation: socket,
+            createdAtTicks: now
+        );
+        OutboundLedger.Entry first = ledger.NextToSend();
+        ledger.MarkWritten(first);
+        ledger.Enqueue(
+            "position-2",
+            true,
+            false,
+            isPosition: true,
+            generation: socket,
+            createdAtTicks: now
+        );
+        ledger.Enqueue("gameplay", true, false);
+        Equal(
+            "gameplay",
+            ledger.NextToSend().Json,
+            "gameplay passes the position awaiting Takaro ack"
+        );
+        ledger.MarkWritten(ledger.NextToSend());
+        True(ledger.NextToSend() == null, "only one position may be in flight");
+
+        Equal(
+            InboundKind.EventAck,
+            session
+                .HandleInbound(
+                    socket,
+                    true,
+                    "{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"stream-a\",\"upTo\":1}}"
+                )
+                .Kind,
+            "Takaro acknowledges the first position"
+        );
+        session.ApplyAcknowledgements();
+        now += TimeSpan.FromMilliseconds(2999).Ticks;
+        True(ledger.NextToSend() == null, "second position stays parked before three seconds");
+        now += TimeSpan.FromMilliseconds(1).Ticks;
+        OutboundLedger.Entry second = ledger.NextToSend();
+        Equal("position-2", second.Json, "fresh position releases three seconds after ack");
+        Equal(3L, second.Seq, "gameplay and position sequence follow wire order");
+        ledger.MarkWritten(second);
+
+        ledger.Enqueue(
+            "position-3",
+            true,
+            false,
+            isPosition: true,
+            generation: socket,
+            createdAtTicks: now
+        );
+        Equal(
+            InboundKind.EventError,
+            session
+                .HandleInbound(
+                    socket,
+                    true,
+                    "{\"type\":\"eventError\",\"payload\":{\"streamId\":\"stream-a\",\"seq\":3},\"error\":{\"code\":\"invalid_args\",\"message\":\"too soon\"}}"
+                )
+                .Kind,
+            "a rejected position has its own eventError"
+        );
+        session.ApplyAcknowledgements();
+        True(ledger.NextToSend() == null, "rejected position also starts a three-second wait");
+        now += TimeSpan.FromSeconds(3).Ticks;
+        Equal(
+            "position-3",
+            ledger.NextToSend().Json,
+            "the next current snapshot recovers after rejection"
+        );
     }
 
     private static Takaro.Persistence.BanRecord BanRecordFor(
@@ -2279,6 +2566,7 @@ public static partial class ContractHarness
         );
 
         WebSocketTransport.Instance.TerminalMessages.Clear();
+        WebSocketTransport.Instance.ProtocolVersion = 1;
         GameEventPublisher.SendChatMessage(
             new ClientInfo
             {
@@ -2295,10 +2583,89 @@ public static partial class ContractHarness
             (EChatType)99,
             1,
             "hello",
-            null
+            null,
+            new UnityEngine.Vector3(12.4f, 34.6f, -56.2f)
         );
         AssertPublishedEvent("chat-message", out JObject chat);
         Equal("global", (string)chat["channel"], "unknown chat type is published as global");
+        Equal(12, (int)chat["position"]["x"], "chat carries the sender's live x position");
+        Equal(35, (int)chat["position"]["y"], "chat carries the sender's live y position");
+        Equal(-56, (int)chat["position"]["z"], "chat carries the sender's live z position");
+        WebSocketTransport.Instance.ProtocolVersion = 0;
+
+        WebSocketTransport.Instance.TerminalMessages.Clear();
+        GameEventPublisher.SendChatMessage(
+            new ClientInfo
+            {
+                CrossplatformId = new PlatformUserIdentifierAbs
+                {
+                    CombinedString = "EOS_fixture-player",
+                },
+                playerName = "Fixture Player",
+            },
+            EChatType.Global,
+            1,
+            "legacy",
+            null,
+            new UnityEngine.Vector3(12f, 34f, -56f)
+        );
+        AssertPublishedEvent("chat-message", out JObject legacyChat);
+        True(legacyChat["position"] == null, "protocol v0 chat omits the new position field");
+    }
+
+    private static void AssertPushedPositions()
+    {
+        var capability = ProtocolHandshake
+            .BuildCapabilityManifest(RequestRouter.SupportedActions)
+            .Single(c => (string)c["name"] == "events.player-positions");
+        Equal(
+            3,
+            (int)((Dictionary<string, object>)capability["parameters"])["intervalSeconds"],
+            "position push interval matches the sampler"
+        );
+
+        var transport = WebSocketTransport.Instance;
+        transport.TerminalMessages.Clear();
+        transport.CanPushPositions = false;
+        var positions = new List<PlayerPositionEntry>
+        {
+            new PlayerPositionEntry
+            {
+                GameId = "fixture-player",
+                Position = new TakaroPosition
+                {
+                    X = 12,
+                    Y = 34,
+                    Z = -56,
+                },
+            },
+        };
+        GameEventPublisher.SendPlayerPositions(positions);
+        Equal(
+            0,
+            transport.TerminalMessages.Count,
+            "v0 or disconnected sessions do not queue positions"
+        );
+
+        transport.CanPushPositions = true;
+        GameEventPublisher.SendPlayerPositions(positions);
+        AssertPublishedEvent("player-positions", out JObject data);
+        Equal(
+            "fixture-player",
+            (string)data["positions"][0]["gameId"],
+            "position uses stable game id"
+        );
+        Equal(12, (int)data["positions"][0]["position"]["x"], "position x is sent");
+        Equal(34, (int)data["positions"][0]["position"]["y"], "position y is sent");
+        Equal(-56, (int)data["positions"][0]["position"]["z"], "position z is sent");
+        True(DateTime.TryParse((string)data["timestamp"], out _), "batch carries an ISO timestamp");
+
+        transport.TerminalMessages.Clear();
+        GameEventPublisher.SendPlayerPositions(
+            new List<PlayerPositionEntry>(new PlayerPositionEntry[1001])
+        );
+        Equal(0, transport.TerminalMessages.Count, "oversized batch is not emitted");
+        transport.CanPushPositions = false;
     }
 
     private static void AssertGiveItemProductionValidationAndCardinality()
@@ -3956,10 +4323,16 @@ namespace Takaro.WebSocket
         public readonly List<WebSocketMessage> TerminalMessages = new List<WebSocketMessage>();
         public readonly List<string> ErrorCodes = new List<string>();
         public int ProtocolVersion;
+        public bool CanPushPositions;
 
         public void Send(WebSocketMessage message)
         {
             TerminalMessages.Add(message);
+        }
+
+        public void SendPosition(WebSocketMessage message)
+        {
+            Send(message);
         }
 
         public void SendErrorResponse(
