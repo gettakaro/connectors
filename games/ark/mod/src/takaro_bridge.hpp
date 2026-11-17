@@ -55,7 +55,8 @@ struct Config {
   std::chrono::milliseconds reconnect_max{60000};
   std::chrono::milliseconds connection_stable_after{10000};
   std::chrono::milliseconds pump_interval{250};
-  std::chrono::seconds position_interval{5};
+  std::chrono::seconds position_interval{3};
+  std::chrono::milliseconds position_ack_timeout{30000};
   std::chrono::milliseconds reconcile_interval{1000};
   size_t workers = 4;
   // The first identify waits for the loaded world (bounded): Takaro fetches the declared
@@ -302,6 +303,8 @@ class Bridge {
   std::chrono::steady_clock::time_point next_pump_{};
   std::chrono::steady_clock::time_point next_positions_{};
   uint64_t positions_seq_ = 0;
+  uint64_t pending_position_seq_ = 0;
+  std::chrono::steady_clock::time_point position_sent_at_{};
   bool truncation_logged_ = false;
 
   std::mutex out_mutex_;
@@ -383,6 +386,7 @@ class Bridge {
     protocol_version_ = 0;
     adapter_.set_protocol_version(0);
     ++epoch_;
+    pending_position_seq_ = 0;
     pings_.clear();
     in_flight_.clear();
     before_identify_.clear();
@@ -435,6 +439,8 @@ class Bridge {
         }
         ++connections_;
         ++epoch_;
+        positions_stream_id_ = random_uuid();
+        positions_seq_ = pending_position_seq_ = 0;
         pings_.clear();
         in_flight_.clear();
         before_identify_.clear();
@@ -501,9 +507,12 @@ class Bridge {
       next_pump_ = now + config_.pump_interval;
       pump();
     }
-    if (identified_.load() && protocol_version_.load() >= 1 && now >= next_positions_) {
-      next_positions_ = now + config_.position_interval;
-      send_positions();
+    if (identified_.load() && protocol_version_.load() >= 1) {
+      if (pending_position_seq_ && now - position_sent_at_ >= config_.position_ack_timeout) {
+        disconnect("position acknowledgement timeout");
+        return false;
+      }
+      if (!pending_position_seq_ && now >= next_positions_) send_positions();
     }
     if (now >= next_ping_) {
       next_ping_ = now + config_.ping_interval;
@@ -618,7 +627,13 @@ class Bridge {
                                 {"streamId", json::str(positions_stream_id_)},
                                 {"seq", json::num(static_cast<double>(++positions_seq_))}})}}));
     if (config_.wire_debug) log("takaro-wire SEND " + redact_frame(frame));
-    if (!conn_.send_text(frame)) log("takaro-position-batch-send-buffer-full");
+    if (conn_.send_text(frame)) {
+      pending_position_seq_ = positions_seq_;
+      position_sent_at_ = std::chrono::steady_clock::now();
+    } else {
+      next_positions_ = std::chrono::steady_clock::now() + config_.position_interval;
+      log("takaro-position-batch-send-buffer-full");
+    }
   }
 
   void handle_text(const std::string& raw) {
@@ -661,8 +676,7 @@ class Bridge {
         requests_cv_.notify_all();
       }
       next_pump_ = std::chrono::steady_clock::now();
-      if (next_positions_ == std::chrono::steady_clock::time_point{})
-        next_positions_ = std::chrono::steady_clock::now();
+      next_positions_ = std::chrono::steady_clock::now() + config_.position_interval;
       log("takaro-identified gameServerId=" + id + " protocolVersion=" + std::to_string(version));
       return;
     }
@@ -670,6 +684,12 @@ class Bridge {
       const json::Value& payload = as_record(message->get("payload"));
       const auto* stream = payload.get("streamId");
       const auto* up_to = payload.get("upTo");
+      if (stream && stream->is_string() && stream->as_string() == positions_stream_id_ &&
+          up_to && up_to->is_number() && pending_position_seq_ &&
+          up_to->as_number() == static_cast<double>(pending_position_seq_)) {
+        pending_position_seq_ = 0;
+        next_positions_ = std::chrono::steady_clock::now() + config_.position_interval;
+      }
       if (stream && stream->is_string() && stream->as_string() == gate_.boot_id() && up_to && up_to->is_number() &&
           up_to->as_number() >= 0)
         confirm_seq(static_cast<uint64_t>(up_to->as_number()));

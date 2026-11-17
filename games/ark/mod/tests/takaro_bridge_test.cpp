@@ -791,6 +791,63 @@ void test_protocol_v1() {
   bridge.stop();
 }
 
+void test_position_receipt_pacing() {
+  FakeTakaro takaro;
+  takaro.v1 = true;
+  takaro.acks = false;
+  gate::Server gate("boot-position-pacing");
+  FakeGame game(gate);
+  auto config = config_for(takaro, temp_dir());
+  config.position_interval = 1s;
+  config.position_ack_timeout = 4s;
+  takaro::Bridge bridge(config, gate, [](const std::string&) {});
+  bridge.start();
+  CHECK(eventually([&] { return bridge.identified(); }));
+  gate.record_login(kId, "Limon", "", 0);
+  gate.record_position(kId, 1, 2, 3);
+  auto is_position = [](const json::Value& m) {
+    return is_type(m, "gameEvent") && m.get("payload")->get("type")->as_string() == "player-positions";
+  };
+  auto first = takaro.wait_for(is_position);
+  CHECK(first);
+  if (!first) { bridge.stop(); return; }
+  const auto stream = first->get("payload")->get("streamId")->as_string();
+  auto ack = [&](const std::string& id, int seq) {
+    takaro.send(json::dump(json::obj({{"type", json::str("eventAck")}, {"payload", json::obj({
+      {"streamId", json::str(id)}, {"upTo", json::num(seq)}})}})));
+  };
+  size_t from = takaro.count();
+  ack(stream, 2); // A future ACK cannot release the outstanding batch.
+  CHECK(!takaro.wait_for(is_position, 1200ms, from));
+  gate.record_chat(kId, "Limon", "chat while position awaits receipt");
+  CHECK(takaro.wait_for([](const json::Value& m) {
+    return is_type(m, "gameEvent") && m.get("payload")->get("type")->as_string() == "chat-message";
+  }, 1000ms, from));
+  ack(stream, 1);
+  CHECK(!takaro.wait_for(is_position, 650ms, from));
+  gate.record_position(kId, 91, 92, 93);
+  auto second = takaro.wait_for(is_position, 1500ms, from);
+  CHECK(second && second->get("payload")->get("seq")->as_number() == 2);
+  CHECK(second && second->get("payload")->get("data")->get("positions")->as_array().size() == 1);
+  if (second && !second->get("payload")->get("data")->get("positions")->as_array().empty())
+    CHECK(second->get("payload")->get("data")->get("positions")->as_array()[0].get("position")->get("x")->as_number() == 91);
+  // A lost receipt forces reconnect rather than queuing or replaying stale snapshots.
+  from = takaro.count();
+  CHECK(eventually([&] { return takaro.connections.load() >= 2 && bridge.identified(); }, 6500ms));
+  gate.record_position(kId, 191, 192, 193);
+  auto fresh = takaro.wait_for(is_position, 2500ms, from);
+  CHECK(fresh && fresh->get("payload")->get("streamId")->as_string() != stream &&
+        fresh->get("payload")->get("seq")->as_number() == 1);
+  if (fresh) {
+    const auto& rows = fresh->get("payload")->get("data")->get("positions")->as_array();
+    CHECK(rows.size() == 1 && rows[0].get("position")->get("x")->as_number() == 191);
+  }
+  from = takaro.count();
+  ack(stream, 2); // The previous socket's receipt cannot unlock the new stream.
+  CHECK(!takaro.wait_for(is_position, 1200ms, from));
+  bridge.stop();
+}
+
 // Shipped files beside this test: games/ark/{version.txt,assets/icon-256.png}.
 std::string repo_path(const std::string& relative) {
   return (std::filesystem::path(__FILE__).parent_path() / "../.." / relative).string();
@@ -1099,6 +1156,7 @@ int main() {
   test_game_thread_stall_withholds();
   test_identify_rejected_backs_off();
   test_protocol_v1();
+  test_position_receipt_pacing();
   test_game_profile();
   test_identify_waits_for_game();
   test_server_chat_name();
