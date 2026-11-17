@@ -341,7 +341,7 @@ void EmitChatMessage(int client, bool teamOnly, const char[] text)
     data.SetString("channel", "global");
   }
   data.SetString("msg", text);
-  if (g_ProtocolVersion == 1 && IsPlayerAlive(client)) {
+  if (g_ProtocolVersion == 1 && IsValidEntity(client)) {
     JSONObject position = CurrentPlayerPosition(client);
     data.Set("position", position);
     delete position;
