@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Runtime.ExceptionServices;
 using System.Text;
@@ -95,6 +96,8 @@ namespace TakaroEmpyrion.Protocol
         public int OutboxCapacity = 500;
         /// <summary>When set, identify offers protocol versions [0, 1] with this Capability Manifest.</summary>
         public Func<JArray> Manifest;
+        /// <summary>Monotonic time used for position receipt spacing and its acknowledgement deadline.</summary>
+        public Func<TimeSpan> PositionClock = () => TimeSpan.FromSeconds((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency);
     }
 
     public sealed class InboundRequest
@@ -127,6 +130,15 @@ namespace TakaroEmpyrion.Protocol
         readonly object _outboxLock = new object();
         readonly string _streamId = Guid.NewGuid().ToString();
         long _seq;
+        const string PositionMarker = "\0position";
+        string _positionStreamId;
+        long _positionSeq;
+        string _latestPositionFrame;
+        IWsConnection _positionConnection;
+        string _positionMarker;
+        long _connectionEpoch, _pendingPositionSeq, _positionReadTicket, _reservedPositionTicket, _reservedPositionEpoch;
+        bool _positionSampling, _positionTimedOut;
+        TimeSpan _nextPositionAt, _positionPendingAt;
         volatile int _protocolVersion;
 
         sealed class PendingEvent
@@ -222,6 +234,81 @@ namespace TakaroEmpyrion.Protocol
             }
         }
 
+        /// <summary>Reserves one fresh game read and captures the connection that requested it.</summary>
+        public bool TryBeginPositionSnapshot(out long token)
+        {
+            lock (_outboxLock)
+            {
+                token = 0;
+                if (_stopping || !_identified || _protocolVersion != 1 || _conn == null || _positionSampling
+                    || _pendingPositionSeq != 0 || _positionTimedOut || _opt.PositionClock() < _nextPositionAt) return false;
+                _positionSampling = true;
+                token = _reservedPositionTicket = ++_positionReadTicket;
+                _reservedPositionEpoch = _connectionEpoch;
+                _nextPositionAt = _opt.PositionClock() + TimeSpan.FromSeconds(Capabilities.PositionIntervalSeconds);
+                return true;
+            }
+        }
+
+        public void CancelPositionSnapshot(long token)
+        {
+            lock (_outboxLock)
+                if (token == _reservedPositionTicket) _positionSampling = false;
+        }
+
+        /// <summary>Queues a complete snapshot only on the connection that reserved its read.</summary>
+        public bool SendPositionSnapshot(long token, JObject data)
+        {
+            lock (_outboxLock)
+            {
+                if (token != _reservedPositionTicket || _reservedPositionEpoch != _connectionEpoch) return false;
+                if (!_positionSampling) return false;
+                _positionSampling = false;
+                if (_stopping || !_identified || _protocolVersion != 1 || _conn == null
+                    || !(data?["positions"] is JArray positions) || positions.Count > 1000) return false;
+                long seq = ++_positionSeq;
+                var payload = new JObject
+                {
+                    ["type"] = "player-positions", ["data"] = data,
+                    ["streamId"] = _positionStreamId, ["seq"] = seq
+                };
+                _latestPositionFrame = Serialize(new JObject { ["type"] = "gameEvent", ["payload"] = payload });
+                _positionConnection = _conn;
+                _pendingPositionSeq = seq;
+                _positionPendingAt = _opt.PositionClock();
+                _positionMarker = PositionMarker + _connectionEpoch + ":" + seq;
+                try { _sendQueue.Add(_positionMarker); return true; }
+                catch (InvalidOperationException) { ResetPositions(); return false; }
+            }
+        }
+
+        void ResetPositions()
+        {
+            _latestPositionFrame = null;
+            _positionConnection = null;
+            _positionMarker = null;
+            _pendingPositionSeq = 0;
+            _positionSampling = false;
+            _reservedPositionTicket = 0;
+            _reservedPositionEpoch = 0;
+            _positionTimedOut = false;
+            _nextPositionAt = _opt.PositionClock() + TimeSpan.FromSeconds(Capabilities.PositionIntervalSeconds);
+        }
+
+        bool ConfirmPosition(JObject payload, string sequenceKey)
+        {
+            if (payload == null || payload[sequenceKey]?.Type != JTokenType.Integer) return false;
+            lock (_outboxLock)
+            {
+                if (_protocolVersion != 1 || (string)payload["streamId"] != _positionStreamId
+                    || _pendingPositionSeq == 0 || (long)payload[sequenceKey] != _pendingPositionSeq) return false;
+                _pendingPositionSeq = 0;
+                _positionConnection = null;
+                _nextPositionAt = _opt.PositionClock() + TimeSpan.FromSeconds(Capabilities.PositionIntervalSeconds);
+                return true;
+            }
+        }
+
         /// <summary>Queues one event for the socket; on v1 numbers it and keeps it until acked. Caller holds _outboxLock.</summary>
         void Dispatch(PendingEvent ev)
         {
@@ -243,6 +330,7 @@ namespace TakaroEmpyrion.Protocol
 
         void Acknowledge(JToken payload)
         {
+            if (ConfirmPosition(payload as JObject, "upTo")) return;
             if (!(payload is JObject p) || (string)p["streamId"] != _streamId || p["upTo"]?.Type != JTokenType.Integer) return;
             long upTo = (long)p["upTo"];
             lock (_outboxLock)
@@ -259,11 +347,25 @@ namespace TakaroEmpyrion.Protocol
 
         void RunSender()
         {
-            foreach (string frame in _sendQueue.GetConsumingEnumerable())
+            foreach (string queued in _sendQueue.GetConsumingEnumerable())
             {
+                string frame = queued;
+                IWsConnection positionConnection = null;
+                if (queued.StartsWith(PositionMarker, StringComparison.Ordinal))
+                {
+                    lock (_outboxLock)
+                    {
+                        if (queued != _positionMarker) continue;
+                        frame = _latestPositionFrame;
+                        positionConnection = _positionConnection;
+                        _latestPositionFrame = null;
+                        _positionMarker = null;
+                    }
+                    if (frame == null || !_identified || _protocolVersion != 1 || positionConnection != _conn) continue;
+                }
                 IWsConnection c = _conn;
                 // Before identifyResponse Takaro drops the socket on anything but identify; v1 events come back from _unacked.
-                if (c == null || !_identified) continue;
+                if (c == null || !_identified || (positionConnection != null && positionConnection != c)) continue;
                 try
                 {
                     c.Send(frame);
@@ -293,6 +395,20 @@ namespace TakaroEmpyrion.Protocol
                 Thread.Sleep(tick);
                 IWsConnection c = _conn;
                 if (c == null || !_identified) { lastPing = DateTime.MinValue; continue; }
+                bool positionExpired;
+                lock (_outboxLock)
+                {
+                    positionExpired = _pendingPositionSeq != 0 && !_positionTimedOut && _positionConnection == c
+                        && _opt.PositionClock() - _positionPendingAt >= TimeSpan.FromSeconds(30);
+                    if (positionExpired) _positionTimedOut = true;
+                }
+                if (positionExpired)
+                {
+                    _log.Warn("no player-positions eventAck for 30s, reconnecting for a fresh snapshot");
+                    _deadLink = c;
+                    c.Abort();
+                    continue;
+                }
                 DateTime now = DateTime.UtcNow;
                 long pingSince = Interlocked.Read(ref _unansweredPingSince);
                 if (now - _lastInbound > _opt.InboundTimeout && pingSince != 0
@@ -323,7 +439,7 @@ namespace TakaroEmpyrion.Protocol
                     if (!ConnectBounded(c)) { c = null; throw new ConnectAbandonedException(); }
                     _lastInbound = DateTime.UtcNow;
                     Interlocked.Exchange(ref _unansweredPingSince, 0);
-                    _conn = c;
+                    lock (_outboxLock) { _conn = c; ++_connectionEpoch; ResetPositions(); }
                     DateTime deadline = DateTime.UtcNow + _opt.IdentifyDeadline;
                     IWsConnection watched = c;
                     var watchdog = new Timer(_ => { if (!_identified && DateTime.UtcNow >= deadline) watched.Abort(); }, null, _opt.IdentifyDeadline, Timeout.InfiniteTimeSpan);
@@ -349,10 +465,14 @@ namespace TakaroEmpyrion.Protocol
                 finally
                 {
                     endedAt = DateTime.UtcNow; // before teardown, so a slow Abort/Dispose does not count as stable time
-                    _identified = false;
-                    _protocolVersion = 0;
-                    _rejected = false;
-                    _conn = null;
+                    lock (_outboxLock)
+                    {
+                        _identified = false;
+                        _protocolVersion = 0;
+                        _rejected = false;
+                        _conn = null;
+                        ResetPositions();
+                    }
                     if (c != null) { c.Abort(); c.Dispose(); }
                 }
                 _deadLink = null;
@@ -447,6 +567,9 @@ namespace TakaroEmpyrion.Protocol
                     _protocolVersion = _opt.Manifest != null && version != null && version.Type == JTokenType.Integer && (int)version == 1 ? 1 : 0;
                     lock (_outboxLock)
                     {
+                        _positionStreamId = Guid.NewGuid().ToString();
+                        _positionSeq = 0;
+                        ResetPositions();
                         _identified = true;
                         FlushOutbox();
                     }
@@ -469,6 +592,7 @@ namespace TakaroEmpyrion.Protocol
                     Acknowledge(msg["payload"]);
                     return false;
                 case "eventError":
+                    ConfirmPosition(msg["payload"] as JObject, "seq");
                     // Takaro refused one numbered event (validation); it is acknowledged too, so it is not resent.
                     _log.Warn("Takaro rejected an event: " + LogText.Clip(text));
                     return false;

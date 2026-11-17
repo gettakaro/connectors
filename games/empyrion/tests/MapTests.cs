@@ -362,6 +362,7 @@ public static partial class ContractTests
             var players = new PlayerRegistry(null);
             var actions = new Actions(bridge, new FakeV2(), players, new Catalog(), null, new Config { ServerName = "Dev", IdentityToken = "id" }, log, new BanReasons(null), _ => { }, map);
 
+            long positionClockTicks = 0;
             var sockets = new BlockingCollection<FakeSocket>();
             TakaroClient client = null;
             client = new TakaroClient(() => { var s = new FakeSocket(); sockets.Add(s); return s; },
@@ -370,6 +371,7 @@ public static partial class ContractTests
                     Url = "wss://fake/", IdentityToken = "id", RegistrationToken = "reg", ServerName = "Dev",
                     PingInterval = TimeSpan.FromSeconds(30), InboundTimeout = TimeSpan.FromSeconds(60),
                     Manifest = () => Capabilities.Build(Actions.Declared, map.Capability()),
+                    PositionClock = () => TimeSpan.FromTicks(Interlocked.Read(ref positionClockTicks)),
                 },
                 log,
                 req => Task.Run(async () =>
@@ -384,6 +386,10 @@ public static partial class ContractTests
             JToken ip = ident?["payload"];
             var names = (ip?["capabilities"] as JArray)?.Select(c => (string)c["name"]).ToList() ?? new List<string>();
             Check(ip != null && ip["protocolVersions"].ToObject<int[]>().SequenceEqual(new[] { 0, 1 }), "V1 identify offers protocol versions [0, 1]");
+            JToken posCap = (ip?["capabilities"] as JArray)?.FirstOrDefault(c => (string)c["name"] == "events.player-positions");
+            Check(posCap != null && (int)posCap["parameters"]["intervalSeconds"] == Capabilities.PositionIntervalSeconds
+                  && Capabilities.PositionIntervalSeconds >= 1 && Capabilities.PositionIntervalSeconds <= 60,
+                "V1 position capability declares a 1..60 second interval");
             Check(names.Contains("players.list") && names.Contains("players.location") && names.Contains("moderation.listBans") && names.Contains("events.chat-message")
                   && !names.Contains("locations.list") && names.Count == names.Distinct().Count(), "V1 manifest: handled actions + all events, no locations.list, no duplicates");
             JToken mapCap = (ip?["capabilities"] as JArray)?.FirstOrDefault(c => (string)c["name"] == "map");
@@ -442,6 +448,20 @@ public static partial class ContractTests
                 JObject e3 = Next(sock2, o => (string)o["type"] == "gameEvent");
                 Check(again != null && (long)again["payload"]["seq"] == 2 && (string)again["payload"]["data"]["msg"] == "two"
                       && e3 != null && (long)e3["payload"]["seq"] == 3, "V1 resends unacknowledged events after reconnect, seq keeps growing");
+
+                Interlocked.Exchange(ref positionClockTicks, TimeSpan.FromSeconds(3).Ticks);
+                var publisher = new PositionPublisher(actions, client, log);
+                Check(publisher.PublishOnce().Result, "V1 position publisher reads and sends a snapshot");
+                JObject positionEvent = Next(sock2, o => (string)o["type"] == "gameEvent" && (string)o["payload"]?["type"] == "player-positions");
+                JToken positionData = positionEvent?["payload"]?["data"];
+                Check(positionEvent != null && (string)positionEvent["payload"]["streamId"] != client.StreamId
+                      && (long)positionEvent["payload"]["seq"] == 1,
+                    "V1 position snapshots use a separate connection-scoped stream");
+                Check(positionData?["positions"] is JArray batch && batch.Count == 1
+                      && (string)batch[0]["gameId"] == "76561198000000001"
+                      && (double)batch[0]["position"]["x"] == 12
+                      && DateTime.TryParse((string)positionData["timestamp"], out DateTime parsedTimestamp),
+                    "V1 position event has current coordinates, stable identity and timestamp");
 
                 // An older Takaro that names no version keeps the connection on v0.
                 sock2.ToConnector.Add("<close>");

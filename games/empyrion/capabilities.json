@@ -142,6 +142,12 @@
       "reason": "IApplication.ChatMessageSent (Event_ChatMessage fallback)",
       "liveVerified": false
     },
+    "player-positions": {
+      "status": "live-supported",
+      "responseShape": "{timestamp,positions:[{gameId,position:{x,y,z,dimension}}]}",
+      "reason": "Request_Player_List plus fresh PlayerInfo.pos for each online player, every 5 seconds on protocol v1",
+      "liveVerified": false
+    },
     "player-death": {
       "status": "live-supported",
       "responseShape": "EventPlayerDeath",
