@@ -65,6 +65,7 @@ public static partial class ContractHarness
             AssertOutboundLedgerReplaysUnconfirmedEvents();
             AssertPositionSnapshotsStayCurrentAcrossReconnects();
             AssertPositionReceiptTimeout();
+            AssertPositionReceiptScopedToSocket();
             AssertPositionBatchesWaitForAcknowledgement();
             AssertBanCaptureKeepsOneRecordPerPlayer();
             AssertUnbanLiftsTheEntriesTheMirrorReports();
@@ -1343,6 +1344,88 @@ public static partial class ContractHarness
         ledger.RequeueInFlight(2, false);
         True(!ledger.PositionReceiptOverdue, "reconnect discards the old position deadline");
         Equal(0, ledger.InFlightCount, "an old position is never replayed after timeout recovery");
+    }
+
+    private static void AssertPositionReceiptScopedToSocket()
+    {
+        long now = 1000L * TimeSpan.TicksPerSecond;
+        var ledger = new OutboundLedger(10, 10, "position-recovery", utcTicks: () => now);
+        var session = new TransportSession(ledger, () => now);
+        long oldSocket = session.BeginSocket();
+        session.MarkOpened(oldSocket);
+        session.MarkIdentifySent(oldSocket);
+        session.HandleInbound(oldSocket, true, AcceptedV1);
+        session.TryConfirm();
+        session.ReplayUnconfirmedOnNewSocket();
+        ledger.Enqueue(GameEventFrame, true, false);
+        ledger.MarkWritten(ledger.NextToSend());
+        ledger.Enqueue(
+            "old-position",
+            true,
+            false,
+            isPosition: true,
+            generation: oldSocket,
+            createdAtTicks: now
+        );
+        ledger.MarkWritten(ledger.NextToSend());
+        now += TimeSpan.FromSeconds(30).Ticks;
+        True(
+            session.PositionReceiptOverdue,
+            "a current identified socket expires its missing receipt"
+        );
+
+        session.MarkDetached();
+        True(!session.PositionReceiptOverdue, "a detached socket cannot expire another connection");
+        True(
+            ledger.PositionReceiptOverdue,
+            "old entries remain owned by the sender until replay processing"
+        );
+        long newSocket = session.BeginSocket();
+        session.MarkOpened(newSocket);
+        session.MarkIdentifySent(newSocket);
+        True(
+            !session.PositionReceiptOverdue,
+            "the old receipt cannot abort a new identify attempt"
+        );
+        session.HandleInbound(newSocket, true, AcceptedV1);
+        session.TryConfirm();
+        True(
+            !session.PositionReceiptOverdue,
+            "the old receipt cannot abort the new socket before its first flush"
+        );
+        Equal(
+            1,
+            session.ReplayUnconfirmedOnNewSocket(),
+            "recovery preserves the unacknowledged gameplay event"
+        );
+        True(!session.PositionReceiptOverdue, "recovery discards the expired transient position");
+        Equal(GameEventFrame, ledger.NextToSend().Json, "gameplay is first after recovery");
+        ledger.MarkWritten(ledger.NextToSend());
+        True(ledger.NextToSend() == null, "the old position is never replayed");
+
+        now += TimeSpan.FromSeconds(3).Ticks;
+        ledger.Enqueue(
+            "fresh-position",
+            true,
+            false,
+            isPosition: true,
+            generation: newSocket,
+            createdAtTicks: now
+        );
+        OutboundLedger.Entry fresh = ledger.NextToSend();
+        Equal("fresh-position", fresh.Json, "the new socket can send a fresh capture");
+        ledger.MarkWritten(fresh);
+        now += TimeSpan.FromSeconds(30).Ticks;
+        True(session.PositionReceiptOverdue, "the new generation retains its own receipt watchdog");
+        session.HandleInbound(
+            newSocket,
+            true,
+            "{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"position-recovery\",\"upTo\":"
+                + fresh.Seq
+                + "}}"
+        );
+        session.ApplyAcknowledgements();
+        True(!session.PositionReceiptOverdue, "the new capture receipt clears its watchdog");
     }
 
     private static void AssertPositionBatchesWaitForAcknowledgement()

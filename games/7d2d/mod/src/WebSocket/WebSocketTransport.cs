@@ -295,7 +295,7 @@ namespace Takaro.WebSocket
                 // Checked every poll, not only on the heartbeat tick, so a dead
                 // link is noticed within a second of the timeout.
                 _session.ApplyAcknowledgements();
-                CheckInboundLiveness(_ledger.PositionReceiptOverdue);
+                CheckInboundLiveness(_session.PositionReceiptOverdue);
                 ResetBackoffIfStable();
                 FlushPending();
             }

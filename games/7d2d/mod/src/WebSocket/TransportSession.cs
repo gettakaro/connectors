@@ -91,6 +91,9 @@ namespace Takaro.WebSocket
 
         public long Generation => Interlocked.Read(ref _generation);
 
+        public bool PositionReceiptOverdue =>
+            _isConfirmed && _ledger.Generation == Generation && _ledger.PositionReceiptOverdue;
+
         /// <summary>Starts a new socket generation and returns it.</summary>
         public long BeginSocket()
         {
