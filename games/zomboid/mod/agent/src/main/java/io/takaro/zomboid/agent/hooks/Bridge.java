@@ -4,6 +4,7 @@ import io.takaro.zomboid.agent.AgentLog;
 import io.takaro.zomboid.agent.EventManagerCallback;
 import io.takaro.zomboid.agent.MainThreadQueue;
 import io.takaro.zomboid.agent.PlayerRegistry;
+import io.takaro.zomboid.agent.PositionPublisher;
 import io.takaro.zomboid.agent.Pz;
 import io.takaro.zomboid.agent.Reconciler;
 import io.takaro.zomboid.agent.TokenBucket;
@@ -11,12 +12,8 @@ import io.takaro.zomboid.agent.research.CommandProbeRuntime;
 import io.takaro.zomboid.core.EventEmitter;
 import io.takaro.zomboid.core.model.PlayerInfo;
 import io.takaro.zomboid.core.model.PlayerLocation;
-import io.takaro.zomboid.core.model.PlayerPositionSample;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -35,8 +32,6 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class Bridge {
 
     private static final long RECONCILE_INTERVAL_MS = 2000L;
-    private static final long POSITION_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(
-            io.takaro.zomboid.core.Capabilities.POSITION_INTERVAL_SECONDS);
 
     private static final AtomicLong TICKS = new AtomicLong();
     private static final AtomicBoolean CONNECTOR_STARTED = new AtomicBoolean();
@@ -74,7 +69,8 @@ public final class Bridge {
     private static volatile boolean debugCatalog;
 
     private static volatile long lastReconcileMs;
-    private static long lastPositionCaptureNanos;
+    private static final PositionPublisher positionPublisher = new PositionPublisher(
+            Pz::getPlayers, Pz::getPlayerLocation, System::nanoTime);
 
     private Bridge() {
     }
@@ -153,30 +149,7 @@ public final class Bridge {
 
     private static void capturePositions() {
         EventEmitter e = emitter;
-        if (e == null || !e.canPushPositions()) return;
-        long now = System.nanoTime();
-        if (lastPositionCaptureNanos != 0 && now - lastPositionCaptureNanos < POSITION_INTERVAL_NANOS) return;
-
-        List<PlayerInfo> online = Pz.getPlayers();
-        if (online.size() > 1000) return;
-        List<PlayerPositionSample> batch = new ArrayList<>(online.size());
-        Set<String> seen = new HashSet<>();
-        boolean complete = true;
-        for (PlayerInfo player : online) {
-            String gameId = player.gameId();
-            if (gameId == null || !seen.add(gameId)) {
-                complete = false;
-                continue;
-            }
-            PlayerLocation location = Pz.getPlayerLocation(gameId);
-            if (location == null) {
-                complete = false;
-                continue;
-            }
-            batch.add(new PlayerPositionSample(gameId, location));
-        }
-        if (complete) e.emitPlayerPositions(batch, now);
-        lastPositionCaptureNanos = System.nanoTime();
+        if (e != null) positionPublisher.tick(e);
     }
 
     private static void startConnectorOnce() {

@@ -40,6 +40,8 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private final LongSupplier nanoClock;
     private final Object positionLock = new Object();
     private String positionStreamId;
+    private boolean positionCloseRequested;
+    private volatile boolean positionPushAvailable = true;
     private long nextPositionSeq = 1, waitingPositionSeq;
     private long nextPositionAt, positionQueuedAt, connectionOpenedAt;
     private static final long POSITION_ACK_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
@@ -92,15 +94,33 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public boolean canPushPositions() {
+        boolean expired = false;
+        boolean ready;
         synchronized (positionLock) {
             long now = nanoClock.getAsLong();
-            if (waitingPositionSeq != 0 && now - positionQueuedAt >= POSITION_ACK_TIMEOUT_NANOS) {
-                close(1001, "position acknowledgement timed out");
-                return false;
+            if (!positionCloseRequested && waitingPositionSeq != 0
+                    && now - positionQueuedAt >= POSITION_ACK_TIMEOUT_NANOS) {
+                positionCloseRequested = true;
+                expired = true;
             }
-            return !retired && identified && protocolVersion == 1 && isOpen()
-                    && waitingPositionSeq == 0 && now - nextPositionAt >= 0;
+            ready = positionsReady(now);
         }
+        // Java-WebSocket calls onClose while holding its socket monitor.
+        if (expired) close(1001, "position acknowledgement timed out");
+        return ready;
+    }
+
+    private boolean positionsReady(long now) {
+        return !retired && identified && protocolVersion == 1 && isOpen()
+                && positionPushAvailable && !positionCloseRequested
+                && waitingPositionSeq == 0 && now - nextPositionAt >= 0;
+    }
+
+    @Override
+    public void setPositionPushAvailable(boolean available) {
+        if (positionPushAvailable == available) return;
+        positionPushAvailable = available;
+        capabilitiesChanged();
     }
 
     @Override
@@ -114,6 +134,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         synchronized (positionLock) {
             connectionOpenedAt = nanoClock.getAsLong();
             positionStreamId = UUID.randomUUID().toString();
+            positionCloseRequested = false;
             nextPositionSeq = 1;
             waitingPositionSeq = 0;
             nextPositionAt = connectionOpenedAt;
@@ -305,7 +326,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         data.add("positions", entries);
         synchronized (positionLock) {
             long now = nanoClock.getAsLong();
-            if (!canPushPositions() || capturedAtNanos < connectionOpenedAt || capturedAtNanos > now
+            if (!positionsReady(now) || capturedAtNanos < connectionOpenedAt || capturedAtNanos > now
                     || now - capturedAtNanos >= TimeUnit.SECONDS.toNanos(Capabilities.POSITION_INTERVAL_SECONDS)) return;
             JsonObject payload = v0EventPayload("player-positions", data);
             payload.addProperty("streamId", positionStreamId);
@@ -511,7 +532,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     private void sendCapabilities() {
         List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
         JsonObject payload = new JsonObject();
-        payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
+        payload.add("capabilities", Capabilities.manifest(dims, gameVersion(), positionPushAvailable));
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "capabilities");
         msg.addProperty("requestId", UUID.randomUUID().toString());
@@ -542,7 +563,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
             payload.add("protocolVersions", versions);
             List<io.takaro.zomboid.core.model.MapDimension> dims = mapDimensions();
             mapDimensions = dims.size();
-            payload.add("capabilities", Capabilities.manifest(dims, gameVersion()));
+            payload.add("capabilities", Capabilities.manifest(dims, gameVersion(), positionPushAvailable));
         }
 
         JsonObject msg = new JsonObject();

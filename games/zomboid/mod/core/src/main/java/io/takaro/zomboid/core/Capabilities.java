@@ -55,11 +55,16 @@ public final class Capabilities {
     }
 
     public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion) {
+        return manifest(dimensions, gameVersion, true);
+    }
+
+    public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion, boolean positionsAvailable) {
         JsonArray out = new JsonArray();
         for (String name : ACTIONS) {
             out.add(named(name));
         }
         for (String name : EVENTS) {
+            if (name.equals("events.player-positions") && !positionsAvailable) continue;
             JsonObject event = named(name);
             if (name.equals("events.player-positions")) {
                 JsonObject parameters = new JsonObject();

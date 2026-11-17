@@ -157,6 +157,7 @@ class ProtocolV1Test {
         String oldStream = events().get(0).getAsJsonObject("payload").get("streamId").getAsString();
         nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(30));
         assertFalse(client.canPushPositions());
+        assertFalse(client.canPushPositions());
         assertEquals(List.of("position acknowledgement timed out"), positionCloses);
         client.onClose(1006, "gone", true);
         nowNanos.incrementAndGet();
@@ -570,6 +571,76 @@ class ProtocolV1Test {
         client.onClose(1008, "invalid_args", true);
         assertTrue(adapter.logs.stream().noneMatch(l -> l.startsWith("Reconnecting in")), adapter.logs.toString());
         assertTrue(adapter.logs.stream().anyMatch(l -> l.contains("registrationToken")), adapter.logs.toString());
+    }
+
+    @Test
+    void receiptTimeoutCannotDeadlockPinnedSocketTeardown() throws Exception {
+        config.setReconnectEnabled(false);
+        // Send/isOpen are faked; close and teardown use the pinned Java-WebSocket engine.
+        client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, outbox, nowNanos::get) {
+            @Override public void send(String text) { sent.add(text); }
+            @Override public boolean isOpen() { return true; }
+        };
+        client.onOpen(null);
+        identify(1);
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))));
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(30));
+        var engine = (org.java_websocket.WebSocketImpl) client.getConnection();
+        var held = new java.util.concurrent.CountDownLatch(1);
+        var tearDown = new java.util.concurrent.CountDownLatch(1);
+        var failures = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        Thread reader = new Thread(() -> {
+            try {
+                synchronized (engine) {
+                    held.countDown();
+                    if (!tearDown.await(2, TimeUnit.SECONDS)) throw new AssertionError("watchdog not started");
+                    engine.closeConnection(1006, "peer gone", true);
+                }
+            } catch (Throwable t) { failures.set(t); }
+        }, "test-socket-reader");
+        Thread watchdog = new Thread(() -> {
+            try { client.canPushPositions(); } catch (Throwable t) { failures.set(t); }
+        }, "test-game-watchdog");
+        reader.setDaemon(true);
+        watchdog.setDaemon(true);
+        reader.start();
+        assertTrue(held.await(2, TimeUnit.SECONDS));
+        watchdog.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (watchdog.getState() != Thread.State.BLOCKED && watchdog.isAlive() && System.nanoTime() < deadline)
+            Thread.onSpinWait();
+        boolean blockedOnSocket = watchdog.getState() == Thread.State.BLOCKED;
+        tearDown.countDown();
+        reader.join(2000);
+        watchdog.join(2000);
+        assertTrue(blockedOnSocket, "watchdog must reach the real socket monitor");
+        assertFalse(reader.isAlive(), "socket onClose must acquire positionLock without inversion");
+        assertFalse(watchdog.isAlive(), "game-thread timeout must finish");
+        assertNull(failures.get());
+        assertFalse(client.isIdentified());
+        client.retire();
+    }
+
+    @Test
+    void unreadableRosterWithdrawsAndRestoresPushInIdentifyAndCapabilityUpdates() {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.setPositionPushAvailable(false);
+        assertFalse(names(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities"))
+                .contains("events.player-positions"));
+        assertFalse(client.canPushPositions());
+        client.setPositionPushAvailable(false);
+        assertEquals(1, sent.size(), "unchanged unreadability does not spam manifests");
+        client.onOpen(null);
+        assertFalse(names(frame(1).getAsJsonObject("payload").getAsJsonArray("capabilities"))
+                .contains("events.player-positions"), "reconnect keeps the withdrawn capability");
+        identify(1);
+        sent.clear();
+        client.setPositionPushAvailable(true);
+        assertTrue(names(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities"))
+                .contains("events.player-positions"));
+        assertTrue(client.canPushPositions());
     }
 
     private void identify(int version) {
