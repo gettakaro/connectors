@@ -26,7 +26,7 @@ and SourceMod 1.13 are installed by the operator.
 
 Protocol v1 advertises `events.player-positions` with a three-second minimum interval. After
 a matching receipt, the server waits three seconds before capturing another complete batch.
-Each online human client contributes its current server entity origin and map dimension,
+Each included in-game client contributes its current server entity origin and map dimension,
 including dead players and spectators. Missing entities defer the batch. Reconnects discard
 old snapshots, and chat includes the sender's current entity position.
 This path still needs a real-client Takaro check before it is marked live-supported.
