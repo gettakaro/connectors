@@ -7,7 +7,7 @@ namespace TakaroEmpyrion.Protocol
     public static class Capabilities
     {
         public static readonly int[] OfferedVersions = { 0, 1 };
-        public const int PositionIntervalSeconds = 5;
+        public const int PositionIntervalSeconds = 3;
 
         /// <summary>
         /// Takaro's action -> Capability table. testReachability is always allowed; getMapTile is covered by the

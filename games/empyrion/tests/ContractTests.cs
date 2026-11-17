@@ -38,6 +38,7 @@ public static partial class ContractTests
         Run("map tiles", MapTiles);
         Run("map real data", MapRealData);
         Run("wire v1", WireV1);
+        Run("transient position receipt pacing", PositionDelivery);
         Run("reconnect delays", ReconnectDelays);
         Run("reconnect wire", ReconnectWire);
         Run("reconnect slow uplink", ReconnectSlowUplink);

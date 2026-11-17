@@ -362,6 +362,7 @@ public static partial class ContractTests
             var players = new PlayerRegistry(null);
             var actions = new Actions(bridge, new FakeV2(), players, new Catalog(), null, new Config { ServerName = "Dev", IdentityToken = "id" }, log, new BanReasons(null), _ => { }, map);
 
+            long positionClockTicks = 0;
             var sockets = new BlockingCollection<FakeSocket>();
             TakaroClient client = null;
             client = new TakaroClient(() => { var s = new FakeSocket(); sockets.Add(s); return s; },
@@ -370,6 +371,7 @@ public static partial class ContractTests
                     Url = "wss://fake/", IdentityToken = "id", RegistrationToken = "reg", ServerName = "Dev",
                     PingInterval = TimeSpan.FromSeconds(30), InboundTimeout = TimeSpan.FromSeconds(60),
                     Manifest = () => Capabilities.Build(Actions.Declared, map.Capability()),
+                    PositionClock = () => TimeSpan.FromTicks(Interlocked.Read(ref positionClockTicks)),
                 },
                 log,
                 req => Task.Run(async () =>
@@ -447,6 +449,7 @@ public static partial class ContractTests
                 Check(again != null && (long)again["payload"]["seq"] == 2 && (string)again["payload"]["data"]["msg"] == "two"
                       && e3 != null && (long)e3["payload"]["seq"] == 3, "V1 resends unacknowledged events after reconnect, seq keeps growing");
 
+                Interlocked.Exchange(ref positionClockTicks, TimeSpan.FromSeconds(3).Ticks);
                 var publisher = new PositionPublisher(actions, client, log);
                 Check(publisher.PublishOnce().Result, "V1 position publisher reads and sends a snapshot");
                 JObject positionEvent = Next(sock2, o => (string)o["type"] == "gameEvent" && (string)o["payload"]?["type"] == "player-positions");

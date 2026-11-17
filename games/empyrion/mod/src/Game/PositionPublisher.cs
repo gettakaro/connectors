@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -10,14 +9,17 @@ namespace TakaroEmpyrion.Game
     /// <summary>Publishes complete, freshly read position snapshots on an identified v1 connection.</summary>
     public sealed class PositionPublisher
     {
-        readonly Actions _actions;
+        readonly Func<Task<JArray>> _readPositions;
         readonly TakaroClient _client;
         readonly ILog _log;
         readonly CancellationTokenSource _stop = new CancellationTokenSource();
         Task _loop;
 
         public PositionPublisher(Actions actions, TakaroClient client, ILog log)
-        { _actions = actions; _client = client; _log = log; }
+            : this(actions.CurrentPositions, client, log) { }
+
+        public PositionPublisher(Func<Task<JArray>> readPositions, TakaroClient client, ILog log)
+        { _readPositions = readPositions; _client = client; _log = log; }
 
         public void Start() { _loop = Task.Run(Run); }
         public void Stop() { _stop.Cancel(); }
@@ -27,30 +29,28 @@ namespace TakaroEmpyrion.Game
             while (!_stop.IsCancellationRequested)
             {
                 await PublishOnce();
-                try { await Task.Delay(TimeSpan.FromSeconds(Capabilities.PositionIntervalSeconds), _stop.Token); }
+                try { await Task.Delay(TimeSpan.FromMilliseconds(250), _stop.Token); }
                 catch (TaskCanceledException) { break; }
             }
         }
 
         public async Task<bool> PublishOnce()
         {
-            if (!_client.Identified || _client.ProtocolVersion < 1) return false;
+            if (_stop.IsCancellationRequested || !_client.TryBeginPositionSnapshot(out long token)) return false;
             try
             {
-                JArray positions = await _actions.CurrentPositions();
-                if (!_client.Identified || _client.ProtocolVersion < 1 || _stop.IsCancellationRequested) return false;
-                for (int offset = 0; offset < positions.Count || (offset == 0 && positions.Count == 0); offset += 1000)
+                JArray positions = await _readPositions();
+                if (_stop.IsCancellationRequested) return false;
+                if (positions == null || positions.Count > 1000)
                 {
-                    if (offset > 0)
-                        await Task.Delay(TimeSpan.FromSeconds(Capabilities.PositionIntervalSeconds), _stop.Token);
-                    if (!_client.Identified || _client.ProtocolVersion < 1 || _stop.IsCancellationRequested) return false;
-                    _client.SendPositionSnapshot(new JObject
-                    {
-                        ["timestamp"] = DateTime.UtcNow.ToString("o"),
-                        ["positions"] = new JArray(positions.Skip(offset).Take(1000).Select(p => p.DeepClone())),
-                    });
+                    _log.Warn("position snapshot exceeds 1000 players or is unavailable; dropping the complete sample");
+                    return false;
                 }
-                return true;
+                return _client.SendPositionSnapshot(token, new JObject
+                {
+                    ["timestamp"] = DateTime.UtcNow.ToString("o"),
+                    ["positions"] = positions,
+                });
             }
             catch (TaskCanceledException) { return false; }
             catch (Exception e)
@@ -58,6 +58,7 @@ namespace TakaroEmpyrion.Game
                 _log.Warn("position snapshot failed: " + e.Message);
                 return false;
             }
+            finally { _client.CancelPositionSnapshot(token); }
         }
     }
 }
