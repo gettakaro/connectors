@@ -134,7 +134,7 @@ Checked on TShock 6.2.1 (Terraria 1.4.5.8), 2026-10-22. ✅ works, ⚠️ works 
 |---|---|---|
 | Connection | ✅ | Reconnects after a server or bridge restart; a dropped connection is back within about 2 s. |
 | Player list | ✅ | Character names. |
-| Player location | ✅ | In world pixels (16 per tile). Protocol v1 pushes a full snapshot every 5 s; live Takaro verification of the push is pending. |
+| Player location | ✅ | In world pixels (16 per tile). Protocol v1 pushes a full snapshot at least 3 s after the previous matching receipt ACK; live Takaro verification of the push is pending. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ⚠️ | Some names read wrong (`Bandof Regeneration`). |

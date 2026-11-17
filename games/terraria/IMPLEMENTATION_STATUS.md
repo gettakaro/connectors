@@ -4,7 +4,7 @@
 
 - Protocol v1 declares `events.player-positions` with `intervalSeconds: 3`.
 - The TShock plugin's `/takaroposall` command captures all active player positions
-  in one game-thread read. Coordinates are world pixels, matching `getPlayerLocation`.
+  in one REST command response. Coordinates are world pixels, matching `getPlayerLocation`.
 - The bridge reads a fresh snapshot at least 3 seconds after the previous matching receipt acknowledgment. Only one position batch can be in flight; a missing acknowledgment reconnects after 30 seconds. It
   validates the complete batch, rejects duplicate player IDs and oversized
   batches, and stops polling on disconnect. Position snapshots bypass the durable
