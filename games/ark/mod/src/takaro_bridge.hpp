@@ -55,6 +55,8 @@ struct Config {
   std::chrono::milliseconds reconnect_max{60000};
   std::chrono::milliseconds connection_stable_after{10000};
   std::chrono::milliseconds pump_interval{250};
+  std::chrono::seconds position_interval{3};
+  std::chrono::milliseconds position_ack_timeout{30000};
   std::chrono::milliseconds reconcile_interval{1000};
   size_t workers = 4;
   // The first identify waits for the loaded world (bounded): Takaro fetches the declared
@@ -153,7 +155,8 @@ inline std::optional<json::Value> map_event(const gate::Event& e, KnownPlayers& 
   }
   if (e.type == "player-death" && valid_steam64(e.attacker_id) && e.attacker_id != e.id)
     data.set("attacker", player_json(e.attacker_id, known.name(e.attacker_id)));
-  if (e.type == "player-death" && e.position && std::isfinite(e.position->x) && std::isfinite(e.position->y) &&
+  if ((e.type == "player-death" || e.type == "chat-message") && e.position &&
+      std::isfinite(e.position->x) && std::isfinite(e.position->y) &&
       std::isfinite(e.position->z)) {
     json::Value position = json::obj({{"x", json::num(e.position->x)}, {"y", json::num(e.position->y)},
                                       {"z", json::num(e.position->z)}});
@@ -191,6 +194,7 @@ class Bridge {
  public:
   Bridge(Config config, gate::Server& gate, LogSink log)
       : config_(std::move(config)), gate_(gate), log_(std::move(log)),
+        positions_stream_id_(random_uuid()),
         known_(config_.state_dir.empty() ? std::string() : config_.state_dir + "/known-players.json"),
         bans_(gate_, BanFile(config_.ban_file.empty() && !config_.state_dir.empty()
                                  ? config_.state_dir + "/ban-metadata.json" : config_.ban_file),
@@ -261,6 +265,7 @@ class Bridge {
   Config config_;
   gate::Server& gate_;
   LogSink log_;
+  std::string positions_stream_id_;
   KnownPlayers known_;
   BanManager bans_;
   Adapter adapter_;
@@ -296,6 +301,10 @@ class Bridge {
   std::chrono::steady_clock::time_point next_ping_{};
   std::chrono::steady_clock::time_point last_eager_ping_{};
   std::chrono::steady_clock::time_point next_pump_{};
+  std::chrono::steady_clock::time_point next_positions_{};
+  uint64_t positions_seq_ = 0;
+  uint64_t pending_position_seq_ = 0;
+  std::chrono::steady_clock::time_point position_sent_at_{};
   bool truncation_logged_ = false;
 
   std::mutex out_mutex_;
@@ -348,6 +357,8 @@ class Bridge {
       json::Value manifest = json::Value::array();
       for (const auto& name : capability_manifest()) manifest.push(json::obj({{"name", json::str(name)}}));
       manifest.push(game_profile_capability(config_.game_version, config_.game_icon.get()));
+      manifest.push(json::obj({{"name", json::str("events.player-positions")},
+                               {"parameters", json::obj({{"intervalSeconds", json::num(config_.position_interval.count())}})}}));
       if (auto dimension = map_dimension(config_.map_name)) {
         json::Value dimensions = json::Value::array();
         dimensions.push(std::move(*dimension));
@@ -375,6 +386,7 @@ class Bridge {
     protocol_version_ = 0;
     adapter_.set_protocol_version(0);
     ++epoch_;
+    pending_position_seq_ = 0;
     pings_.clear();
     in_flight_.clear();
     before_identify_.clear();
@@ -427,6 +439,8 @@ class Bridge {
         }
         ++connections_;
         ++epoch_;
+        positions_stream_id_ = random_uuid();
+        positions_seq_ = pending_position_seq_ = 0;
         pings_.clear();
         in_flight_.clear();
         before_identify_.clear();
@@ -492,6 +506,13 @@ class Bridge {
     if (identified_.load() && now >= next_pump_) {
       next_pump_ = now + config_.pump_interval;
       pump();
+    }
+    if (identified_.load() && protocol_version_.load() >= 1) {
+      if (pending_position_seq_ && now - position_sent_at_ >= config_.position_ack_timeout) {
+        disconnect("position acknowledgement timeout");
+        return false;
+      }
+      if (!pending_position_seq_ && now >= next_positions_) send_positions();
     }
     if (now >= next_ping_) {
       next_ping_ = now + config_.ping_interval;
@@ -589,6 +610,32 @@ class Bridge {
     }
   }
 
+  void send_positions() {
+    json::Value positions = json::Value::array();
+    for (const auto& [id, sample] : gate_.live_positions()) {
+      if (!valid_steam64(id) || !std::isfinite(sample.x) || !std::isfinite(sample.y) || !std::isfinite(sample.z))
+        continue;
+      json::Value position = json::obj({{"x", json::num(sample.x)}, {"y", json::num(sample.y)},
+                                        {"z", json::num(sample.z)}});
+      if (!map_dimension_id_.empty()) position.set("dimension", json::str(map_dimension_id_));
+      positions.push(json::obj({{"gameId", json::str(id)}, {"position", std::move(position)}}));
+    }
+    json::Value data = json::obj({{"timestamp", json::str(gate::utc_now())},
+                                  {"positions", std::move(positions)}});
+    const std::string frame = json::dump(json::obj({{"type", json::str("gameEvent")},
+        {"payload", json::obj({{"type", json::str("player-positions")}, {"data", std::move(data)},
+                                {"streamId", json::str(positions_stream_id_)},
+                                {"seq", json::num(static_cast<double>(++positions_seq_))}})}}));
+    if (config_.wire_debug) log("takaro-wire SEND " + redact_frame(frame));
+    if (conn_.send_text(frame)) {
+      pending_position_seq_ = positions_seq_;
+      position_sent_at_ = std::chrono::steady_clock::now();
+    } else {
+      next_positions_ = std::chrono::steady_clock::now() + config_.position_interval;
+      log("takaro-position-batch-send-buffer-full");
+    }
+  }
+
   void handle_text(const std::string& raw) {
     if (config_.wire_debug) log("takaro-wire RECV " + redact_frame(raw));
     const auto message = json::parse(raw);
@@ -629,6 +676,7 @@ class Bridge {
         requests_cv_.notify_all();
       }
       next_pump_ = std::chrono::steady_clock::now();
+      next_positions_ = std::chrono::steady_clock::now() + config_.position_interval;
       log("takaro-identified gameServerId=" + id + " protocolVersion=" + std::to_string(version));
       return;
     }
@@ -636,6 +684,12 @@ class Bridge {
       const json::Value& payload = as_record(message->get("payload"));
       const auto* stream = payload.get("streamId");
       const auto* up_to = payload.get("upTo");
+      if (stream && stream->is_string() && stream->as_string() == positions_stream_id_ &&
+          up_to && up_to->is_number() && pending_position_seq_ &&
+          up_to->as_number() == static_cast<double>(pending_position_seq_)) {
+        pending_position_seq_ = 0;
+        next_positions_ = std::chrono::steady_clock::now() + config_.position_interval;
+      }
       if (stream && stream->is_string() && stream->as_string() == gate_.boot_id() && up_to && up_to->is_number() &&
           up_to->as_number() >= 0)
         confirm_seq(static_cast<uint64_t>(up_to->as_number()));

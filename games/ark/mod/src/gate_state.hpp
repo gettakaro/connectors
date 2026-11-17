@@ -210,6 +210,9 @@ class Server {
     auto& player = players_[id];
     player.id = id;
     player.name = event.name;  // keep the sampled ip/ping of an online player
+    if (auto it = positions_.find(id); it != positions_.end() &&
+        std::chrono::steady_clock::now() - it->second.sampled < std::chrono::seconds(2))
+      event.position = it->second;
     event.seq = ++sequence_;
     events_.push_back(std::move(event));
     while (events_.size() > 4096) events_.pop_front();
@@ -594,6 +597,23 @@ class Server {
       }
     }
     return std::nullopt;
+  }
+
+  // Only live players with a recent game-thread pawn sample enter the push
+  // batch. Death and disconnect positions remain available to the read action
+  // but must never masquerade as current player positions.
+  std::vector<std::pair<std::string, Position>> live_positions() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto now = std::chrono::steady_clock::now();
+    std::vector<std::pair<std::string, Position>> result;
+    result.reserve(std::min<size_t>(players_.size(), 1000));
+    for (const auto& [id, player] : players_) {
+      if (result.size() == 1000) break;
+      auto it = positions_.find(id);
+      if (it != positions_.end() && now - it->second.sampled < std::chrono::seconds(2))
+        result.emplace_back(id, it->second);
+    }
+    return result;
   }
 
   std::optional<std::vector<InventoryItem>> inventory(const std::string& id) {
