@@ -16,7 +16,9 @@ Position snapshots are not generated while disconnected; a reconnect starts with
 fresh sample. One snapshot can be in flight; the next capture waits three seconds after its matching receipt ACK. A missing receipt for 30 seconds reconnects the socket. Captures from the previous connection or older than the interval are rejected. Protocol v0 keeps its existing polled location behavior.
 
 **Verification:** Core protocol tests check the capability parameters, v1 payload,
-disconnect behavior, receipt-based pacing and chat position. Core tests and Java
-compilation of all five maintained targets passed in a JDK 25 container. Live
-Takaro and real-client checks are pending; the feature is not yet qualified
-as live-supported.
+receipt-based pacing, missing-ACK reconnects, stale captures and chat position.
+All 168 core tests and builds of all five maintained targets passed in a JDK 25
+container. Fabric 26.3 was also verified with a real client: movement reached
+Takaro, populated batches remained receipt-paced without location polling, a chat
+command saved the current position, and an outage recovered with a fresh snapshot.
+Paper, NeoForge, Fabric 26.1.2 and Fabric 26.2 remain compile-tested for this change.
