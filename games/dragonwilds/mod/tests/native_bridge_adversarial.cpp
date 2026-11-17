@@ -26,6 +26,7 @@ bool GameThread::Alive() { return true; }
 bool Reflect::Validated() { return true; }
 std::string Reflect::GameVersion() { return ""; }
 Actions::Result Actions::Players() { return {200, "[]"}; }
+Actions::Result Actions::PlayerPositions() { return {200, "[]"}; }
 Actions::Result Actions::PlayerLocation(const std::string& id) {
     if (id == "00000000000000000000000000000003")
         return {200, "{\"x\":1,\"y\":2,\"z\":3,\"yaw\":90,\"ageMs\":0}"};

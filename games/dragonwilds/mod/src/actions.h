@@ -26,6 +26,8 @@ void Housekeep();
 Result Players();
 Result Player(const std::string& gameId);
 Result PlayerLocation(const std::string& gameId);
+// Current locations of all spawned players, captured in one game-thread job.
+Result PlayerPositions();
 Result PlayerInventory(const std::string& gameId);
 Result Items(const std::string& search);
 Result Entities();

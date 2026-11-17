@@ -63,11 +63,12 @@ an installation. `plugin.log` lines are redacted (`*Password`, `*Token`, `Ticket
   error; a running one is answered with an error, finishes, and its late response is suppressed).
   Unknown action → error frame `Unknown Takaro action '<x>'`. Request ids over 128 bytes close the
   socket; duplicates are refused.
-- Events: every outgoing `gameEvent` is built by one whitelist (`NativeBehavior::MapEventData`) with
-  exactly the keys Takaro's DTOs accept, plus `timestamp` (the moment the game produced it). Events
-  are admitted durably, sent only on an OPEN and identified socket, and confirmed only by a pong that
-  follows the write (F10, F20); unconfirmed events are re-sent after the next identify, also after a
-  crash.
+- Events: gameplay `gameEvent` frames are built by one whitelist (`NativeBehavior::MapEventData`) with
+  exactly the keys Takaro's DTOs accept, plus `timestamp` (the moment the game produced it). They
+  are admitted durably and sent only on an OPEN and identified socket. Version 0 confirms them by a
+  pong after the write (F10, F20); version 1 uses `eventAck`. Unconfirmed gameplay events are re-sent
+  after the next identify, also after a crash. Position snapshots use a separate replaceable,
+  connection-scoped queue and are never replayed.
 - Shutdown (`shutdown`, or `executeConsoleCommand shutdown`): the response is written and pong-
   confirmed first (bounded, 2 s), then the plugin saves (`CanSave` → `RequestSaveGame`) and sends
   itself `SIGTERM`. A response that cannot be written cancels the shutdown. Not gated, as in 0.2.x.
@@ -109,7 +110,8 @@ player is `{gameId}`, `{epicOnlineServicesId}`, `{steamId}`, `{platformId:"epic:
 | type | data |
 |---|---|
 | `player-connected` / `player-disconnected` | `{player}` |
-| `chat-message` | `{msg, channel, player?}` (`channel` global/team/friends/whisper) |
+| `chat-message` | `{msg, channel, player?, position?}` (`position` when the sender has a readable pawn) |
+| `player-positions` | `{positions:[{gameId,position:{x,y,z,dimension}}], timestamp?}`; v1 manifest declares `intervalSeconds:3` |
 | `player-death` | `{player, position?, attacker?, msg?}` (`msg` = `<name> was killed by <creature>`) |
 | `entity-killed` | `{player, entity, weapon}` (`weapon` is a string, `""` when unresolved) |
 | `log` | `{msg}` redacted: `*Password` values, `?p=<base64>`, `*Token`/`Ticket` values; a line mentioning a password in free text becomes `[redacted: line mentions a password]` |
@@ -209,8 +211,12 @@ for it up to 15 s after login.
   latest when nothing is new.
 - `since > latestSeq` means the server restarted; reset to `0`.
 - `truncated: true` means events between `since` and the oldest buffered event were dropped.
-- Types: `player-connected`, `player-disconnected`, `chat-message`, `player-death`, `entity-killed`,
-  `log`. All are wired (lane L2). `entity-killed` carries a readable `entity` name
+- Types: `player-connected`, `player-disconnected`, `chat-message`, `player-positions`, `player-death`, `entity-killed`,
+  `log`. `player-positions` snapshots are captured on the game thread while a v1
+  Takaro connection is identified. The next snapshot is sampled at least three seconds after Takaro
+  acknowledges the previous one, so transport stalls cannot bunch receipts inside the declared interval.
+  These connection-scoped snapshots are discarded on disconnect rather than replayed. Players without a spawned, readable pawn are omitted. A failed
+  snapshot is skipped. Position delivery and the chat teleport command were verified on server build 26574459. `entity-killed` carries a readable `entity` name
   (`ADominionAICharacter::AIName`) with the Blueprint class in `entityCode`/`entityClass`, and the
   weapon that made the kill in `weapon`/`weaponCode`; `weaponSource` names the route that resolved
   it (the fatal damage event's source item, the killer's equipped main/off hand, the loadout scan,
