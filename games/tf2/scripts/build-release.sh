@@ -145,7 +145,7 @@ for ext in ("websocket", "json"):
             rel = os.path.relpath(path, root).replace(os.sep, "/")
             files[f"{SM}/extensions/{rel}"] = open(path, "rb").read()
 files[f"{SM}/plugins/takaro_tf2.smx"] = open(os.path.join(stage, "out", "takaro_tf2.smx"), "rb").read()
-for f in ("takaro_tf2.sp", "takaro_tf2_item_catalog.inc", "takaro_tf2_chat.inc", "takaro_tf2_reconnect.inc"):
+for f in ("takaro_tf2.sp", "takaro_tf2_item_catalog.inc", "takaro_tf2_chat.inc", "takaro_tf2_reconnect.inc", "takaro_tf2_positions.inc"):
     files[f"{SM}/scripting/{f}"] = open(os.path.join(stage, "src", f), "rb").read()
 files["cfg/sourcemod/takaro_tf2.cfg"] = open(os.path.join(project, "mod", "cfg", "sourcemod", "takaro_tf2.cfg"), "rb").read()
 for f in ("LICENSE-sm-ext-websocket.txt", "LICENSE-sm-ext-json.txt"):
