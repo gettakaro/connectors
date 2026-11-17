@@ -70,7 +70,7 @@ Checked on Rust build 26498655 with Carbon v2.0.264, 2026-11-07. ✅ works, ⚠�
 | Connection | ✅ | Reconnects after a server restart. |
 | Player list | ✅ | Steam id, IP and ping. |
 | Player location | ✅ | |
-| Live player positions | ⚠️ | Pushes all online positions every 3 seconds on protocol v1; live game verification pending. |
+| Live player positions | ✅ | Protocol v1 pushes current online-player positions at least 3 seconds after the previous receipt acknowledgment. |
 | Teleport | ✅ | No ground snapping; pick a safe height. |
 | Player inventory | ⚠️ | Item quality is always empty. |
 | Item list | ✅ | |
