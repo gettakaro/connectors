@@ -664,7 +664,7 @@ int main() {
             const Json positionsCap = *std::find_if(manifest.begin(), manifest.end(), [](const Json& c) {
                 return c["name"] == "events.player-positions";
             });
-            Check(positionsCap["parameters"]["intervalSeconds"] == 5, "positions interval declared");
+            Check(positionsCap["parameters"]["intervalSeconds"] == 3, "positions interval declared");
             for (const char* name : {"players.list", "players.get", "players.location", "moderation.listBans",
                                      "server.shutdown", "events.chat-message", "events.entity-killed", "events.log"})
                 Check(std::find(names.begin(), names.end(), name) != names.end(), std::string("manifest declares ") + name);

@@ -103,7 +103,7 @@ def position_ack_cadence(cert, key, state):
         acked_at = time.monotonic()
         run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': seq}})
         second = run.game_event(is_position, timeout=8)
-        assert time.monotonic() - acked_at >= 5, 'next snapshot compressed into the declared interval'
+        assert time.monotonic() - acked_at >= 3, 'next snapshot compressed into the declared interval'
         assert second['payload']['seq'] == seq + 1, second
         run.peer.close_session(run.index)
         run.index = run.identify()

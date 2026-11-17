@@ -569,7 +569,7 @@ void HandleFrame(const NativeTransport::Notice& n) {
         if (Str(p, "streamId") == PositionStreamId()) {
             if (positionAwaitingAck && upTo.is_number_unsigned() && upTo.get<uint64_t>() == positionSeq) {
                 positionAwaitingAck = false;
-                nextPositions = Clock::now() + std::chrono::seconds(5);
+                nextPositions = Clock::now() + std::chrono::seconds(3);
             }
             return;
         }
@@ -1130,7 +1130,7 @@ void BridgeLoop() {
                 currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0;
                 positionSeq = 0;
                 positionAwaitingAck = false;
-                nextPositions = std::max(nextPositions, Clock::now() + std::chrono::seconds(5));
+                nextPositions = std::max(nextPositions, Clock::now() + std::chrono::seconds(3));
                 highestSentSeq = 0; unackedSince.reset();
                 sentEpochByOutboxId.clear();
                 Json p = {{"identityToken", identity}};
@@ -1341,7 +1341,7 @@ void BridgeLoop() {
                 lastError = "player positions snapshot: " + snapshot.body;
             }
             // Anchor cadence to publication, since a game-thread job may wait behind other work.
-            nextPositions = Clock::now() + std::chrono::seconds(5);
+            nextPositions = Clock::now() + std::chrono::seconds(3);
         }
         if (Clock::now() >= nextPoll) { PollEvents(); nextPoll = Clock::now() + std::chrono::seconds(1); }
         const auto rawDeadline = Clock::now() + kRawLogPassBudget;
