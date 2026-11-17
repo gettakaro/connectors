@@ -93,7 +93,7 @@ public static class ProtocolHandshake
         manifest.Add(new JsonObject
         {
             ["name"] = "events." + GameEventTypes.PlayerPositions,
-            ["parameters"] = new JsonObject { ["intervalSeconds"] = 5 }
+            ["parameters"] = new JsonObject { ["intervalSeconds"] = PositionSnapshotStream.IntervalSeconds }
         });
 
         if (profile is not null)

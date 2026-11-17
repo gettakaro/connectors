@@ -20,6 +20,30 @@ public sealed class RunnerProtocolV1Tests
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
 
     [TestMethod]
+    public async Task PositionsWaitForTheirAckWithoutBlockingGameplayAndStartFreshAfterReconnect()
+    {
+        using var takaro = new FakeTakaro(chosenVersion: 1);
+        using var runner = Runner(takaro, new RecordingAdapter { CapturePositions = true });
+        await runner.StartAsync();
+        await Until(() => takaro.Events.Any(e => e.Type == "player-positions"));
+        var first = takaro.Events.First(e => e.Type == "player-positions");
+        await runner.SendGameEventAsync("chat-message", new { msg = "still delivered" });
+        await Until(() => takaro.Events.Any(e => e.Message == "still delivered"));
+        await takaro.SendAsync("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"" + first.StreamId + "\",\"upTo\":999}}");
+        await Task.Delay(TimeSpan.FromSeconds(3.2));
+        Assert.AreEqual(1, takaro.Events.Count(e => e.Type == "player-positions"), "An unacknowledged snapshot is not followed by another one.");
+        await takaro.SendAsync("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"" + first.StreamId + "\",\"upTo\":" + first.Seq + "}}");
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        Assert.AreEqual(1, takaro.Events.Count(e => e.Type == "player-positions"), "The interval starts after receipt acknowledgement.");
+        await Until(() => takaro.Events.Count(e => e.Type == "player-positions") == 2);
+        await takaro.DropAsync();
+        await Until(() => takaro.Events.Count(e => e.Type == "player-positions") == 3);
+        var fresh = takaro.Events.Last(e => e.Type == "player-positions");
+        Assert.AreNotEqual(first.StreamId, fresh.StreamId);
+        Assert.AreEqual(1L, fresh.Seq);
+    }
+
+    [TestMethod]
     public async Task VersionOneEventsCarryAStreamPositionAndAreResentUnderItAfterAReconnect()
     {
         using var takaro = new FakeTakaro(chosenVersion: 1);
@@ -288,7 +312,7 @@ public sealed class RunnerProtocolV1Tests
         }
     }
 
-    private sealed record ReceivedEvent(string? StreamId, long? Seq, string? Message);
+    private sealed record ReceivedEvent(string? StreamId, long? Seq, string? Message, string? Type);
 
     private sealed class FakeTakaro : IDisposable
     {
@@ -430,7 +454,8 @@ public sealed class RunnerProtocolV1Tests
                             Events.Enqueue(new ReceivedEvent(
                                 payload.TryGetProperty("streamId", out var stream) ? stream.GetString() : null,
                                 payload.TryGetProperty("seq", out var seq) ? seq.GetInt64() : null,
-                                payload.GetProperty("data").TryGetProperty("msg", out var msg) ? msg.GetString() : null));
+                                payload.GetProperty("data").TryGetProperty("msg", out var msg) ? msg.GetString() : null,
+                                payload.GetProperty("type").GetString()));
                             break;
                         case "response":
                             Responses[root.GetProperty("requestId").GetString()!] = text;
@@ -444,12 +469,14 @@ public sealed class RunnerProtocolV1Tests
         }
     }
 
-    private sealed class RecordingAdapter : IValheimTakaroAdapter
+    private sealed class RecordingAdapter : IValheimTakaroAdapter, IValheimPositionSnapshotAdapter
     {
         private static Task<TakaroActionResult> Unused() => Task.FromResult(TakaroActionResult.Error("unused", "unused"));
 
         public int GetPlayerCalls;
         public string? LastMessage;
+        public bool CapturePositions;
+        public IReadOnlyList<PlayerPositionSample>? CaptureOnlinePositions() => CapturePositions ? Array.Empty<PlayerPositionSample>() : null;
 
         public volatile bool Reachable = true;
 

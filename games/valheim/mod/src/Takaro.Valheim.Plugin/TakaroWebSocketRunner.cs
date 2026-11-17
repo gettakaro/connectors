@@ -28,7 +28,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly PlayerLifecyclePollCoordinator lifecycleCoordinator = new();
     private readonly SuppressedResponseLogLimiter suppressedResponseLogs = new(TimeSpan.FromMinutes(1));
     private static readonly TimeSpan PlayerLifecyclePollInterval = TimeSpan.FromSeconds(5);
-    private DateTimeOffset lastPositionBatchAt = DateTimeOffset.MinValue;
     private readonly PendingEventQueue pendingEvents = new(capacity: 1000);
     private readonly SemaphoreSlim flushLock = new(1, 1);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
@@ -376,17 +375,19 @@ public sealed class TakaroWebSocketRunner : IDisposable
                 log("Takaro Valheim identify sent.");
 
                 using var lifecycleShutdown = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var positionStream = new PositionSnapshotStream();
                 var lifecycleLoop = Task.Run(() => PollPlayerLifecycleAsync(client, lifecycleShutdown.Token), cancellationToken);
+                var positionLoop = Task.Run(() => PollPlayerPositionsAsync(client, positionStream, lifecycleShutdown.Token), cancellationToken);
                 try
                 {
-                    await ReceiveLoopAsync(client, current, cancellationToken);
+                    await ReceiveLoopAsync(client, current, positionStream, cancellationToken);
                 }
                 finally
                 {
                     lifecycleShutdown.Cancel();
                     try
                     {
-                        await lifecycleLoop;
+                        await Task.WhenAll(lifecycleLoop, positionLoop);
                     }
                     catch (OperationCanceledException) when (lifecycleShutdown.IsCancellationRequested)
                     {
@@ -518,10 +519,60 @@ public sealed class TakaroWebSocketRunner : IDisposable
         }
     }
 
+    private async Task PollPlayerPositionsAsync(ClientWebSocket client, PositionSnapshotStream stream, CancellationToken cancellationToken)
+    {
+        if (adapter is not IValheimPositionSnapshotAdapter positionAdapter) return;
+        try
+        {
+            while (client.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+            {
+                if (stream.HasTimedOut)
+                {
+                    log("Takaro Valheim position acknowledgement timed out; reconnecting for a fresh snapshot.");
+                    client.Abort();
+                    return;
+                }
+
+                if (identified && protocolVersion >= 1 && ReferenceEquals(client, socket) && stream.TryReserve(out var seq))
+                {
+                    var positions = await mainThreadActions.ScheduleAsync(positionAdapter.CaptureOnlinePositions, cancellationToken);
+                    if (positions is null || !identified || !ReferenceEquals(client, socket)
+                        || client.State != WebSocketState.Open || !await sendLock.WaitAsync(0, cancellationToken))
+                    {
+                        stream.Cancel(seq);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var frame = TakaroProtocol.CreateGameEvent(GameEventTypes.PlayerPositions,
+                                EventFactory.PlayerPositions(DateTimeOffset.UtcNow, positions));
+                            var bytes = Encoding.UTF8.GetBytes(ProtocolHandshake.WithStreamPosition(frame, stream.StreamId, seq));
+                            await WithTimeout(client.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken),
+                                SendTimeout, "position send", client, cancellationToken);
+                            log($"Takaro Valheim sent position snapshot {stream.StreamId}#{seq} with {positions.Count} player(s).");
+                        }
+                        finally
+                        {
+                            sendLock.Release();
+                        }
+                    }
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            log($"Takaro Valheim position stream failed: {ex.Message}; reconnecting.");
+            client.Abort();
+        }
+    }
+
     private async Task PollPlayerLifecycleAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
-        var positionStreamId = Guid.NewGuid().ToString("N");
-        long positionSeq = 0;
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
             try
@@ -563,22 +614,6 @@ public sealed class TakaroWebSocketRunner : IDisposable
                             playersWithObservedPositions.Add(player.GameId);
                         }
                     }
-                }
-
-                var now = DateTimeOffset.UtcNow;
-                if (identified && protocolVersion >= 1 && ReferenceEquals(socket, this.socket) && positions is not null
-                    && positions.Count == onlinePlayers.Length
-                    && new HashSet<string>(positions.Select(position => position.GameId), StringComparer.Ordinal)
-                        .SetEquals(onlinePlayers.Select(player => player.GameId))
-                    && now - lastPositionBatchAt >= PlayerLifecyclePollInterval)
-                {
-                    var frame = TakaroProtocol.CreateGameEvent(
-                        GameEventTypes.PlayerPositions,
-                        EventFactory.PlayerPositions(now, positions));
-                    await SendOpenAsync(socket,
-                        ProtocolHandshake.WithStreamPosition(frame, positionStreamId, ++positionSeq),
-                        cancellationToken);
-                    lastPositionBatchAt = now;
                 }
 
                 var events = lifecycleCoordinator.Update(
@@ -639,7 +674,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
         return worldMap!.GetFrameTile(dimension.GetString()!, z, tileX, tileY);
     }
 
-    private async Task ReceiveLoopAsync(ClientWebSocket socket, ConnectorConfig current, CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(ClientWebSocket socket, ConnectorConfig current, PositionSnapshotStream positionStream, CancellationToken cancellationToken)
     {
         var buffer = new byte[32 * 1024];
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
@@ -702,7 +737,12 @@ public sealed class TakaroWebSocketRunner : IDisposable
             if (ContainsIgnoreCase(message, "\"type\":\"eventAck\"")
                 || ContainsIgnoreCase(message, "\"type\": \"eventAck\""))
             {
-                if (ProtocolHandshake.TryParseEventAck(message, out var ackedStream, out var upTo) && ackedStream == streamId)
+                if (ProtocolHandshake.TryParseEventAck(message, out var ackedStream, out var upTo)
+                    && positionStream.Acknowledge(ackedStream, upTo))
+                {
+                    log($"Takaro Valheim confirmed position snapshot {positionStream.StreamId}#{upTo}.");
+                }
+                else if (ackedStream == streamId)
                 {
                     int acknowledged;
                     lock (heartbeatLock)
