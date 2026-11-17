@@ -607,6 +607,89 @@ namespace Oxide.Plugins
             "player-connected", "player-disconnected", "chat-message", "player-death", "entity-killed", "log",
         };
 
+        internal const int PlayerPositionsIntervalSeconds = 3;
+
+        internal static JObject PlayerPositionsCapability()
+        {
+            return new JObject
+            {
+                ["name"] = "events.player-positions",
+                ["parameters"] = new JObject { ["intervalSeconds"] = PlayerPositionsIntervalSeconds }
+            };
+        }
+
+        internal static JObject PlayerPositionsData(IEnumerable<KeyValuePair<string, JObject>> samples)
+        {
+            var positions = new JArray();
+            var seen = new HashSet<string>();
+            foreach (var sample in samples)
+            {
+                if (positions.Count == 1000) break;
+                if (string.IsNullOrEmpty(sample.Key) || sample.Value == null || !seen.Add(sample.Key)) continue;
+                positions.Add(new JObject { ["gameId"] = sample.Key, ["position"] = sample.Value });
+            }
+            return new JObject { ["positions"] = positions };
+        }
+
+        internal static JObject PositionEventFrame(JObject data, string streamId, long seq)
+        {
+            return new JObject
+            {
+                ["type"] = "gameEvent",
+                ["payload"] = new JObject
+                {
+                    ["type"] = "player-positions", ["data"] = data,
+                    ["streamId"] = streamId, ["seq"] = seq
+                }
+            };
+        }
+
+        internal sealed class PositionPacer
+        {
+            private readonly long _frequency;
+            private long _nextAt, _sentAt, _pending, _nextSeq = 1;
+            private string _streamId;
+
+            public PositionPacer(long frequency) { _frequency = frequency; }
+            public string StreamId { get { return _streamId; } }
+            public void Reset(string streamId)
+            {
+                _streamId = streamId;
+                _nextAt = _sentAt = _pending = 0;
+                _nextSeq = 1;
+            }
+            public bool Ready(long now) { return _streamId != null && _pending == 0 && now >= _nextAt; }
+            public bool Expired(long now) { return _pending != 0 && now - _sentAt >= 30 * _frequency; }
+            public long Begin(long now)
+            {
+                if (!Ready(now)) return 0;
+                _sentAt = now;
+                return _pending = _nextSeq++;
+            }
+            public bool Acknowledge(string streamId, long seq, long now)
+            {
+                if (streamId != _streamId || _pending == 0 || seq != _pending) return false;
+                _pending = 0;
+                _nextAt = now + PlayerPositionsIntervalSeconds * _frequency;
+                return true;
+            }
+        }
+
+        internal static async Task AwaitUntilCancelled(Task operation, CancellationToken token)
+        {
+            // Mono can leave socket operations pending after Abort. Observe a late failure,
+            // but let the connection lifecycle react to its watchdog independently.
+            _ = operation.ContinueWith(failed => { var observed = failed.Exception; },
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+            var cancelled = new TaskCompletionSource<bool>();
+            using (token.Register(() => cancelled.TrySetResult(true)))
+            {
+                if (await Task.WhenAny(operation, cancelled.Task) != operation)
+                    token.ThrowIfCancellationRequested();
+                await operation;
+            }
+        }
+
         internal const string ErrorUnsupported = "unsupported";
         internal const string ErrorInvalidArgs = "invalid_args";
         internal const string ErrorNotFound = "not_found";
@@ -637,6 +720,7 @@ namespace Oxide.Plugins
                 manifest.Add(new JObject { ["name"] = pair[1] });
             foreach (var eventType in GameEventTypes)
                 manifest.Add(new JObject { ["name"] = "events." + eventType });
+            manifest.Add(PlayerPositionsCapability());
             foreach (var capability in extra)
                 if (capability != null) manifest.Add(capability);
             return manifest;
@@ -1033,6 +1117,7 @@ namespace Oxide.Plugins
         private bool _sendDraining;
         // One event stream per process: a reload or restart is a new streamId starting at 1.
         private readonly EventStream _events = new EventStream(Guid.NewGuid().ToString());
+        private readonly PositionPacer _positions = new PositionPacer(System.Diagnostics.Stopwatch.Frequency);
         // The map capability, set on the main thread once the raster is ready.
         private volatile JObject _mapCapability;
         // Null only if the embedded icon cannot be decoded; the profile then has no icon.
@@ -1042,6 +1127,8 @@ namespace Oxide.Plugins
         {
             public ClientWebSocket Socket;
             public string Text;
+            public bool Position;
+            public int Generation;
             // The connection's token: a reconnect cancels a send stuck on the old socket.
             public CancellationToken Token;
         }
@@ -1231,6 +1318,7 @@ namespace Oxide.Plugins
         // pings Takaro, closes a dead socket and starts any reconnect a closed socket asked for.
         private void Tick()
         {
+            PushPlayerPositions();
             if (++_tickCount % (ConfigCheckEverySeconds * TicksPerSecond) == 0)
             {
                 try { CheckConfig(); }
@@ -1368,7 +1456,7 @@ namespace Oxide.Plugins
             {
                 try
                 {
-                    await ws.ConnectAsync(new Uri(settings.WsUrl), token);
+                    await AwaitUntilCancelled(Task.Run(() => ws.ConnectAsync(new Uri(settings.WsUrl), token)), token);
                     if (!IsCurrent(generation)) return;
                     LogInfo("WebSocket connected");
                     // Identify is the first frame this connector sends, the way every other
@@ -1376,7 +1464,7 @@ namespace Oxide.Plugins
                     // instead means a peer that expects the client to speak first never
                     // hears from this server at all: the socket sits open and silent.
                     SendIdentify(ws, generation, settings);
-                    await ReceiveLoop(ws, generation, settings, token);
+                    await AwaitUntilCancelled(Task.Run(() => ReceiveLoop(ws, generation, settings, token)), token);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
@@ -1386,7 +1474,6 @@ namespace Oxide.Plugins
                 }
                 finally
                 {
-                    try { ws.Dispose(); } catch { }
                     if (IsCurrent(generation))
                     {
                         _connected = false;
@@ -1395,6 +1482,7 @@ namespace Oxide.Plugins
                         if (_shouldReconnect && Volatile.Read(ref _authClosedGeneration) != generation)
                             ScheduleReconnect(generation);
                     }
+                    try { ws.Dispose(); } catch { }
                 }
             });
         }
@@ -1531,10 +1619,19 @@ namespace Oxide.Plugins
 
                 case "eventAck":
                     if (TryParseEventAck(json, out var ackStream, out var upTo))
-                        _events.Ack(ackStream, upTo);
+                    {
+                        lock (_events.Lock)
+                        {
+                            _events.Ack(ackStream, upTo);
+                            _positions.Acknowledge(ackStream, upTo, System.Diagnostics.Stopwatch.GetTimestamp());
+                        }
+                    }
                     break;
 
                 case "eventError":
+                    lock (_events.Lock)
+                        _positions.Acknowledge(json["payload"]?.Value<string>("streamId"),
+                            json["payload"]?.Value<long?>("seq") ?? 0, System.Diagnostics.Stopwatch.GetTimestamp());
                     var eventErrorObj = json["error"] as JObject;
                     LogWarning($"Takaro rejected event seq={json["payload"]?["seq"]}: " +
                                $"{eventErrorObj?.Value<string>("code") ?? "error"}: {RedactJwt(eventErrorObj?.Value<string>("message") ?? "")}");
@@ -1644,7 +1741,7 @@ namespace Oxide.Plugins
 
         // Identify and responses go out on the socket they belong to, never on one a config
         // reconnect has put in its place.
-        private void WsSendOn(ClientWebSocket ws, string message)
+        private void WsSendOn(ClientWebSocket ws, string message, bool replacePosition = false)
         {
             if (ws?.State != WebSocketState.Open) return;
 
@@ -1653,7 +1750,15 @@ namespace Oxide.Plugins
 
             lock (_sendQueue)
             {
-                _sendQueue.Enqueue(new OutgoingFrame { Socket = ws, Text = message, Token = _cts?.Token ?? CancellationToken.None });
+                if (replacePosition)
+                {
+                    var retained = _sendQueue.Where(frame => !frame.Position).ToArray();
+                    _sendQueue.Clear();
+                    foreach (var frame in retained) _sendQueue.Enqueue(frame);
+                }
+                _sendQueue.Enqueue(new OutgoingFrame { Socket = ws, Text = message,
+                    Position = replacePosition, Generation = Volatile.Read(ref _generation),
+                    Token = _cts?.Token ?? CancellationToken.None });
                 if (_sendDraining) return;
                 _sendDraining = true;
             }
@@ -1675,6 +1780,7 @@ namespace Oxide.Plugins
                     next = _sendQueue.Dequeue();
                 }
                 var ws = next.Socket;
+                if (next.Position && next.Generation != Volatile.Read(ref _generation)) continue;
                 if (ws.State != WebSocketState.Open) continue;
                 try
                 {
@@ -1695,6 +1801,50 @@ namespace Oxide.Plugins
         private JArray CurrentManifest()
         {
             return BuildManifest(GameProfileCapability(GameBuild(), _gameIcon), _mapCapability);
+        }
+
+        private void PushPlayerPositions()
+        {
+            if (!_connected || _protocolVersion < 1) return;
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            lock (_events.Lock)
+            {
+                if (_positions.Expired(now))
+                {
+                    LogWarning("Position acknowledgement timed out; reconnecting for fresh snapshots");
+                    _cts?.Cancel();
+                    try { _ws?.Abort(); } catch { }
+                    return;
+                }
+                if (!_positions.Ready(now)) return;
+            }
+
+            var samples = new List<KeyValuePair<string, JObject>>();
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (!IsRealPlayer(player)) continue;
+                var position = player.transform.position;
+                _lastPosition[player.UserIDString] = position;
+                samples.Add(new KeyValuePair<string, JObject>(player.UserIDString, new JObject
+                {
+                    ["x"] = position.x,
+                    ["y"] = position.y,
+                    ["z"] = position.z
+                }));
+            }
+            SendPositionSnapshot(PlayerPositionsData(samples));
+        }
+
+        private void SendPositionSnapshot(JObject data)
+        {
+            lock (_events.Lock)
+            {
+                if (!_connected || _protocolVersion < 1 || _ws?.State != WebSocketState.Open) return;
+                var seq = _positions.Begin(System.Diagnostics.Stopwatch.GetTimestamp());
+                if (seq == 0) return;
+                var frame = PositionEventFrame(data, _positions.StreamId, seq);
+                WsSendOn(_ws, frame.ToString(Formatting.None), replacePosition: true);
+            }
         }
 
         // The running game build as the server reports it (`version` prints it as Protocol).
@@ -1752,6 +1902,7 @@ namespace Oxide.Plugins
                 if (!IsCurrent(generation)) return;
                 _protocolVersion = reply.ProtocolVersion;
                 _connected = true;
+                _positions.Reset(Guid.NewGuid().ToString());
                 var backlog = reply.ProtocolVersion >= 1 ? _events.Pending() : _events.TakeAll().Select(V0EventFrame).ToList();
                 if (backlog.Count > 0)
                     LogInfo($"Sending {backlog.Count} buffered event(s)");
@@ -2851,6 +3002,17 @@ namespace Oxide.Plugins
                 ["channel"] = channel.ToString().ToLower(),
                 ["msg"] = message
             };
+            if (_connected && _protocolVersion >= 1)
+            {
+                var position = player.transform.position;
+                _lastPosition[player.UserIDString] = position;
+                data["position"] = new JObject
+                {
+                    ["x"] = position.x,
+                    ["y"] = position.y,
+                    ["z"] = position.z
+                };
+            }
             SendGameEvent("chat-message", data);
             return null;
         }

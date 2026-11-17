@@ -22,8 +22,9 @@ Everything lives in one file: `mod/TakaroConnector.cs`.
   `getPlayerInventory`, `listItems`, `listEntities`, `listLocations`, `executeConsoleCommand`,
   `sendMessage`, `giveItem`, `teleportPlayer`, `kickPlayer`, `banPlayer`, `unbanPlayer`,
   `listBans`, `shutdown`.
-- 6 game events: `player-connected`, `player-disconnected`, `chat-message`, `player-death`,
-  `entity-killed`, `log`.
+- 7 game events on protocol v1: `player-connected`, `player-disconnected`, `chat-message`, `player-death`,
+  `entity-killed`, `log`, and `player-positions`. The position batch samples all online players on the
+  game thread at least 3 seconds apart. Chat carries the sender's live position on v1.
 - WebSocket reconnection (`ReconnectPolicy`, region `takaro:reconnect`): a connection that was
   identified and stayed up for 10 s is retried 0.05-0.35 s after it drops, so it is identified
   again within about 2 s. Only consecutive failures back off: 1-2 s, 2-4 s, 4-8 s, ... with jitter,

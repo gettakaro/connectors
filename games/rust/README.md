@@ -70,6 +70,7 @@ Checked on Rust build 26498655 with Carbon v2.0.264, 2026-11-07. ✅ works, ⚠�
 | Connection | ✅ | Reconnects after a server restart. |
 | Player list | ✅ | Steam id, IP and ping. |
 | Player location | ✅ | |
+| Live player positions | ✅ | Protocol v1 pushes current online-player positions at least 3 seconds after the previous receipt acknowledgment. |
 | Teleport | ✅ | No ground snapping; pick a safe height. |
 | Player inventory | ⚠️ | Item quality is always empty. |
 | Item list | ✅ | |
@@ -85,7 +86,7 @@ Checked on Rust build 26498655 with Carbon v2.0.264, 2026-11-07. ✅ works, ⚠�
 | Shop | ✅ | |
 | Shut down the server | ✅ | Saves first. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | |
+| Chat messages | ✅ | Includes the player's current position on protocol v1. |
 | Player death | ✅ | Killer only when it was a player. |
 | Entity killed | ✅ | With the weapon. |
 | Server log lines | ⚠️ | Takaro does not keep them. |
