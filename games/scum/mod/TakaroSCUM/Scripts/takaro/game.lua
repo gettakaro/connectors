@@ -9,6 +9,7 @@ local util = require("takaro.util")
 local json = require("takaro.json")
 local scumlog = require("takaro.scumlog")
 local chatname = require("takaro.chatname")
+local map = require("takaro.map")
 
 local M = {}
 
@@ -276,6 +277,27 @@ function Game:get_player_location(params)
   local last = self.lastPos[params.gameId]
   if last then return { ok = true, value = last } end
   return { ok = false, reason = pc and "player has no character (dead or in the spawn menu)" or "player is offline" }
+end
+
+-- Read only current prisoners on the game thread. The action above deliberately keeps a last-known
+-- location for old Takaro polling; a position stream must never publish that cached value.
+function Game:current_positions()
+  local out, seen = {}, {}
+  for _, c in ipairs(self:controllers()) do
+    if not seen[c.id] then
+      seen[c.id] = true
+      local pawn = self:pawn(c.pc)
+      if pawn then
+        local ok, v = pcall(function() return pawn:K2_GetActorLocation() end)
+        if ok and v and type(v.X) == "number" and type(v.Y) == "number" and type(v.Z) == "number"
+          and v.X == v.X and v.Y == v.Y and v.Z == v.Z then
+          out[#out + 1] = { gameId = c.id,
+            position = { x = v.X, y = v.Y, z = v.Z, dimension = map.DIMENSION_ID } }
+        end
+      end
+    end
+  end
+  return out
 end
 
 function Game:teleport_player(params)
@@ -1076,7 +1098,15 @@ end
 function Game:on_chat(id, name, msg, channel, now)
   if msg:sub(1, 1) == "#" then return end -- SCUM admin command, not chat
   if self:chat_seen(id, msg, now) then return end
-  self.events:chat_message({ player = { steamId = id, name = name, ip = self.ips[id] }, msg = msg, channel = channel })
+  local position
+  local pc = self:find_pc(id)
+  local pawn = pc and self:pawn(pc)
+  if pawn then
+    local ok, v = pcall(function() return pawn:K2_GetActorLocation() end)
+    if ok and v then position = { x = v.X, y = v.Y, z = v.Z } end
+  end
+  self.events:chat_message({ player = { steamId = id, name = name, ip = self.ips[id] }, msg = msg,
+    channel = channel, position = position })
 end
 
 -- Deaths without a kill-log line (falls, zombies, animals, bleeding): AConZCharacter:IsAlive() polled at 1 Hz per

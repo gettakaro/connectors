@@ -18,6 +18,7 @@ local M = {}
 M.EVENT_QUEUE_LIMIT = 1000
 M.DEFAULT_TIMEOUT_MS = 8500 -- Takaro gives a Generic connector 10 s per request
 M.REACHABILITY_TIMEOUT_MS = 4000 -- and 5 s for testReachability
+M.POSITIONS_INTERVAL_MS = 3000
 M.ACK_TIMEOUT_MS = 30000 -- version 1: no eventAck for this long -> reconnect, which resends the unacknowledged events
 
 -- One stream id per process, as protocol version 1 asks (^[A-Za-z0-9_-]{1,128}$).
@@ -47,6 +48,9 @@ function M.new(opts)
   c.manifest = opts.manifest or function() return {} end
   c.streamId = opts.stream_id or M.new_stream_id(c.now())
   c.nextSeq = 1
+  c.nextPositionSeq = 1
+  c.positionPending = nil
+  c.nextPositionAt = c.now() + M.POSITIONS_INTERVAL_MS
   c.version = 0 -- the protocol version Takaro chose for the current connection
   c.sentManifest = nil -- JSON of the manifest Takaro holds for this connection (version 1)
   c.manifestRequests = 0
@@ -81,6 +85,10 @@ end
 function Client:handle_notice(kind, epoch, text)
   if kind == "open" then
     self.epoch = epoch
+    self.positionStreamId = self.streamId .. "-positions-" .. tostring(epoch)
+    self.nextPositionSeq = 1
+    self.positionPending = nil
+    self.nextPositionAt = self.now() + M.POSITIONS_INTERVAL_MS
     self.identified = false
     self.gameServerId = nil
     self.version = 0
@@ -117,6 +125,8 @@ function Client:handle_notice(kind, epoch, text)
       self.stats.closes = self.stats.closes + 1
       self.log:info("Takaro connection closed (epoch %s): %s", tostring(epoch), tostring(text))
       self.epoch = nil
+      self.positionPending = nil
+      self.positionStreamId = nil
       self.identified = false
       self.version = 0
       self:requeue_inflight()
@@ -165,6 +175,7 @@ function Client:handle_message(msg, epoch)
     self.stats.eventErrors = self.stats.eventErrors + 1
     local p = util.opt_table(msg.payload) or {}
     local e = util.opt_table(msg.error) or {}
+    self:confirm_position(p.streamId, util.opt_number(p.seq))
     self.log:warn("Takaro rejected event seq %s: %s: %s", tostring(p.seq), tostring(e.code),
       util.truncate(tostring(e.message), 300))
   elseif t == "capabilitiesResponse" then
@@ -255,6 +266,37 @@ function Client:send_event(eventType, data)
   return true
 end
 
+-- Positions have a separate transient stream and never enter the replay queue.
+function Client:positions_ready()
+  return self.identified and self.epoch and self.version == 1 and self.ackClosedEpoch ~= self.epoch
+    and not self.positionPending and self.now() >= self.nextPositionAt
+end
+
+function Client:send_live_event(eventType, data)
+  if eventType ~= "player-positions" or not self:positions_ready() then return false end
+  local seq = self.nextPositionSeq
+  local ok, encoded = pcall(json.encode, { type = "gameEvent",
+    payload = { type = eventType, data = data, streamId = self.positionStreamId, seq = seq } })
+  if not ok then return false end
+  local status = self.transport.send(encoded, "event", self.epoch)
+  if status ~= "accepted" then return false end
+  self:frame_log("out(event)", encoded)
+  self.nextPositionSeq = seq + 1
+  self.positionPending = { seq = seq, sentAt = self.now() }
+  self.stats.eventsSent = self.stats.eventsSent + 1
+  return true
+end
+
+function Client:confirm_position(streamId, upTo)
+  local pending = self.positionPending
+  if self.version ~= 1 or streamId ~= self.positionStreamId or not pending or not upTo
+    or upTo % 1 ~= 0 or upTo < pending.seq or upTo >= self.nextPositionSeq then return false end
+  self.positionPending = nil
+  self.nextPositionAt = self.now() + M.POSITIONS_INTERVAL_MS
+  self.stats.eventsConfirmed = self.stats.eventsConfirmed + 1
+  return true
+end
+
 function Client:trim_events()
   while #self.events + #self.inflight > M.EVENT_QUEUE_LIMIT and #self.events > 0 do
     table.remove(self.events, 1)
@@ -304,6 +346,10 @@ function Client:handle_ack(msg)
   if self.version ~= 1 then return end
   local p = util.opt_table(msg.payload) or {}
   local upTo = util.opt_number(p.upTo)
+  if self:confirm_position(p.streamId, upTo) then
+    self.stats.acks = self.stats.acks + 1
+    return
+  end
   if p.streamId ~= self.streamId or not upTo then return end
   self.stats.acks = self.stats.acks + 1
   local keep = {}
@@ -357,6 +403,14 @@ function Client:tick()
       self:respond(requestId, entry.epoch, entry.action, self.timeout_payload(entry.action, "timeout", entry.args),
         entry.version)
     end
+  end
+  if self.positionPending and self.epoch and self.ackClosedEpoch ~= self.epoch
+    and now - self.positionPending.sentAt >= M.ACK_TIMEOUT_MS then
+    self.ackClosedEpoch = self.epoch
+    self.stats.ackTimeouts = self.stats.ackTimeouts + 1
+    self.log:warn("no player-positions eventAck for 30 s; reconnecting for a fresh snapshot")
+    self.transport.close(self.epoch, "position ack timeout")
+    return
   end
   if self.version == 1 and self.epoch and self.ackClosedEpoch ~= self.epoch and #self.inflight > 0
     and now - self.inflight[1].sentAt >= M.ACK_TIMEOUT_MS then
