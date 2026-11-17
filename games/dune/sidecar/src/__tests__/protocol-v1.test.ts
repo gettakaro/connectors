@@ -52,7 +52,7 @@ describe('Capability Manifest', () => {
     expect(Object.keys(ACTION_CAPABILITY).sort()).toEqual(GAME_SERVER_ACTIONS.filter((a) => a !== 'testReachability').sort());
     for (const type of GAME_EVENT_TYPES) if (type !== 'player-positions') expect(names).toContain(`events.${type}`);
     expect(names).not.toContain('events.player-positions');
-    expect(buildManifest(MAP_DIMENSIONS, null, true)).toContainEqual({ name: 'events.player-positions', parameters: { intervalSeconds: 5 } });
+    expect(buildManifest(MAP_DIMENSIONS, null, true)).toContainEqual({ name: 'events.player-positions', parameters: { intervalSeconds: 3 } });
     expect(names).not.toContain('map.tiles');
     expect(manifest.find((c) => c.name === 'map')).toEqual({ name: 'map', parameters: { dimensions: [HAGGA_BASIN] } });
     expect(new Set(names).size).toBe(names.length);

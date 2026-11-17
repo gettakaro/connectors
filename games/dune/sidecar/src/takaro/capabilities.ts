@@ -39,7 +39,7 @@ export function buildManifest(dimensions: readonly MapDimension[], gameVersion: 
   const manifest: Capability[] = Object.values(ACTION_CAPABILITY).map((name) => ({ name }));
   for (const type of GAME_EVENT_TYPES) {
     if (type === 'player-positions') {
-      if (livePositions) manifest.push({ name: 'events.player-positions', parameters: { intervalSeconds: 5 } });
+      if (livePositions) manifest.push({ name: 'events.player-positions', parameters: { intervalSeconds: 3 } });
     } else manifest.push({ name: `events.${type}` });
   }
   if (dimensions.length) manifest.push({ name: 'map', parameters: { dimensions: dimensions.map((d) => ({ ...d })) } });

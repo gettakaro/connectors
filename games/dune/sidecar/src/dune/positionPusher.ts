@@ -2,7 +2,7 @@ import type { Position, TakaroPlayer } from './types.js';
 import type { TakaroSink } from '../bridge.js';
 import { logger } from '../logger.js';
 
-export const POSITION_INTERVAL_MS = 5000;
+export const POSITION_INTERVAL_MS = 3000;
 const POSITION_CHECK_INTERVAL_MS = 250;
 export const MAX_POSITION_BATCH = 1000;
 
@@ -11,15 +11,34 @@ export class PositionPusher {
   private timer: NodeJS.Timeout | null = null;
   private busy = false;
   private lastSendAt = 0;
+  private nextSendAt = 0;
+  private epoch: number | null = null;
+  private pendingId: number | null = null;
+  private generation = 0;
 
   constructor(private readonly deps: {
     online: () => TakaroPlayer[];
     location: (gameId: string) => Promise<Position | null>;
     ready?: () => Promise<boolean>;
     availability?: (available: boolean) => void;
-    takaro: TakaroSink & { identified(): boolean; getProtocolVersion(): number };
+    takaro: TakaroSink & {
+      identified(): boolean;
+      getProtocolVersion(): number;
+      getConnectionEpoch(): number;
+      lastSendId(): number;
+      onConfirmed(cb: (sendId: number) => void): void;
+      reconnect(): void;
+    };
     now?: () => number;
-  }) {}
+  }) {
+    this.epoch = deps.takaro.getConnectionEpoch();
+    this.nextSendAt = (deps.now?.() ?? Date.now()) + POSITION_INTERVAL_MS;
+    deps.takaro.onConfirmed((id) => {
+      if (this.pendingId === null || id < this.pendingId || this.epoch !== deps.takaro.getConnectionEpoch()) return;
+      this.pendingId = null;
+      this.nextSendAt = (deps.now?.() ?? Date.now()) + POSITION_INTERVAL_MS;
+    });
+  }
 
   start(): void {
     if (this.timer) return;
@@ -32,12 +51,24 @@ export class PositionPusher {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.generation += 1;
   }
 
   async tick(): Promise<boolean> {
     if (this.busy || !this.deps.takaro.identified() || this.deps.takaro.getProtocolVersion() !== 1) return false;
     const now = this.deps.now?.() ?? Date.now();
-    if (this.lastSendAt && now - this.lastSendAt < POSITION_INTERVAL_MS) return false;
+    const epoch = this.deps.takaro.getConnectionEpoch();
+    if (this.epoch !== epoch) {
+      this.nextSendAt = Math.max(this.nextSendAt, now + POSITION_INTERVAL_MS);
+      this.epoch = epoch;
+      this.pendingId = null;
+    }
+    if (this.pendingId !== null) {
+      if (now - this.lastSendAt >= 30_000) this.deps.takaro.reconnect();
+      return false;
+    }
+    if (now < this.nextSendAt) return false;
+    const generation = this.generation;
     const players = this.deps.online();
     const ids = [...new Set(players.map((p) => p.gameId))];
     if (ids.length > MAX_POSITION_BATCH) return false;
@@ -54,13 +85,17 @@ export class PositionPusher {
         this.deps.availability?.(false);
         return false;
       }
-      if (!this.deps.takaro.identified() || this.deps.takaro.getProtocolVersion() !== 1) return false;
+      if (!this.deps.takaro.identified() || this.deps.takaro.getProtocolVersion() !== 1
+          || this.deps.takaro.getConnectionEpoch() !== epoch || this.generation !== generation) return false;
       const sentAt = this.deps.now?.() ?? Date.now();
-      if (this.lastSendAt && sentAt - this.lastSendAt < POSITION_INTERVAL_MS) return false;
+      if (sentAt < this.nextSendAt) return false;
       const positions = ids.map((gameId, i) => ({ gameId, position: locations[i]! }));
       this.deps.availability?.(true);
       const sent = this.deps.takaro.sendGameEvent('player-positions', { timestamp: new Date(sentAt).toISOString(), positions });
-      if (sent) this.lastSendAt = sentAt;
+      if (sent) {
+        this.lastSendAt = sentAt;
+        this.pendingId = this.deps.takaro.lastSendId();
+      }
       return sent;
     } catch (error) {
       this.deps.availability?.(false);

@@ -72,6 +72,7 @@ export class TakaroWsClient extends EventEmitter {
    * increasing across reconnects as the protocol requires.
    */
   private readonly streamId = randomUUID();
+  private connectionEpoch = 0;
 
   private configHint: ConfigHint = { file: '', hasFile: false };
 
@@ -115,6 +116,7 @@ export class TakaroWsClient extends EventEmitter {
     logger.info(`Connecting to Takaro at ${this.url}`);
     const ws = new WebSocket(this.url);
     this.ws = ws;
+    this.connectionEpoch += 1;
 
     ws.on('open', () => {
       if (this.ws !== ws) return;
@@ -158,6 +160,14 @@ export class TakaroWsClient extends EventEmitter {
   /** Highest sendId proven to have reached Takaro. */
   lastConfirmedId(): number {
     return this.confirmedId;
+  }
+
+  getConnectionEpoch(): number {
+    return this.connectionEpoch;
+  }
+
+  reconnect(): void {
+    this.ws?.terminate();
   }
 
   /** Register a callback fired when delivery of everything up to `sendId` is proven. */

@@ -8,16 +8,37 @@ import type { DunePlayerRow } from '../dune/types.js';
 
 const position = { x: 1, y: 2, z: 3, dimension: 'survival_1' };
 
-function harness() {
-  let now = 10_000;
+function sink(emit: (...args: Parameters<TakaroSink['sendGameEvent']>) => boolean, autoAck = true) {
+  let seq = 0;
+  let epoch = 1;
+  let confirmed: (id: number) => void = () => {};
+  return {
+    send: vi.fn(() => true), identified: () => true, getProtocolVersion: () => 1,
+    getConnectionEpoch: () => epoch, lastSendId: () => seq,
+    onConfirmed: (cb: (id: number) => void) => { confirmed = cb; },
+    reconnect: vi.fn(() => { epoch += 1; }),
+    sendGameEvent: (...args: Parameters<TakaroSink['sendGameEvent']>) => {
+      if (!emit(...args)) return false;
+      const id = ++seq;
+      if (autoAck) queueMicrotask(() => confirmed(id));
+      return true;
+    },
+    confirm: (id = seq) => confirmed(id),
+    newConnection: () => { epoch += 1; },
+  };
+}
+
+function harness(autoAck = true) {
+  let now = 7_000;
   let connected = true;
   let version = 1;
   let online: TakaroPlayer[] = [{ gameId: 'a', name: 'A' }, { gameId: 'b', name: 'B' }];
   const location = vi.fn(async () => position);
   const sendGameEvent = vi.fn(() => true);
-  const takaro = { sendGameEvent, identified: () => connected, getProtocolVersion: () => version } as unknown as TakaroSink & { identified(): boolean; getProtocolVersion(): number };
+  const takaro = { ...sink(sendGameEvent, autoAck), identified: () => connected, getProtocolVersion: () => version };
   const pusher = new PositionPusher({ online: () => online, location, takaro, now: () => now });
-  return { pusher, sendGameEvent, location, setNow: (n: number) => { now = n; }, setConnected: (c: boolean) => { connected = c; }, setVersion: (v: number) => { version = v; }, setOnline: (p: TakaroPlayer[]) => { online = p; } };
+  now = 10_000;
+  return { pusher, takaro, sendGameEvent, location, setNow: (n: number) => { now = n; }, setConnected: (c: boolean) => { connected = c; }, setVersion: (v: number) => { version = v; }, setOnline: (p: TakaroPlayer[]) => { online = p; } };
 }
 
 describe('Dune position pushes', () => {
@@ -25,10 +46,10 @@ describe('Dune position pushes', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
     const sendGameEvent = vi.fn(() => true);
-    const takaro = { sendGameEvent, identified: () => true, getProtocolVersion: () => 1 } as unknown as TakaroSink & { identified(): boolean; getProtocolVersion(): number };
+    const takaro = sink(sendGameEvent);
     const pusher = new PositionPusher({
       online: () => [], location: async () => position, takaro,
-      now: () => Date.now() - (Date.now() >= 10_000 ? 1 : 0),
+      now: () => Date.now() - (Date.now() >= 6_000 ? 1 : 0),
     });
     try {
       pusher.start();
@@ -40,7 +61,7 @@ describe('Dune position pushes', () => {
     }
   });
 
-  it('sends a complete unique live batch at most once per five seconds', async () => {
+  it('sends a complete unique live batch at most once per declared interval after acknowledgement', async () => {
     const h = harness();
     h.setOnline([{ gameId: 'a', name: 'A' }, { gameId: 'a', name: 'A' }, { gameId: 'b', name: 'B' }]);
     expect(await h.pusher.tick()).toBe(true);
@@ -49,9 +70,9 @@ describe('Dune position pushes', () => {
       positions: [{ gameId: 'a', position }, { gameId: 'b', position }],
     });
     expect(h.location).toHaveBeenCalledTimes(2);
-    h.setNow(14_999);
+    h.setNow(12_999);
     expect(await h.pusher.tick()).toBe(false);
-    h.setNow(15_000);
+    h.setNow(13_000);
     expect(await h.pusher.tick()).toBe(true);
   });
 
@@ -70,13 +91,53 @@ describe('Dune position pushes', () => {
     expect(h.sendGameEvent).not.toHaveBeenCalled();
   });
 
+  it('waits for a delayed acknowledgement plus the interval and reads fresh coordinates afterward', async () => {
+    const h = harness(false);
+    expect(await h.pusher.tick()).toBe(true);
+    h.setNow(20_000);
+    expect(await h.pusher.tick()).toBe(false);
+    expect(h.location).toHaveBeenCalledTimes(2);
+    h.takaro.confirm();
+    h.setNow(22_999);
+    expect(await h.pusher.tick()).toBe(false);
+    h.location.mockResolvedValue({ ...position, x: 99 });
+    h.setNow(23_000);
+    expect(await h.pusher.tick()).toBe(true);
+    expect(h.sendGameEvent).toHaveBeenLastCalledWith('player-positions', expect.objectContaining({
+      positions: [{ gameId: 'a', position: { ...position, x: 99 } }, { gameId: 'b', position: { ...position, x: 99 } }],
+    }));
+  });
+
+  it('reconnects after a missing acknowledgement instead of silently stopping position delivery', async () => {
+    const h = harness(false);
+    await h.pusher.tick();
+    h.setNow(40_000);
+    expect(await h.pusher.tick()).toBe(false);
+    expect(h.takaro.reconnect).toHaveBeenCalledTimes(1);
+    expect(h.sendGameEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['reconnect', 'stop'])('discards a read that finishes after %s', async (transition) => {
+    const h = harness();
+    let finish!: (value: typeof position) => void;
+    const reading = new Promise<typeof position>((resolve) => { finish = resolve; });
+    h.location.mockImplementation(() => reading);
+    const pending = h.pusher.tick();
+    if (transition === 'reconnect') h.takaro.newConnection();
+    else h.pusher.stop();
+    finish(position);
+    expect(await pending).toBe(false);
+    expect(h.sendGameEvent).not.toHaveBeenCalled();
+  });
+
   it('switches capability availability with the live plugin', async () => {
     let ready = false;
-    let now = 10_000;
+    let now = 7_000;
     const availability = vi.fn();
     const sendGameEvent = vi.fn(() => true);
-    const takaro = { sendGameEvent, identified: () => true, getProtocolVersion: () => 1 } as unknown as TakaroSink & { identified(): boolean; getProtocolVersion(): number };
+    const takaro = sink(sendGameEvent);
     const pusher = new PositionPusher({ online: () => [], location: async () => position, ready: async () => ready, availability, takaro, now: () => now });
+    now = 10_000;
     expect(await pusher.tick()).toBe(false);
     expect(availability).toHaveBeenLastCalledWith(false);
     ready = true;

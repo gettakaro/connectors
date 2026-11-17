@@ -108,7 +108,7 @@ Checked on server build 26081962, 2026-10-22. ✅ works, ⚠️ works with a lim
 | Connection | ✅ | Online while the sidecar runs; reconnects by itself. |
 | Player list | ✅ | |
 | Player location | ✅ | Live with the plugin; last saved position without it. |
-| Pushed player positions | ⚠️ | Protocol v1, every 5 seconds with the optional native plugin. Without it, Takaro polls locations. |
+| Pushed player positions | ⚠️ | Protocol v1 with the optional native plugin; each batch waits for acknowledgement plus a three-second minimum interval. Without it, Takaro polls locations. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
