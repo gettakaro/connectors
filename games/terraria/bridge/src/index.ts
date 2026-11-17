@@ -2,11 +2,12 @@ import { type BridgeConfig, hasTshockCredentials } from './config.js';
 import { ConfigSource, type LoadedConfig, locateConfig } from './configFile.js';
 import { normalizeGameEvent } from './events/normalizeEvent.js';
 import { PlayerPoller } from './events/playerPoller.js';
+import { PositionPoller } from './events/positionPoller.js';
 import { PresenceGate } from './events/presenceGate.js';
 import { HealthServer } from './health/server.js';
 import { logger } from './logger.js';
 import { LogTailer } from './logs/logTailer.js';
-import { buildManifest } from './takaro/capabilities.js';
+import { buildManifest, POSITION_INTERVAL_SECONDS } from './takaro/capabilities.js';
 import { TakaroWsClient } from './takaro/client.js';
 import { CONNECTOR_IDENTITY, GAME_DISPLAY_NAME, gameIconResponse } from './takaro/gameProfile.js';
 import { MapImageError, MapImageStore, locationForProtocol } from './takaro/mapImage.js';
@@ -68,13 +69,21 @@ async function main(): Promise<void> {
   const emit = (type: GameEventType, data: unknown): void => {
     const event = normalizeGameEvent(type, data);
     if (!presence.accept(event)) return;
-    const sent = takaro.sendGameEvent(event.type, event.data);
+    const sent = event.type === 'player-positions'
+      ? takaro.sendPositionSnapshot(event.data)
+      : takaro.sendGameEvent(event.type, event.data);
     if (!sent) logger.warn(`Takaro event dropped: ${type}`);
   };
   const poller = new PlayerPoller(
     () => adapter.getPlayers(),
     (event) => emit(event.type, event.data),
     config.pollIntervalMs,
+  );
+  const positions = new PositionPoller(
+    () => adapter.getPlayerPositions(),
+    (snapshot) => emit('player-positions', snapshot),
+    POSITION_INTERVAL_SECONDS * 1000,
+    () => takaro.canSendPositionSnapshot(),
   );
   const tailers = config.logFiles.map(
     (file) => new LogTailer(file, (event) => emit(event.type, event.data), undefined, undefined, config.logExcludePatterns),
@@ -160,10 +169,12 @@ async function main(): Promise<void> {
       poller.resetOutcome();
     }
     poller.start();
+    if (takaro.getProtocolVersion() === 1) positions.start();
     for (const tailer of tailers) tailer.start();
   });
   takaro.on('disconnected', () => {
     poller.stop();
+    positions.stop();
     // Who is online is kept for the next identify; see announcedTo above.
     poller.resetOutcome();
     for (const tailer of tailers) tailer.stop();
@@ -245,6 +256,7 @@ async function main(): Promise<void> {
   stop = async (): Promise<void> => {
     if (stopping) return;
     stopping = true;
+    positions.stop();
     logger.info('Shutting down Terraria Takaro bridge');
     clearInterval(watcher);
     clearInterval(mapWatcher);

@@ -8,6 +8,10 @@ import { listTerrariaItems, resolveTerrariaItemCode, type TerrariaItemCatalogEnt
 import { renderDirected, renderGlobal, resolveSenderName } from './serverChat.js';
 
 export type TakaroItem = Omit<TerrariaItemCatalogEntry, 'aliases'>;
+export interface PlayerPositionsSnapshot {
+  timestamp: string;
+  positions: Array<{ gameId: string; position: { x: number; y: number; z: number } }>;
+}
 
 export interface TShockApi {
   testToken(): Promise<CommandResult>;
@@ -102,6 +106,30 @@ export class TerrariaAdapter {
    */
   async getPlayers(): Promise<TShockPlayer[]> {
     return this.refreshPlayers();
+  }
+
+  async getPlayerPositions(): Promise<PlayerPositionsSnapshot> {
+    const result = await this.tshock.rawCommand('/takaroposall');
+    const payload = result.success ? parseMarker(result.rawResult, 'TAKARO_POSITIONS') : null;
+    if (!payload || !Array.isArray(payload.positions) || payload.positions.length > 1000) {
+      throw new Error('TShock did not return a valid player positions snapshot');
+    }
+
+    const seen = new Set<string>();
+    const positions = payload.positions.map((value) => {
+      const entry = recordValue(value) ?? {};
+      const position = recordValue(entry.position) ?? {};
+      const gameId = typeof entry.gameId === 'string' ? entry.gameId.trim() : '';
+      const x = finiteNumber(position.x);
+      const y = finiteNumber(position.y);
+      const z = finiteNumber(position.z);
+      if (!gameId || seen.has(gameId) || x === undefined || y === undefined || z === undefined) {
+        throw new Error('TShock returned an invalid player position');
+      }
+      seen.add(gameId);
+      return { gameId, position: { x, y, z } };
+    });
+    return { timestamp: new Date().toISOString(), positions };
   }
 
   /**

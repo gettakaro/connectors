@@ -28,6 +28,8 @@ test('the manifest declares live-supported actions and events only, plus the map
   assert.ok(names.includes('players.location'));
   assert.ok(names.includes('players.inventory'));
   assert.ok(names.includes('events.chat-message'));
+  assert.deepEqual(buildManifest(null).find((entry) => entry.name === 'events.player-positions'),
+    { name: 'events.player-positions', parameters: { intervalSeconds: 3 } });
   assert.ok(!names.includes('entities.list'), 'schema-fallback actions are never declared');
   assert.ok(!names.includes('locations.list'));
   assert.ok(!names.includes('map'));
@@ -139,12 +141,25 @@ test('version 1: identify offers [0, 1] with the manifest, events carry seq and 
     await waitFor(() => events.length === 2);
     assert.deepEqual(events.map((e) => e.seq), [1, 2]);
     assert.equal(client.unacknowledged(), 2);
+    await waitFor(() => client.canSendPositionSnapshot(), 6000);
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => events.length === 3);
+    const firstPosition = events[2];
+    assert.equal(firstPosition.type, 'player-positions');
+    assert.equal(firstPosition.seq, 1);
+    assert.equal(client.unacknowledged(), 2, 'position snapshots stay outside the durable outbox');
 
     // Drop the connection without an ack: both events come back on the new connection.
     for (const socket of server.clients) socket.terminate();
-    await waitFor(() => connections === 2 && client.identified() && events.length === 4);
-    assert.deepEqual(events.slice(2).map((e) => [e.connection, e.seq]), [[2, 1], [2, 2]]);
-    assert.equal(new Set(events.map((e) => e.streamId)).size, 1, 'one stream per process');
+    await waitFor(() => connections === 2 && client.identified() && events.length === 5);
+    assert.deepEqual(events.slice(3).map((e) => [e.connection, e.seq, e.type]),
+      [[2, 1, 'chat-message'], [2, 2, 'chat-message']]);
+    assert.equal(new Set(events.filter((e) => e.type !== 'player-positions').map((e) => e.streamId)).size, 1,
+      'gameplay events retain one stream per process');
+    await waitFor(() => client.canSendPositionSnapshot(), 6000);
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => events.length === 6);
+    assert.notEqual(events[5].streamId, firstPosition.streamId, 'reconnect starts a new position stream');
 
     ackUpTo = 3;
     client.sendGameEvent('log', { msg: 'three' });
@@ -258,4 +273,62 @@ test('getPlayerLocation names the map Dimension on version 1 and stays plain on 
 test('a player without a position answers null on version 1, not a fake (0, 0)', () => {
   assert.equal(locationForProtocol(null, 1), null);
   assert.deepEqual(locationForProtocol(null, 0), { x: 0, y: 0, z: 0 });
+});
+
+
+test('positions wait for the exact receipt and recover when acknowledgments stop', { timeout: 45_000 }, async () => {
+  const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('server did not bind');
+  const positions: Array<{ streamId: string; seq: number }> = [];
+  let peer: WebSocket | undefined;
+  let connections = 0;
+  let chat = false;
+  server.on('connection', (socket) => {
+    connections++;
+    peer = socket;
+    socket.on('message', (raw) => {
+      const message = JSON.parse(raw.toString()) as WsMessage;
+      if (message.type === 'identify') socket.send(JSON.stringify({ type: 'identifyResponse', payload: { gameServerId: 'gs', protocolVersion: 1 } }));
+      if (message.type === 'gameEvent') {
+        const payload = message.payload as { type: string; streamId: string; seq: number };
+        if (payload.type === 'player-positions') positions.push(payload);
+        if (payload.type === 'chat-message') chat = true;
+      }
+    });
+  });
+  const client = new TakaroWsClient(`ws://127.0.0.1:${address.port}`, {
+    identityToken: 'identity', registrationToken: 'registration', name: 'Receipt test',
+  }, 10, 20, { offerV1: true, manifest: () => buildManifest(null) });
+  try {
+    client.connect();
+    await waitFor(() => client.canSendPositionSnapshot(), 6000);
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => positions.length === 1);
+    const first = positions[0];
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), false);
+    client.sendGameEvent('chat-message', { msg: 'gameplay remains independent' });
+    await waitFor(() => chat);
+    peer!.send(JSON.stringify({ type: 'eventAck', payload: { streamId: first.streamId, upTo: first.seq + 1 } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(client.canSendPositionSnapshot(), false, 'a future receipt cannot release a pending position');
+    peer!.send(JSON.stringify({ type: 'eventAck', payload: { streamId: first.streamId, upTo: first.seq } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(client.canSendPositionSnapshot(), false, 'the interval begins after acknowledgment');
+    await waitFor(() => client.canSendPositionSnapshot(), 6000);
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => positions.length === 2);
+    await waitFor(() => connections === 2 && client.identified(), 33_000);
+    assert.equal(positions.length, 2, 'a missing receipt reconnects without replaying either snapshot');
+    await waitFor(() => client.canSendPositionSnapshot(), 6000);
+    assert.equal(client.sendPositionSnapshot({ positions: [] }), true);
+    await waitFor(() => positions.length === 3);
+    assert.notEqual(positions[2].streamId, first.streamId);
+    assert.equal(positions[2].seq, 1);
+  } finally {
+    client.shutdown();
+    for (const socket of server.clients) socket.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

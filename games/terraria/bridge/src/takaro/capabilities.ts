@@ -8,6 +8,8 @@ export interface Capability {
   parameters?: unknown;
 }
 
+export const POSITION_INTERVAL_SECONDS = 3;
+
 /** Protocol v1 capability per action. Actions without one are not capabilities (testReachability) or v0 only. */
 export const ACTION_CAPABILITY: Partial<Record<GameServerAction, string>> = {
   getPlayers: 'players.list',
@@ -40,7 +42,11 @@ export function buildManifest(map: MapImageMeta | null, gameVersion: string | nu
     if (name && ACTION_COVERAGE[action].status === 'live-supported') manifest.push({ name });
   }
   for (const type of ALL_GAME_EVENT_TYPES) {
-    if (EVENT_COVERAGE[type].status === 'live-supported') manifest.push({ name: `events.${type}` });
+    if (EVENT_COVERAGE[type].status === 'live-supported') {
+      manifest.push(type === 'player-positions'
+        ? { name: 'events.player-positions', parameters: { intervalSeconds: POSITION_INTERVAL_SECONDS } }
+        : { name: `events.${type}` });
+    }
   }
   const mapEntry = mapCapability(map);
   if (mapEntry) manifest.push(mapEntry);
