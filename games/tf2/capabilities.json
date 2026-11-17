@@ -41,7 +41,8 @@
     "player-disconnected": "live-supported",
     "chat-message": "live-supported",
     "player-death": "live-supported",
-    "entity-killed": "live-supported"
+    "entity-killed": "live-supported",
+    "player-positions": "live-supported"
   },
   "knownGaps": [
     "SourceMod 1.13 and MetaMod:Source 1.12 are required; SourceMod 1.12 crashes current TF2 builds",
@@ -55,7 +56,8 @@
     "banPlayer and unbanPlayer require real SteamID64 identities; servers started with -insecure report SOURCE_* ids that cannot be banned",
     "entity-killed covers TF2 object_destroyed events (Engineer buildings), not every entity removal",
     "giveItem is unsupported: a TF2 server cannot grant Steam items, so shop item delivery is unavailable",
-    "sendMessage shows the server chat name as a green [<name>] prefix in the chat line: TF2 has no separate sender field for server messages"
+    "sendMessage shows the server chat name as a green [<name>] prefix in the chat line: TF2 has no separate sender field for server messages",
+    "player-positions is live-supported for v1 on Linux server26334371 with Windows client26334388; batches wait at least three seconds after receipt and defer while an online player has no valid server entity"
   ],
   "sourceRefs": [
     "mod/addons/sourcemod/scripting/takaro_tf2.sp",
