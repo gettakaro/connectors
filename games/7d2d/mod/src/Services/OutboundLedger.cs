@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Takaro.Services
 {
@@ -77,6 +78,7 @@ namespace Takaro.Services
         private readonly Queue<long> _logConfirmedAt = new Queue<long>();
         private int _logsInFlight;
         private bool _positionInFlight;
+        private long _positionSentAtTicks;
         private long _nextPositionAtTicks;
         private static readonly long PositionIntervalTicks = TimeSpan.FromSeconds(3).Ticks;
 
@@ -94,8 +96,14 @@ namespace Takaro.Services
             StreamId = streamId ?? Guid.NewGuid().ToString("N");
             _logBudget = logBudget;
             _logWindowTicks = (logWindow ?? DefaultLogWindow).Ticks;
-            _utcTicks = utcTicks ?? (() => DateTime.UtcNow.Ticks);
+            _utcTicks = utcTicks ?? (() => (long)(Stopwatch.GetTimestamp()
+                * (TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency)));
         }
+
+        public long CurrentTicks => _utcTicks();
+
+        public bool PositionReceiptOverdue => _positionInFlight
+            && _utcTicks() - _positionSentAtTicks >= TimeSpan.FromSeconds(30).Ticks;
 
         /// <summary>Identifies the numbering of this ledger's events; new for every process.</summary>
         public string StreamId { get; }
@@ -238,7 +246,10 @@ namespace Takaro.Services
             if (head.IsLog)
                 _logsInFlight++;
             if (head.IsPosition)
+            {
                 _positionInFlight = true;
+                _positionSentAtTicks = _utcTicks();
+            }
 
             if (head.Replayable)
             {

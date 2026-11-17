@@ -141,7 +141,7 @@ All published via `mod/src/WebSocket/GameEventPublisher.cs` (non-blocking outbou
   replace older ones, expire after 5 seconds, and are discarded on reconnect rather
   than replayed. The sender keeps one batch in flight and waits at least 3 seconds
   after Takaro's acknowledgement before sending another; gameplay events can pass a
-  parked batch. Live Takaro verification is pending.
+  parked batch. Missing receipts reconnect after 30 seconds, and elapsed-time checks use a monotonic clock.
 - **`entity-killed`** — Live-supported; real vanilla-client non-player kill with
   player attribution and non-empty held weapon
 - **`player-death`** — Live-supported; real vanilla-client fall death with
