@@ -644,6 +644,37 @@ namespace Oxide.Plugins
             };
         }
 
+        internal sealed class PositionPacer
+        {
+            private readonly long _frequency;
+            private long _nextAt, _sentAt, _pending, _nextSeq = 1;
+            private string _streamId;
+
+            public PositionPacer(long frequency) { _frequency = frequency; }
+            public string StreamId { get { return _streamId; } }
+            public void Reset(string streamId)
+            {
+                _streamId = streamId;
+                _nextAt = _sentAt = _pending = 0;
+                _nextSeq = 1;
+            }
+            public bool Ready(long now) { return _streamId != null && _pending == 0 && now >= _nextAt; }
+            public bool Expired(long now) { return _pending != 0 && now - _sentAt >= 30 * _frequency; }
+            public long Begin(long now)
+            {
+                if (!Ready(now)) return 0;
+                _sentAt = now;
+                return _pending = _nextSeq++;
+            }
+            public bool Acknowledge(string streamId, long seq, long now)
+            {
+                if (streamId != _streamId || _pending == 0 || seq != _pending) return false;
+                _pending = 0;
+                _nextAt = now + PlayerPositionsIntervalSeconds * _frequency;
+                return true;
+            }
+        }
+
         internal const string ErrorUnsupported = "unsupported";
         internal const string ErrorInvalidArgs = "invalid_args";
         internal const string ErrorNotFound = "not_found";
@@ -1033,7 +1064,6 @@ namespace Oxide.Plugins
         private string _fileIdentity;
         private Timer _tickTimer;
         private int _tickCount;
-        private long _lastPositionPushTicks;
 
         private bool _debug { get { return _settings.Debug; } }
 
@@ -1072,8 +1102,7 @@ namespace Oxide.Plugins
         private bool _sendDraining;
         // One event stream per process: a reload or restart is a new streamId starting at 1.
         private readonly EventStream _events = new EventStream(Guid.NewGuid().ToString());
-        private string _positionStreamId;
-        private long _positionSeq;
+        private readonly PositionPacer _positions = new PositionPacer(System.Diagnostics.Stopwatch.Frequency);
         // The map capability, set on the main thread once the raster is ready.
         private volatile JObject _mapCapability;
         // Null only if the embedded icon cannot be decoded; the profile then has no icon.
@@ -1575,10 +1604,19 @@ namespace Oxide.Plugins
 
                 case "eventAck":
                     if (TryParseEventAck(json, out var ackStream, out var upTo))
-                        _events.Ack(ackStream, upTo);
+                    {
+                        lock (_events.Lock)
+                        {
+                            _events.Ack(ackStream, upTo);
+                            _positions.Acknowledge(ackStream, upTo, System.Diagnostics.Stopwatch.GetTimestamp());
+                        }
+                    }
                     break;
 
                 case "eventError":
+                    lock (_events.Lock)
+                        _positions.Acknowledge(json["payload"]?.Value<string>("streamId"),
+                            json["payload"]?.Value<long?>("seq") ?? 0, System.Diagnostics.Stopwatch.GetTimestamp());
                     var eventErrorObj = json["error"] as JObject;
                     LogWarning($"Takaro rejected event seq={json["payload"]?["seq"]}: " +
                                $"{eventErrorObj?.Value<string>("code") ?? "error"}: {RedactJwt(eventErrorObj?.Value<string>("message") ?? "")}");
@@ -1754,8 +1792,17 @@ namespace Oxide.Plugins
         {
             if (!_connected || _protocolVersion < 1) return;
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
-            var intervalTicks = PlayerPositionsIntervalSeconds * System.Diagnostics.Stopwatch.Frequency;
-            if (_lastPositionPushTicks != 0 && now - _lastPositionPushTicks < intervalTicks) return;
+            lock (_events.Lock)
+            {
+                if (_positions.Expired(now))
+                {
+                    LogWarning("Position acknowledgement timed out; reconnecting for fresh snapshots");
+                    _cts?.Cancel();
+                    try { _ws?.Abort(); } catch { }
+                    return;
+                }
+                if (!_positions.Ready(now)) return;
+            }
 
             var samples = new List<KeyValuePair<string, JObject>>();
             foreach (var player in BasePlayer.activePlayerList)
@@ -1770,7 +1817,6 @@ namespace Oxide.Plugins
                     ["z"] = position.z
                 }));
             }
-            _lastPositionPushTicks = now;
             SendPositionSnapshot(PlayerPositionsData(samples));
         }
 
@@ -1779,7 +1825,9 @@ namespace Oxide.Plugins
             lock (_events.Lock)
             {
                 if (!_connected || _protocolVersion < 1 || _ws?.State != WebSocketState.Open) return;
-                var frame = PositionEventFrame(data, _positionStreamId, ++_positionSeq);
+                var seq = _positions.Begin(System.Diagnostics.Stopwatch.GetTimestamp());
+                if (seq == 0) return;
+                var frame = PositionEventFrame(data, _positions.StreamId, seq);
                 WsSendOn(_ws, frame.ToString(Formatting.None), replacePosition: true);
             }
         }
@@ -1839,8 +1887,7 @@ namespace Oxide.Plugins
                 if (!IsCurrent(generation)) return;
                 _protocolVersion = reply.ProtocolVersion;
                 _connected = true;
-                _positionStreamId = Guid.NewGuid().ToString();
-                _positionSeq = 0;
+                _positions.Reset(Guid.NewGuid().ToString());
                 var backlog = reply.ProtocolVersion >= 1 ? _events.Pending() : _events.TakeAll().Select(V0EventFrame).ToList();
                 if (backlog.Count > 0)
                     LogInfo($"Sending {backlog.Count} buffered event(s)");

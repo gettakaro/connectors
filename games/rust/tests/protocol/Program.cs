@@ -28,6 +28,7 @@ internal static class Program
         Responses();
         Events();
         Positions();
+        PositionPacing();
         Profile();
         Reconnect();
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
@@ -276,6 +277,24 @@ internal static class Program
         var oversized = Connector.PlayerPositionsData(Enumerable.Range(0, 1001)
             .Select(i => new KeyValuePair<string, JObject>(i.ToString(), new JObject { ["x"] = i, ["y"] = 0, ["z"] = 0 })));
         Check(((JArray)oversized["positions"]).Count == 1000, "positions: protocol batch limit");
+    }
+
+    private static void PositionPacing()
+    {
+        var pacer = new Connector.PositionPacer(1000);
+        Check(!pacer.Ready(0), "positions: unavailable before identify");
+        pacer.Reset("connection-one");
+        Check(pacer.Begin(100) == 1 && !pacer.Ready(20000), "positions: one batch waits for its acknowledgement even after network delay");
+        Check(!pacer.Acknowledge("gameplay", 1, 20000) && !pacer.Acknowledge("connection-one", 2, 20000),
+            "positions: another stream or future ack cannot release the pending snapshot");
+        Check(pacer.Acknowledge("connection-one", 1, 20000), "positions: matching receipt acknowledgement releases pending snapshot");
+        Check(!pacer.Ready(22999) && pacer.Ready(23000), "positions: next send waits the declared interval after acknowledgement");
+        Check(!pacer.Acknowledge("connection-one", 1, 22999) && pacer.Begin(23000) == 2,
+            "positions: duplicate acknowledgements do not move the deadline");
+        Check(!pacer.Expired(52999) && pacer.Expired(53000), "positions: missing acknowledgement has a bounded timeout");
+        pacer.Reset("connection-two");
+        Check(pacer.Ready(53001) && pacer.Begin(53001) == 1, "positions: reconnect drops pending state and starts a new stream");
+        Check(!pacer.Acknowledge("connection-one", 2, 54000), "positions: old connection acknowledgement cannot affect new stream");
     }
 
     private static void Reconnect()
