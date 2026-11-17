@@ -675,6 +675,21 @@ namespace Oxide.Plugins
             }
         }
 
+        internal static async Task AwaitUntilCancelled(Task operation, CancellationToken token)
+        {
+            // Mono can leave socket operations pending after Abort. Observe a late failure,
+            // but let the connection lifecycle react to its watchdog independently.
+            _ = operation.ContinueWith(failed => { var observed = failed.Exception; },
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+            var cancelled = new TaskCompletionSource<bool>();
+            using (token.Register(() => cancelled.TrySetResult(true)))
+            {
+                if (await Task.WhenAny(operation, cancelled.Task) != operation)
+                    token.ThrowIfCancellationRequested();
+                await operation;
+            }
+        }
+
         internal const string ErrorUnsupported = "unsupported";
         internal const string ErrorInvalidArgs = "invalid_args";
         internal const string ErrorNotFound = "not_found";
@@ -1441,7 +1456,7 @@ namespace Oxide.Plugins
             {
                 try
                 {
-                    await ws.ConnectAsync(new Uri(settings.WsUrl), token);
+                    await AwaitUntilCancelled(Task.Run(() => ws.ConnectAsync(new Uri(settings.WsUrl), token)), token);
                     if (!IsCurrent(generation)) return;
                     LogInfo("WebSocket connected");
                     // Identify is the first frame this connector sends, the way every other
@@ -1449,7 +1464,7 @@ namespace Oxide.Plugins
                     // instead means a peer that expects the client to speak first never
                     // hears from this server at all: the socket sits open and silent.
                     SendIdentify(ws, generation, settings);
-                    await ReceiveLoop(ws, generation, settings, token);
+                    await AwaitUntilCancelled(Task.Run(() => ReceiveLoop(ws, generation, settings, token)), token);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
@@ -1459,7 +1474,6 @@ namespace Oxide.Plugins
                 }
                 finally
                 {
-                    try { ws.Dispose(); } catch { }
                     if (IsCurrent(generation))
                     {
                         _connected = false;
@@ -1468,6 +1482,7 @@ namespace Oxide.Plugins
                         if (_shouldReconnect && Volatile.Read(ref _authClosedGeneration) != generation)
                             ScheduleReconnect(generation);
                     }
+                    try { ws.Dispose(); } catch { }
                 }
             });
         }

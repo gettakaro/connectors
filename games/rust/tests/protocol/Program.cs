@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
 internal static class Program
@@ -29,6 +31,7 @@ internal static class Program
         Events();
         Positions();
         PositionPacing();
+        AbandonedSocketOperation();
         Profile();
         Reconnect();
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
@@ -295,6 +298,28 @@ internal static class Program
         pacer.Reset("connection-two");
         Check(pacer.Ready(53001) && pacer.Begin(53001) == 1, "positions: reconnect drops pending state and starts a new stream");
         Check(!pacer.Acknowledge("connection-one", 2, 54000), "positions: old connection acknowledgement cannot affect new stream");
+    }
+
+    private static void AbandonedSocketOperation()
+    {
+        using (var cts = new CancellationTokenSource())
+        {
+            var pending = new TaskCompletionSource<bool>();
+            var lifecycle = Connector.AwaitUntilCancelled(pending.Task, cts.Token);
+            cts.Cancel();
+            Check(SpinWait.SpinUntil(() => lifecycle.IsCompleted, 2000) && lifecycle.IsCanceled,
+                "socket lifecycle: watchdog cancellation retires an operation that ignores cancellation");
+            pending.SetException(new InvalidOperationException("late socket failure"));
+        }
+        try
+        {
+            Connector.AwaitUntilCancelled(Task.FromException(new InvalidOperationException("connect failed")), CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Check(false, "socket lifecycle: propagate an immediate failure");
+        }
+        catch (InvalidOperationException) { Check(true, "socket lifecycle: propagate an immediate failure"); }
+        Connector.AwaitUntilCancelled(Task.CompletedTask, CancellationToken.None).GetAwaiter().GetResult();
+        Check(true, "socket lifecycle: successful operation completes normally");
     }
 
     private static void Reconnect()

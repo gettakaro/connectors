@@ -34,6 +34,8 @@ mkdir -p "${WORK}"
     echo 'using System;'
     echo 'using System.Collections.Generic;'
     echo 'using System.Linq;'
+    echo 'using System.Threading;'
+    echo 'using System.Threading.Tasks;'
     echo 'using Newtonsoft.Json;'
     echo 'using Newtonsoft.Json.Linq;'
     echo

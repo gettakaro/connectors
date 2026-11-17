@@ -7,6 +7,8 @@ sender's current position. Position batches use a replaceable connection-scoped 
 from durable gameplay events. No position batch is queued while disconnected or replayed after reconnect.
 Only one position batch waits for acknowledgement at a time, so a slow socket cannot compress
 multiple batches into a burst. Missing position acknowledgements force reconnect after 30 seconds.
+The connection watchdog can retire a socket operation even when Mono leaves it pending after
+cancellation or Abort, so a connection attempt made during an outage cannot prevent later retries.
 
 The protocol harness checks the manifest, event shape, distinct player IDs, and 1000-entry
 limit. Live verification of Takaro's player-sync polling and `/settp` freshness is pending.
