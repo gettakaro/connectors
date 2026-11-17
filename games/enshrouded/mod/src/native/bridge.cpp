@@ -333,6 +333,7 @@ void Bridge::HandleNotice(Notice& n) {
             identified_ = false;
             protocol_ = 0;
             positionBatchAwaitingAck_ = false;
+            positionBatchInFlight_ = false;
             positionBatchStream_ = RandomStreamId();
             positionBatchSeq_ = 0;
             lastQueuedId_ = 0;  // everything unconfirmed goes out again on this connection
@@ -463,7 +464,7 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         // Takaro without protocol 1 sends no protocolVersion: that is protocol 0.
         auto pv = Num(payload.get("protocolVersion"));
         protocol_ = o_.config.protocolV1 && pv && *pv >= 1 ? 1 : 0;
-        nextPositionBatch_ = o_.steadyMs() + 5000;
+        nextPositionBatch_ = o_.steadyMs() + 3000;
         auto gs = Str(payload.get("gameServerId"));
         if (!gs) gs = Str(AsRecord(payload.get("server")).get("id"));
         gameServerId_ = gs.value_or("");
@@ -481,7 +482,7 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
         if (Str(p.get("streamId")).value_or("") == positionBatchStream_ &&
             Num(p.get("seq")).value_or(0) == (double)positionBatchSeq_) {
             positionBatchAwaitingAck_ = false;
-            nextPositionBatch_ = o_.steadyMs() + 5000;
+            nextPositionBatch_ = o_.steadyMs() + 3000;
         }
         lastEventError_ = Str(error.get("code")).value_or("?") + ": " + Str(error.get("message")).value_or("") +
                           " (seq " + (p.get("seq") ? JsString(p.get("seq")) : std::string("?")) + ")";
@@ -627,7 +628,7 @@ void Bridge::HandleEventAck(const JsonValue& msg) {
     if (protocol_ >= 1 && stream && *stream == positionBatchStream_ && upTo &&
         positionBatchAwaitingAck_ && *upTo == (double)positionBatchSeq_) {
         positionBatchAwaitingAck_ = false;
-        nextPositionBatch_ = o_.steadyMs() + 5000;
+        nextPositionBatch_ = o_.steadyMs() + 3000;
         if (o_.config.logFrames) PluginLog("native: position snapshot acknowledged seq %llu", (unsigned long long)positionBatchSeq_);
         return;
     }
@@ -696,10 +697,11 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     ActionOutcome& out = job->outcome;
     int64_t wall = o_.wallMs();
     if (job->positionBatch) {
+        if (job->epoch != epoch_) return;
         positionBatchInFlight_ = false;
-        nextPositionBatch_ = now + 5000;
+        nextPositionBatch_ = now + 3000;
         if (!out.ok || !open_ || !identified_ || protocol_ < 1 || job->epoch != epoch_ ||
-            now - job->startedMs > 5000 || now < lastPositionBatchSent_ + 5000) return;
+            now - job->startedMs > 5000 || now < lastPositionBatchSent_ + 3000) return;
         const JsonValue* positions = out.payload.get("positions");
         if (!positions || positions->type != JsonValue::Array) return;
         if (positionBatchStream_.empty()) positionBatchStream_ = RandomStreamId();
@@ -708,7 +710,7 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
         if (o_.transport->Queue({FrameKind::Control, Text(frame), epoch_, 0}) == QueueStatus::Accepted) {
             lastPositionBatchSent_ = now;
             positionBatchAwaitingAck_ = true;
-            nextPositionBatch_ = now + 5000;
+            nextPositionBatch_ = now + 3000;
             if (o_.config.logFrames) PluginLog("native: frame out %s", frame.c_str());
             for (const JsonValue& entry : positions->arr) {
                 const std::string* id = GameIdOf(entry);
@@ -921,7 +923,7 @@ void Bridge::SamplePositions(int64_t now) {
 }
 
 void Bridge::SchedulePositionBatch(int64_t now) {
-    nextPositionBatch_ = now + 5000;
+    nextPositionBatch_ = now + 3000;
     if (positionBatchAwaitingAck_) {
         if (now - lastPositionBatchSent_ >= 15000) o_.transport->RequestClose(epoch_, "position snapshot acknowledgement timed out");
         return;

@@ -28,10 +28,10 @@ the game side of the plugin and the Takaro side:
 
 ## Native player position batches
 
-On Generic protocol v1, `events.player-positions` declares `intervalSeconds: 5`. The native connector
+On Generic protocol v1, `events.player-positions` declares `intervalSeconds: 3`. The native connector
 reads the online roster and every player's current location through these in-process routes, then sends
 `{positions:[{gameId,position:{x,y,z,dimension}}]}` on a connection-scoped stream. Only one snapshot
-awaits `eventAck`. The next snapshot starts five seconds after that acknowledgement, preventing a
+awaits `eventAck`. The next snapshot starts three seconds after that acknowledgement, preventing a
 transport backlog from compressing arrival intervals. An acknowledgement timeout reconnects; snapshots
 are never persisted or replayed on a new connection.
 

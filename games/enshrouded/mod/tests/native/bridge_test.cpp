@@ -955,7 +955,7 @@ void ProtocolV1Identify() {
                              "locations.list", "events.chat-message", "events.entity-killed"})
         CHECK_MSG(names.count(need), need);
     CHECK(!names.count("testReachability"));
-    CHECK(positionBatch && Num(AsRecord(positionBatch->get("parameters")).get("intervalSeconds")) == 5);
+    CHECK(positionBatch && Num(AsRecord(positionBatch->get("parameters")).get("intervalSeconds")) == 3);
     CHECK(map != nullptr);
     if (map) {
         CHECK(t::JsonTextEq(JsonDump(*map->get("parameters")),
@@ -1328,7 +1328,7 @@ void ProtocolV1PositionBatch() {
     CHECK_EQ(r.Events("player-positions").size(), size_t(1));
     r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":" + JsonStr(PayloadStream(events[0])) + ",\"upTo\":1}}");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    steady += 4999;
+    steady += 2999;
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     r.tr.Drain();
     CHECK_EQ(r.Events("player-positions").size(), size_t(1));
@@ -1340,6 +1340,13 @@ void ProtocolV1PositionBatch() {
     IdentifyV1(r);
     r.tr.Drain();
     CHECK(r.Events("player-positions").empty());
+    steady += 3000;
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return !r.Events("player-positions").empty(); }));
+    auto reconnected = r.Events("player-positions");
+    if (!reconnected.empty()) {
+        CHECK(PayloadStream(reconnected[0]) != PayloadStream(events[0]));
+        CHECK_EQ(PayloadSeq(reconnected[0]), 1.0);
+    }
 
     Rig missing("v1-position-batch-missing");
     missing.fake.locations.obj.erase(

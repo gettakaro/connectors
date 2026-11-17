@@ -41,7 +41,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion) {
     for (const char* name : kActionCapabilities) out += ObjBuilder().S("name", name).Done() + ",";
     for (const char* name : kEventCapabilities) out += ObjBuilder().S("name", name).Done() + ",";
     out += ObjBuilder().S("name", "events.player-positions")
-               .Raw("parameters", ObjBuilder().Raw("intervalSeconds", "5").Done()).Done() + ",";
+               .Raw("parameters", ObjBuilder().Raw("intervalSeconds", "3").Done()).Done() + ",";
     out += ObjBuilder()
                .S("name", "map")
                .Raw("parameters", ObjBuilder().Raw("dimensions", "[" + MapDimensionJson() + "]").Done())
