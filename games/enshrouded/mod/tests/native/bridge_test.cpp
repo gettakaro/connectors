@@ -1288,10 +1288,16 @@ void ProtocolV1Fallbacks() {
 
 void ProtocolV1PositionBatch() {
     t::Group("bridge-v1-position-batch");
+    std::atomic<int64_t> steady{100000};
     Rig r("v1-position-batch");
+    r.o.steadyMs = [&] { return steady.load(); };
     r.Start();
     OpenForIdentify(r);
-    IdentifyV1(r);
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1","protocolVersion":1}})");
+    CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == r.tr.Epoch(); }));
+    steady += 500;
+    CHECK(t::WaitFor([&] { return r.HealthNum(nullptr, "protocol") == 1; }));
+    steady += 5000;
     CHECK(t::WaitFor([&] {
         r.tr.Drain();
         return !r.Events("player-positions").empty();
@@ -1312,6 +1318,22 @@ void ProtocolV1PositionBatch() {
         CHECK_EQ(PayloadSeq(events[0]), 1.0);
     }
     CHECK(r.fake.CallCount("GET /players/:id/location") >= 2);
+    steady += 10000;
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("player-positions").size(), size_t(1));
+    r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"wrong-stream\",\"upTo\":1}}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("player-positions").size(), size_t(1));
+    r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":" + JsonStr(PayloadStream(events[0])) + ",\"upTo\":1}}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    steady += 4999;
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("player-positions").size(), size_t(1));
+    steady += 1;
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return r.Events("player-positions").size() == 2; }));
     r.tr.Close("reconnect");
     r.tr.wire.clear();
     OpenForIdentify(r);

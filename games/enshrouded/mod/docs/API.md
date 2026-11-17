@@ -26,6 +26,15 @@ the game side of the plugin and the Takaro side:
   - `503`: the game thread is unavailable
 - POST bodies are validated before the 501 check, so a malformed request returns 400 even for unimplemented actions.
 
+## Native player position batches
+
+On Generic protocol v1, `events.player-positions` declares `intervalSeconds: 5`. The native connector
+reads the online roster and every player's current location through these in-process routes, then sends
+`{positions:[{gameId,position:{x,y,z,dimension}}]}` on a connection-scoped stream. Only one snapshot
+awaits `eventAck`. The next snapshot starts five seconds after that acknowledgement, preventing a
+transport backlog from compressing arrival intervals. An acknowledgement timeout reconnects; snapshots
+are never persisted or replayed on a new connection.
+
 ## Identity
 `gameId` is the player's **SteamID64 as a decimal string**, the same value as `steamId`. `name` is the Steam persona name as the server prints it. It is not the in-game character name, which the server never logs.
 

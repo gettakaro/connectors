@@ -184,6 +184,7 @@ private:
     int64_t lastPositionsSave_ = 0, nextSample_ = 0;
     int64_t nextPositionBatch_ = 0, lastPositionBatchSent_ = -5000;
     bool positionBatchInFlight_ = false;
+    bool positionBatchAwaitingAck_ = false;
     uint64_t positionBatchSeq_ = 0;
     std::string positionBatchStream_;
     std::map<std::string, int> missingStrikes_;
