@@ -98,7 +98,7 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Connection | ✅ | |
 | Player list | ✅ | Name and Steam id. |
 | Player location | ✅ | |
-| Fresh position updates | ⚠️ | Protocol v1 sends player positions every 5 seconds when the server knows every online player's location. Live check pending. |
+| Fresh position updates | ✅ | Protocol v1 pushes a complete snapshot when the server knows every online player's location, at least 3 seconds after the previous receipt acknowledgment. |
 | Teleport | ✅ | |
 | Player inventory | ⚠️ | Only for players with the optional inventory mod. |
 | Item list | ✅ | |
