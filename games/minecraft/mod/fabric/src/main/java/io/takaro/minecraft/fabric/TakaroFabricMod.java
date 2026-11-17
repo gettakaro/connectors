@@ -1,6 +1,7 @@
 package io.takaro.minecraft.fabric;
 
 import io.takaro.minecraft.core.EventEmitter;
+import io.takaro.minecraft.core.PositionPublisher;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.config.JsonConfigFormat;
 import io.takaro.minecraft.core.TakaroConnector;
@@ -27,6 +28,7 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("Takaro");
     private volatile TakaroConnector connector;
     private volatile FabricGameAdapter adapter;
+    private final PositionPublisher positionPublisher = new PositionPublisher();
     private int ticks;
 
     @Override
@@ -40,7 +42,10 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
+            if (adapter == null) return;
+            int tick = ++ticks;
+            if (tick % 20 == 0) adapter.liftExpiredBans();
+            if (tick % 10 == 0) positionPublisher.capture(adapter, adapter.getEventEmitter());
         });
 
         // Register game event callbacks
@@ -70,7 +75,8 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
                     sender.getUUID().toString(),
                     sender.getGameProfile().name(),
                     "global",
-                    message.signedContent()
+                    message.signedContent(),
+                    adapter.getPlayerLocation(sender.getUUID().toString())
             );
         });
 

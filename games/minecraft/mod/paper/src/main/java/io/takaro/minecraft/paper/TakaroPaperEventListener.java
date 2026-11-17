@@ -43,12 +43,16 @@ public class TakaroPaperEventListener implements Listener {
         if (emitter == null) return;
         Player player = event.getPlayer();
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
-        emitter.emitChatMessage(
-                player.getUniqueId().toString(),
-                player.getName(),
-                "global",
-                message
-        );
+        String gameId = player.getUniqueId().toString();
+        String playerName = player.getName();
+        // AsyncChatEvent can run off-thread; read location on the owning server thread.
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            EventEmitter current = plugin.getEventEmitter();
+            if (current != null) {
+                current.emitChatMessage(gameId, playerName, "global", message,
+                        plugin.getPlayerLocation(gameId));
+            }
+        });
     }
 
     @EventHandler
