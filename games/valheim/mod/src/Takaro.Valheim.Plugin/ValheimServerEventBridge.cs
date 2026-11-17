@@ -136,7 +136,14 @@ internal static class ValheimServerEventBridge
 
         Send(
             ValheimEventType.ChatMessage,
-            EventFactory.ChatMessage(player, "global", DateTimeOffset.UtcNow, decision.Text),
+            EventFactory.ChatMessage(
+                player,
+                "global",
+                DateTimeOffset.UtcNow,
+                decision.Text,
+                peer.IsReady() && peer.m_refPos != Vector3.zero
+                    ? new TakaroPosition(peer.m_refPos.x, peer.m_refPos.y, peer.m_refPos.z, "valheim")
+                    : null),
             $"Takaro Valheim chat-message queued (server-bound) for {player.Name} ({player.GameId}).");
     }
 

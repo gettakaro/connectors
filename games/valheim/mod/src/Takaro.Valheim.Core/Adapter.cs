@@ -26,6 +26,17 @@ public interface IValheimTakaroAdapter
     Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default);
 }
 
+// An optional game-thread snapshot source. A null result means at least one online player
+// has no current server observation, so the caller must not publish a partial batch.
+public interface IValheimPositionSnapshotAdapter
+{
+    IReadOnlyList<PlayerPositionSample>? CaptureOnlinePositions();
+}
+
+public sealed record PlayerPositionSample(
+    [property: JsonPropertyName("gameId")] string GameId,
+    [property: JsonPropertyName("position")] TakaroPosition Position);
+
 public static class TakaroActionNames
 {
     public const string TestReachability = "testReachability";

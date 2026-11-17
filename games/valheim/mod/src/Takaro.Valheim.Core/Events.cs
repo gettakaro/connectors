@@ -4,8 +4,11 @@ namespace Takaro.Valheim.Core;
 
 public static class EventFactory
 {
-    public static object ChatMessage(TakaroPlayer player, string channel, DateTimeOffset timestamp, string message) =>
-        new ChatMessageEvent(player, channel, timestamp, message);
+    public static object ChatMessage(TakaroPlayer player, string channel, DateTimeOffset timestamp, string message, TakaroPosition? position = null) =>
+        new ChatMessageEvent(player, channel, timestamp, message, position);
+
+    public static object PlayerPositions(DateTimeOffset timestamp, IReadOnlyList<PlayerPositionSample> positions) =>
+        new PlayerPositionsEvent(timestamp, positions);
 
     public static object PlayerConnected(TakaroPlayer player, DateTimeOffset timestamp) =>
         new PlayerLifecycleEventData(player, timestamp);
@@ -64,7 +67,12 @@ public static class EventFactory
         [property: JsonPropertyName("player")] TakaroPlayer Player,
         [property: JsonPropertyName("channel")] string Channel,
         [property: JsonPropertyName("timestamp")] DateTimeOffset Timestamp,
-        [property: JsonPropertyName("msg")] string Msg);
+        [property: JsonPropertyName("msg")] string Msg,
+        [property: JsonPropertyName("position"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TakaroPosition? Position);
+
+    private sealed record PlayerPositionsEvent(
+        [property: JsonPropertyName("timestamp")] DateTimeOffset Timestamp,
+        [property: JsonPropertyName("positions")] IReadOnlyList<PlayerPositionSample> Positions);
 
     private sealed record PlayerLifecycleEventData(
         [property: JsonPropertyName("player")] TakaroPlayer Player,
