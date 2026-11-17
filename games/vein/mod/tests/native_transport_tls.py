@@ -61,6 +61,7 @@ class Peer:
         self.listener.settimeout(0.2)
         self.stop = threading.Event()
         self.errors = []
+        self.transients = 0
         self.sessions = []
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
@@ -120,6 +121,8 @@ class Peer:
                         print('peer opcode', opcode, 'bytes', size, flush=True)
                     if opcode == 9:
                         frame(sock, 10, b'unsolicited' if self.mode == 'bad-pong' else payload)
+                    elif opcode == 1 and self.mode == 'prune' and payload == b'{"transient":true}':
+                        self.transients += 1
                     elif opcode == 1 and self.mode == 'prune' and payload == b'{"seq":1}':
                         self.errors.append('evicted event was transmitted')
                     elif opcode == 8:
@@ -163,6 +166,8 @@ def main():
             peer = Peer(private_key, public_cert, mode)
             try:
                 subprocess.run([str(binary), f'wss://{host}:{peer.port}/', ca, mode], check=True, timeout=40)
+                if mode == 'prune' and peer.transients != 2:
+                    raise AssertionError(f'transient events lost at durable prune floor: {peer.transients}/2')
                 if peer.errors:
                     raise AssertionError(peer.errors)
             finally:

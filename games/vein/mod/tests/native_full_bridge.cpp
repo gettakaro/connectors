@@ -58,6 +58,7 @@ Actions::Result Actions::Players() {
     }
     return {200, R"([{"gameId":"76561198000000001","name":"Test player","characterName":"Character alias","online":true}])"};
 }
+Actions::Result Actions::PlayerPositions() { return {200, "[]"}; }
 Actions::Result Actions::PlayerLocation(const std::string& id) {
     if (id == "76561198000000003")
         return {200, "{\"x\":1,\"y\":2,\"z\":3,\"yaw\":90,\"ageMs\":0}"};

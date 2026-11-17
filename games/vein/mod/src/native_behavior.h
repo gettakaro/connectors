@@ -104,6 +104,7 @@ private:
 // running game build, "" when unknown). testReachability, the version 0 getMapInfo and getGameIcon
 // are not capabilities; Takaro asks for the icon because game.profile declares one.
 std::string CapabilityManifestJson(const std::string& gameVersion = {});
+std::string PositionBatchFrame(const std::string& positionsJson, const std::string& streamId, uint64_t seq);
 
 // Protocol version 1 error code for an action failure message.
 std::string ErrorCode(const std::string& message);

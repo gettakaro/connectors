@@ -23,6 +23,7 @@ void Init();
 void Housekeep();
 
 Result Players();
+Result PlayerPositions();
 Result Player(const std::string& gameId);
 Result PlayerLocation(const std::string& gameId);
 Result PlayerInventory(const std::string& gameId);

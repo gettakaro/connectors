@@ -11,7 +11,8 @@
 // invokes the notice sink on its service thread; the sink must only enqueue the notice.
 namespace NativeTransport {
 using Frame = std::shared_ptr<const std::string>;
-enum class Kind { Control, CriticalResponse, Response, Event };
+// Transient events share staging limits, but have no durable outbox id or replay lifetime.
+enum class Kind { Control, CriticalResponse, Response, Event, TransientEvent };
 enum class QueueStatus { Accepted, Disconnected, StaleEpoch, Full, TooLarge };
 struct Ticket { uint64_t epoch = 0, writeId = 0; };
 struct Send {

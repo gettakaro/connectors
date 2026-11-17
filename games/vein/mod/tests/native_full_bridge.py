@@ -148,6 +148,47 @@ def protocol_v1(cert, key, state):
         run.close()
 
 
+def position_receipts(cert, key, state):
+    run = V1Run(cert, key, state)
+    def position(timeout=8):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for pos, (index, opcode, data) in enumerate(run.pending):
+                if opcode == 1:
+                    value = json.loads(data)
+                    if value.get('type') == 'gameEvent' and value['payload']['type'] == 'player-positions':
+                        run.pending.pop(pos)
+                        return value['payload']
+            try:
+                run.pending.append(run.peer.frames.get(timeout=0.1))
+            except queue.Empty:
+                pass
+        return None
+    try:
+        run.command('emit:before-positions', 'EMITTED')
+        durable = run.event('before-positions')['payload']
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': durable['streamId'], 'upTo': durable['seq']}})
+        eventually(lambda: not read(state / 'event-outbox.json')['pending'])
+        first = position()
+        assert first and first['seq'] == 1 and first['data']['positions'] == [], first
+        assert position(timeout=4) is None, 'additional snapshot sent before receipt acknowledgement'
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': 'wrong-stream', 'upTo': 1}})
+        assert position(timeout=0.5) is None, 'wrong stream released position gate'
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': first['streamId'], 'upTo': 1}})
+        ack_at = time.monotonic()
+        second = position()
+        assert second and second['seq'] == 2 and time.monotonic() - ack_at >= 2.95, second
+        run.peer.close_session(run.index)
+        run.index = run.identify()
+        run.pending = []
+        third = position()
+        assert third and third['seq'] == 1 and third['streamId'] != first['streamId'], third
+        assert not read(state / 'event-outbox.json')['pending'], 'positions leaked into durable outbox'
+        print('production bridge positions wait for receipt plus interval and reconnect with a fresh stream: pass', flush=True)
+    finally:
+        run.close()
+
+
 def eventually(check, timeout=8):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -563,7 +604,7 @@ def main():
         subprocess.run(['openssl', 'x509', '-req', '-in', str(csr), '-signkey', str(key),
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for test in (protocol_v1, replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
+        for test in (protocol_v1, position_receipts, replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
                      engine_before_plugin, ambiguous_engine_ban, newer_ban_after_crash, permanent_restart, timed_replacement,
                      failed_ban_write,
                      late_ban, late_permanent, partial_unban, shutdown):
