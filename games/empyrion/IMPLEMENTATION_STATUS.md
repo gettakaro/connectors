@@ -6,4 +6,4 @@ One transient position batch may be pending. The next fresh read begins at least
 
 Chat events refresh the sender's `PlayerInfo` before including a position. If that read fails, chat is still emitted when the sender's identity is known, without attaching a stale position.
 
-Fake-Takaro contracts cover delayed, unrelated and future acknowledgements, rejection spacing, asynchronous reads crossing reconnect or shutdown, missing-acknowledgement recovery, stable gameplay replay and whole-snapshot size rejection. Live Takaro proof for this candidate remains pending.
+Fake-Takaro contracts cover delayed, unrelated and future acknowledgements, rejection spacing, asynchronous reads crossing reconnect or shutdown, missing-acknowledgement recovery, stable gameplay replay and whole-snapshot size rejection. Real-player validation covers movement updates without location polling, current-location chat commands, acknowledged pacing and fresh snapshots after a connection outage on Windows Empyrion v1.20.1 build 5232 (Steam target `windows-26660180`).
