@@ -35,7 +35,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class Bridge {
 
     private static final long RECONCILE_INTERVAL_MS = 2000L;
-    private static final long POSITION_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+    private static final long POSITION_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(
+            io.takaro.zomboid.core.Capabilities.POSITION_INTERVAL_SECONDS);
 
     private static final AtomicLong TICKS = new AtomicLong();
     private static final AtomicBoolean CONNECTOR_STARTED = new AtomicBoolean();
@@ -174,7 +175,7 @@ public final class Bridge {
             }
             batch.add(new PlayerPositionSample(gameId, location));
         }
-        if (complete) e.emitPlayerPositions(batch);
+        if (complete) e.emitPlayerPositions(batch, now);
         lastPositionCaptureNanos = System.nanoTime();
     }
 
@@ -289,8 +290,13 @@ public final class Bridge {
             }
             String text = Pz.chatText(chatMessage);
             String channel = Pz.chatChannel(chatMessage);
-            PlayerLocation position = Pz.getPlayerLocation(author);
-            e.emitChatMessage(eventPlayer(author, author), channel, text, position);
+            MainThreadQueue q = queue;
+            if (q != null) {
+                q.runOnMainThread(() -> e.emitChatMessage(eventPlayer(author, author), channel, text,
+                        Pz.getPlayerLocation(author)));
+            } else {
+                e.emitChatMessage(eventPlayer(author, author), channel, text);
+            }
         } catch (Throwable t) {
             // never propagate into the chat path
         }

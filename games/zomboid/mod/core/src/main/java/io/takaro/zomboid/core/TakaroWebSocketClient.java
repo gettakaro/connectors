@@ -22,6 +22,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.LongSupplier;
 
 public class TakaroWebSocketClient extends WebSocketClient implements EventEmitter {
 
@@ -36,7 +37,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     // Per connection: set by a successful identifyResponse, cleared when the socket opens or closes.
     private volatile boolean identified = false;
     private volatile int protocolVersion = 0;
-    private volatile long lastPositionPushNanos;
+    private final LongSupplier nanoClock;
+    private final Object positionLock = new Object();
+    private String positionStreamId;
+    private long nextPositionSeq = 1, waitingPositionSeq;
+    private long nextPositionAt, positionQueuedAt, connectionOpenedAt;
+    private static final long POSITION_ACK_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "takaro-reconnect");
         t.setDaemon(true);
@@ -61,7 +67,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     /** {@code outbox} outlives this client, so a replacement socket keeps the event stream. */
     public TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, EventOutbox outbox) {
+        this(serverUri, adapter, config, outbox, System::nanoTime);
+    }
+
+    TakaroWebSocketClient(URI serverUri, GameAdapter adapter, TakaroConfig config, EventOutbox outbox,
+                         LongSupplier nanoClock) {
         super(serverUri);
+        this.nanoClock = nanoClock;
         this.adapter = adapter;
         this.config = config;
         this.outbox = outbox;
@@ -80,7 +92,15 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public boolean canPushPositions() {
-        return identified && protocolVersion >= 1 && isOpen();
+        synchronized (positionLock) {
+            long now = nanoClock.getAsLong();
+            if (waitingPositionSeq != 0 && now - positionQueuedAt >= POSITION_ACK_TIMEOUT_NANOS) {
+                close(1001, "position acknowledgement timed out");
+                return false;
+            }
+            return !retired && identified && protocolVersion == 1 && isOpen()
+                    && waitingPositionSeq == 0 && now - nextPositionAt >= 0;
+        }
     }
 
     @Override
@@ -91,7 +111,13 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         }
         identified = false;
         protocolVersion = 0;
-        lastPositionPushNanos = 0;
+        synchronized (positionLock) {
+            connectionOpenedAt = nanoClock.getAsLong();
+            positionStreamId = UUID.randomUUID().toString();
+            nextPositionSeq = 1;
+            waitingPositionSeq = 0;
+            nextPositionAt = connectionOpenedAt;
+        }
         outbox.discardType("player-positions");
         adapter.logInfo("WebSocket connected, sending identify...");
         sendIdentify();
@@ -161,6 +187,9 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
     @Override
     public void onClose(int code, String reason, boolean remote) {
         identified = false;
+        synchronized (positionLock) {
+            waitingPositionSeq = 0;
+        }
         outbox.discardType("player-positions");
         if (retired) {
             return;
@@ -252,10 +281,12 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     @Override
     public void emitPlayerPositions(List<PlayerPositionSample> positions) {
-        if (!identified || protocolVersion < 1 || !isOpen() || positions == null || positions.size() > 1000) return;
-        long now = System.nanoTime();
-        if (lastPositionPushNanos != 0 && now - lastPositionPushNanos < TimeUnit.SECONDS.toNanos(Capabilities.POSITION_INTERVAL_SECONDS)) return;
+        emitPlayerPositions(positions, nanoClock.getAsLong());
+    }
 
+    @Override
+    public void emitPlayerPositions(List<PlayerPositionSample> positions, long capturedAtNanos) {
+        if (!canPushPositions() || positions == null || positions.size() > 1000) return;
         JsonArray entries = new JsonArray();
         var seen = new HashSet<String>();
         for (PlayerPositionSample sample : positions) {
@@ -272,12 +303,16 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         JsonObject data = new JsonObject();
         data.addProperty("timestamp", Instant.now().toString());
         data.add("positions", entries);
-        synchronized (outbox) {
-            if (!identified || !isOpen()) return;
-            outbox.discardType("player-positions");
-            EventOutbox.Pending event = outbox.add("player-positions", data);
-            sendEventFrame(event.payload());
-            lastPositionPushNanos = System.nanoTime();
+        synchronized (positionLock) {
+            long now = nanoClock.getAsLong();
+            if (!canPushPositions() || capturedAtNanos < connectionOpenedAt || capturedAtNanos > now
+                    || now - capturedAtNanos >= TimeUnit.SECONDS.toNanos(Capabilities.POSITION_INTERVAL_SECONDS)) return;
+            JsonObject payload = v0EventPayload("player-positions", data);
+            payload.addProperty("streamId", positionStreamId);
+            payload.addProperty("seq", nextPositionSeq);
+            sendEventFrame(payload);
+            waitingPositionSeq = nextPositionSeq++;
+            positionQueuedAt = now;
         }
     }
 
@@ -329,7 +364,7 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
 
     /**
      * Protocol 0 sends an event straight away (lost while the socket is down). With protocol 1
-     * offered, every event goes through the {@link EventOutbox}: sent at once on an identified
+     * offered, gameplay events go through the {@link EventOutbox}: sent at once on an identified
      * protocol 1 socket, otherwise held until the next identify, which resends everything Takaro
      * has not acknowledged (or, if Takaro picked protocol 0, flushes it in the old shape).
      */
@@ -394,12 +429,31 @@ public class TakaroWebSocketClient extends WebSocketClient implements EventEmitt
         String streamId = optString(payload, "streamId", null);
         long upTo = (long) optDouble(payload, "upTo", -1);
         if (streamId == null || upTo < 0) return;
+        synchronized (positionLock) {
+            if (streamId.equals(positionStreamId)) {
+                acknowledgePosition(streamId, upTo);
+                return;
+            }
+        }
         outbox.acknowledge(streamId, upTo);
+    }
+
+    private void acknowledgePosition(String streamId, long seq) {
+        synchronized (positionLock) {
+            if (streamId.equals(positionStreamId) && waitingPositionSeq != 0 && seq == waitingPositionSeq) {
+                waitingPositionSeq = 0;
+                nextPositionAt = nanoClock.getAsLong()
+                        + TimeUnit.SECONDS.toNanos(Capabilities.POSITION_INTERVAL_SECONDS);
+            }
+        }
     }
 
     private void handleEventError(JsonObject json) {
         JsonObject payload = optObject(json, "payload");
         JsonObject error = optObject(json, "error");
+        String streamId = optString(payload, "streamId", null);
+        long seq = (long) optDouble(payload, "seq", -1);
+        if (streamId != null && seq >= 0) acknowledgePosition(streamId, seq);
         adapter.logWarning("Takaro rejected event seq=" + optString(payload, "seq", "?")
                 + ": " + optString(error, "code", "?") + " " + optString(error, "message", ""));
     }

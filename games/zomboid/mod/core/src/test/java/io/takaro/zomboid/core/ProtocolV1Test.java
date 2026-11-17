@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +29,8 @@ class ProtocolV1Test {
     private EventOutbox outbox;
     private List<String> sent;
     private boolean open;
+    private AtomicLong nowNanos;
+    private List<String> positionCloses;
     private TakaroWebSocketClient client;
 
     @BeforeEach
@@ -38,14 +42,17 @@ class ProtocolV1Test {
         outbox = new EventOutbox("stream-1", 3);
         sent = new CopyOnWriteArrayList<>();
         open = true;
+        nowNanos = new AtomicLong(TimeUnit.SECONDS.toNanos(100));
+        positionCloses = new ArrayList<>();
         client = newClient();
     }
 
     private TakaroWebSocketClient newClient() throws Exception {
-        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, outbox) {
+        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, outbox, nowNanos::get) {
             @Override public void send(String text) { sent.add(text); }
             @Override public boolean isOpen() { return open; }
             @Override public void close() { }
+            @Override public void close(int code, String reason) { positionCloses.add(reason); }
         };
     }
 
@@ -60,7 +67,7 @@ class ProtocolV1Test {
         assertTrue(names.containsAll(Capabilities.ACTIONS));
         assertTrue(names.containsAll(Capabilities.EVENTS));
         assertTrue(names.contains("events.player-positions"));
-        assertEquals(5, capability(payload.getAsJsonArray("capabilities"), "events.player-positions")
+        assertEquals(3, capability(payload.getAsJsonArray("capabilities"), "events.player-positions")
                 .getAsJsonObject("parameters").get("intervalSeconds").getAsInt());
         assertFalse(names.contains("map"), "no map before the image is ready");
     }
@@ -88,10 +95,89 @@ class ProtocolV1Test {
         assertTrue(event.getAsJsonObject("data").has("timestamp"));
 
         client.emitPlayerPositions(positions);
-        assertEquals(1, events().size(), "a second batch before the five-second interval is rejected");
+        assertEquals(1, events().size(), "a second batch cannot pass without its receipt ACK");
         client.onClose(1006, "gone", true);
         client.emitPlayerPositions(positions);
         assertEquals(0, outbox.size(), "stale position snapshots are discarded on disconnect");
+    }
+
+    @Test
+    void positionPacingStartsAfterItsMatchingReceiptAndNeverBuffersSamples() {
+        client.onOpen(null);
+        identify(1);
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))));
+        JsonObject position = events().get(0).getAsJsonObject("payload");
+        String stream = position.get("streamId").getAsString();
+        assertNotEquals(outbox.streamId(), stream);
+        assertEquals(0, outbox.size(), "transient positions never enter the durable gameplay outbox");
+
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(20));
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(4, 5, 6, null))));
+        assertEquals(1, events().size(), "a delayed ACK permits only one in-flight snapshot");
+        client.emitLog("gameplay continues");
+        assertEquals(2, events().size());
+        ack("wrong-stream", 1);
+        ack(stream, 2);
+        assertFalse(client.canPushPositions());
+        ack(stream, 1);
+        assertFalse(client.canPushPositions());
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(3) - 1);
+        assertFalse(client.canPushPositions());
+        nowNanos.incrementAndGet();
+        ack(stream, 1); // A duplicate ACK must not postpone the next ready time.
+        assertTrue(client.canPushPositions());
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(7, 8, 9, null))));
+        JsonObject latest = events().get(2).getAsJsonObject("payload");
+        assertEquals(2, latest.get("seq").getAsLong());
+        assertEquals(7, latest.getAsJsonObject("data").getAsJsonArray("positions").get(0)
+                .getAsJsonObject().getAsJsonObject("position").get("x").getAsDouble());
+        assertEquals(1, outbox.size(), "only the gameplay log is retained for replay");
+    }
+
+    @Test
+    void positionSnapshotRejectsExpiredAndFutureCapture() {
+        client.onOpen(null);
+        identify(1);
+        long oldCapture = nowNanos.get();
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(4));
+        var sample = List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null)));
+        client.emitPlayerPositions(sample, oldCapture);
+        client.emitPlayerPositions(sample, nowNanos.get() + 1);
+        assertTrue(events().isEmpty());
+        client.emitPlayerPositions(sample, nowNanos.get());
+        assertEquals(1, events().size());
+    }
+
+    @Test
+    void reconnectDropsOldCaptureAndPositionStreamAndTimesOutMissingReceipt() {
+        client.onOpen(null);
+        identify(1);
+        long capturedBeforeReconnect = nowNanos.get();
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))));
+        String oldStream = events().get(0).getAsJsonObject("payload").get("streamId").getAsString();
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(30));
+        assertFalse(client.canPushPositions());
+        assertEquals(List.of("position acknowledgement timed out"), positionCloses);
+        client.onClose(1006, "gone", true);
+        nowNanos.incrementAndGet();
+        sent.clear();
+        client.onOpen(null);
+        identify(1);
+        assertTrue(events().isEmpty(), "reconnect never replays positions");
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))),
+                capturedBeforeReconnect);
+        assertTrue(events().isEmpty(), "a capture from the old connection is rejected");
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(8, 9, 10, null))));
+        JsonObject fresh = events().get(0).getAsJsonObject("payload");
+        assertNotEquals(oldStream, fresh.get("streamId").getAsString());
+        assertEquals(1, fresh.get("seq").getAsLong());
+        ack(oldStream, 1);
+        assertFalse(client.canPushPositions());
+    }
+
+    private void ack(String stream, long seq) {
+        client.onMessage("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\""
+                + stream + "\",\"upTo\":" + seq + "}}");
     }
 
     @Test

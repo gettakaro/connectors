@@ -14,6 +14,9 @@ public interface EventEmitter {
         emitChatMessage(player, channel, message);
     }
     default void emitPlayerPositions(List<PlayerPositionSample> positions) {}
+    default void emitPlayerPositions(List<PlayerPositionSample> positions, long capturedAtNanos) {
+        emitPlayerPositions(positions);
+    }
     default boolean canPushPositions() { return false; }
     void emitPlayerDeath(PlayerInfo player, PlayerInfo attacker, double x, double y, double z, String dimension);
     void emitEntityKilled(PlayerInfo player, String entityCode, String weaponCode);

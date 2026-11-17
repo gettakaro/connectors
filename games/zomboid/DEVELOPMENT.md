@@ -278,12 +278,12 @@ missing value is 0.
   resends the rest in order, so events produced during an outage are no longer lost. Nothing
   is sent before `identifyResponse`; if Takaro picks protocol 0 the buffer is flushed in the
   old shape.
-- **Player positions:** protocol 1 declares `events.player-positions` with a 5-second interval.
+- **Player positions:** protocol 1 declares `events.player-positions` with a 3-second receipt-paced interval.
   The game-thread bridge reads every connected player's current `IsoPlayer` location and emits
   one timestamped batch. If a connected player has no live character while loading or dead,
   it defers that batch; it never substitutes a cached position. Chat events carry the
   author's live position when available. Position snapshots are discarded on disconnect
-  and replaced in the outbox by newer snapshots, so reconnect does not replay stale positions.
+  and kept outside the gameplay outbox. A new snapshot is captured only after the matching receipt ACK plus the interval; reconnect starts a fresh stream and rejects captures from the old connection.
 - **Map:** `agent/MapService` reads the server's `Map=` option, finds
   `<install>/media/maps/<map>/pyramid.zip` (the world-map raster the in-game map draws: 256 px
   PNG tiles per level plus `pyramid.txt` with the world bounds), and on a low-priority thread

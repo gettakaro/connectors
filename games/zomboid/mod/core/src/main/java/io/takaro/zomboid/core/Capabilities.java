@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Capabilities {
 
-    public static final int POSITION_INTERVAL_SECONDS = 5;
+    public static final int POSITION_INTERVAL_SECONDS = 3;
 
     /** Action capabilities, in the protocol's order. testReachability is not a capability. */
     static final List<String> ACTIONS = List.of(
