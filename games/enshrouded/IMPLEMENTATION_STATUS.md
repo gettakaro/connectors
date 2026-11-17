@@ -6,4 +6,4 @@ The native connector declares `events.player-positions` for Generic protocol v1 
 
 The game plugin's chat receive hook supplies a chat handle and resolved player name, but does not supply a world-thread-safe transform for that message. Chat events therefore omit `position` until the hook can capture the sender's entity transform safely at receive time. The separate player-position batches provide current coordinates without associating a later location with an earlier message.
 
-Host conformance covers the v1 capability and the position batch payload. Live Takaro acceptance, including sync and teleport checks, remains unverified.
+Host conformance covers the v1 capability, the position batch payload, acknowledgement pacing and reconnect stream reset. Live verification on game build 1287369 confirmed fresh position updates, cessation of background location polling, current coordinates saved by a real chat teleport command, and fresh snapshots after reconnect. Other supported game builds still need live verification.
