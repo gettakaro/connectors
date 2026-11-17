@@ -23,7 +23,7 @@ M.IDENTITY_FILE = "TakaroIdentity.txt"
 M.KNOWN_FILE = "known-players.json"
 M.WORLD_BOUNDS_RETRY_MS = 10000
 M.GAME_VERSION_RETRY_MS = 10000
-M.POSITIONS_INTERVAL_MS = 5000
+M.POSITIONS_INTERVAL_MS = protocol.POSITIONS_INTERVAL_MS
 
 local App = {}
 App.__index = App
@@ -177,7 +177,7 @@ function App:tick()
   end
   self:read_map_bounds(now)
   self:read_game_version(now)
-  if now - self.lastPositions >= M.POSITIONS_INTERVAL_MS then
+  if self.client:positions_ready() and now - self.lastPositions >= M.POSITIONS_INTERVAL_MS then
     self.lastPositions = now
     if self.client.version == 1 and self.client.identified and self.game.current_positions then
       local ok, positions = pcall(self.game.current_positions, self.game)

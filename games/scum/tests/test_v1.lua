@@ -43,7 +43,7 @@ t.test("identify offers protocol versions [0, 1] with the manifest: live capabil
     "events.log" }) do
     t.ok(caps[name], "declares " .. name)
   end
-  t.deep(caps["events.player-positions"].parameters, { intervalSeconds = 5 })
+  t.deep(caps["events.player-positions"].parameters, { intervalSeconds = 3 })
   t.eq(caps["locations.list"], nil, "the [] placeholder is not declared")
   local dims = caps.map.parameters.dimensions
   t.eq(#dims, 1)
@@ -123,7 +123,7 @@ t.test("version 1: an event position names the map dimension; version 0 keeps x,
   t.deep(death_position(0), { x = 426071, y = 181139, z = 17063 })
 end)
 
-t.test("position snapshots respect 5 seconds, v1 only, and never replay after reconnect", function()
+t.test("position snapshots wait for receipt acknowledgement plus three seconds", function()
   local app, native, tk, g = F.app()
   local samples = 0
   g.current_positions = function()
@@ -134,30 +134,142 @@ t.test("position snapshots respect 5 seconds, v1 only, and never replay after re
   tk.pump()
   t.eq(samples, 0, "no snapshot before identify")
   connect_v1(tk, native)
-  native.clock = 11000
+  native.clock = 8999
+  tk.pump()
+  t.eq(samples, 0, "new connection waits one interval")
+  native.clock = 9000
   tk.pump()
   t.eq(samples, 1)
-  local evs = native.frames("gameEvent")
-  t.eq(#evs, 1)
-  t.eq(evs[1].msg.payload.type, "player-positions")
-  t.deep(evs[1].msg.payload.data.positions[1],
+  local first = native.frames("gameEvent")[1].msg.payload
+  t.eq(first.type, "player-positions")
+  t.deep(first.data.positions[1],
     { gameId = STEAM, position = { x = 1, y = 2, z = 3, dimension = "the_island" } })
-  native.clock = 15999
+  t.eq(#app.client.inflight, 0, "positions bypass gameplay replay queue")
+  native.clock = 20000
   tk.pump()
-  t.eq(samples, 1, "no early batch")
-  native.drop()
+  t.eq(samples, 1, "no stale samples while acknowledgement is delayed")
+  native.deliver({ type = "eventAck", payload = { streamId = "wrong-stream", upTo = first.seq } })
   tk.pump()
-  native.open()
+  t.eq(samples, 1, "other stream cannot release the position gate")
+  native.deliver({ type = "eventAck", payload = { streamId = first.streamId, upTo = first.seq } })
   tk.pump()
-  native.deliver({ type = "identifyResponse", payload = { gameServerId = "gs-1", protocolVersion = 1 } })
+  native.clock = 22999
   tk.pump()
-  t.eq(#native.frames("gameEvent"), 1, "stale snapshot is not replayed")
-  native.clock = 16000
+  t.eq(samples, 1, "spacing begins at receipt acknowledgement")
+  native.clock = 23000
   tk.pump()
   t.eq(samples, 2)
+end)
+
+t.test("position reconnect discards snapshots without changing gameplay replay ids", function()
+  local app, native, tk, g = F.app()
+  local samples = 0
+  g.current_positions = function()
+    samples = samples + 1
+    return { { gameId = STEAM, position = { x = samples, y = 2, z = 3 } } }
+  end
+  connect_v1(tk, native)
+  app.client:send_event("chat-message", { msg = "durable" })
+  local durable = native.frames("gameEvent")[1].msg.payload
+  native.clock = 4000
+  tk.pump()
+  local first = native.frames("gameEvent")[2].msg.payload
+  t.eq(first.seq, 1)
+  t.ok(first.streamId ~= durable.streamId)
+  native.drop()
+  tk.pump()
+  connect_v1(tk, native)
+  local replay = native.frames("gameEvent")[3].msg.payload
+  t.eq(replay.streamId, durable.streamId)
+  t.eq(replay.seq, durable.seq, "durable id stays stable")
+  native.clock = 6999
+  tk.pump()
+  t.eq(samples, 1)
+  native.clock = 7000
+  tk.pump()
+  local fresh = native.frames("gameEvent")[4].msg.payload
+  t.eq(fresh.seq, 1)
+  t.ok(fresh.streamId ~= first.streamId)
+  t.eq(fresh.data.positions[1].position.x, 2)
+end)
+
+t.test("missing position acknowledgement closes once and blocks further reads", function()
+  local _, native, tk, g = F.app()
+  local reads = 0
+  g.current_positions = function() reads = reads + 1; return {} end
+  connect_v1(tk, native)
+  native.clock = 4000
+  tk.pump()
+  native.clock = 34000
+  tk.pump()
+  t.eq(#native.closes, 1)
+  t.eq(native.closes[1].reason, "position ack timeout")
+  native.clock = 70000
+  tk.pump()
+  t.eq(#native.closes, 1)
+  t.eq(reads, 1)
+end)
+
+t.test("a position read crossing the transport epoch is discarded", function()
+  local _, native, tk, g = F.app()
+  local reads = 0
+  g.current_positions = function()
+    reads = reads + 1
+    if reads == 1 then native.drop(); native.open() end
+    return { { gameId = STEAM, position = { x = reads, y = 2, z = 3 } } }
+  end
+  connect_v1(tk, native)
+  native.clock = 4000
+  tk.pump()
+  t.eq(#native.frames("gameEvent"), 0)
+  native.deliver({ type = "identifyResponse", payload = { gameServerId = "gs-1", protocolVersion = 1 } })
+  tk.pump()
+  native.clock = 7000
+  tk.pump()
+  local fresh = native.frames("gameEvent")[1].msg.payload
+  t.eq(fresh.seq, 1)
+  t.eq(fresh.data.positions[1].position.x, 2)
+end)
+
+t.test("rejected position releases receipt gate after the declared interval", function()
+  local app, native, tk, g = F.app()
+  g.current_positions = function() return {} end
+  connect_v1(tk, native)
+  native.clock = 4000
+  tk.pump()
+  local first = native.frames("gameEvent")[1].msg.payload
+  native.clock = 6000
+  native.deliver({ type = "eventError", payload = { streamId = first.streamId, seq = first.seq },
+    error = { code = "invalid_event", message = "test refusal" } })
+  tk.pump()
+  native.clock = 8999
+  tk.pump()
+  t.eq(#native.frames("gameEvent"), 1)
+  native.clock = 9000
+  tk.pump()
   t.eq(#native.frames("gameEvent"), 2)
-  t.eq(evs[1].msg.payload.streamId == native.frames("gameEvent")[2].msg.payload.streamId, false,
-    "fresh stream after dropping a sequence")
+  t.eq(app.client.stats.eventErrors, 1)
+end)
+
+t.test("an unsent snapshot is replaced by a fresh read without consuming a sequence", function()
+  local _, native, tk, g = F.app()
+  local reads = 0
+  g.current_positions = function()
+    reads = reads + 1
+    return { { gameId = STEAM, position = { x = reads, y = 2, z = 3 } } }
+  end
+  connect_v1(tk, native)
+  native.sendStatus = "full"
+  native.clock = 4000
+  tk.pump()
+  t.eq(reads, 1)
+  t.eq(#native.frames("gameEvent"), 0)
+  native.sendStatus = nil
+  native.clock = 7000
+  tk.pump()
+  local frame = native.frames("gameEvent")[1].msg.payload
+  t.eq(frame.seq, 1)
+  t.eq(frame.data.positions[1].position.x, 2)
 end)
 
 t.test("version 1: failures become { code, message } errors; a refused console command stays a CommandOutput", function()
