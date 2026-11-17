@@ -13,7 +13,7 @@
       "games/empyrion/capabilities.json (status and game API per action and event, kept equal to mod/src/Core/Coverage.cs by the contract tests)",
       "live-verified 2026-11-13 against build 26569354 with a real game client on a staging Takaro domain"
     ],
-    "notes": "Superseded by windows-26660180: Steam public moved on to build 26660180, and Steam no longer serves this build's depot 530871 manifest 1958826245013655100 (401), so it can no longer be installed from a clean machine. The Mod API assemblies the connector compiles against are byte-identical in build 26660180."
+    "notes": "Superseded by windows-26660180: Steam public moved on to v1.20.1 (build 26660180), and Steam no longer serves this build's depot 530871 manifest 1958826245013655100 (401), so it can no longer be installed from a clean machine. The Mod API assemblies the connector compiles against are byte-identical in v1.20.1."
   },
   "inputs": {
     "server": {

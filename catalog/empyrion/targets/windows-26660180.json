@@ -13,7 +13,7 @@
       "games/empyrion/capabilities.json (status and game API per action and event, kept equal to mod/src/Core/Coverage.cs by the contract tests)",
       "live-verified 2026-11-17 against build 26660180 with a real game client on a staging Takaro domain"
     ],
-    "notes": "Empyrion - Galactic Survival dedicated server v1.20 build 5229, Steam build 26660180 on the public branch. The connector is the C# mod TakaroEmpyrion.dll, loaded by the game's own mod loader (ModTargets: Dedi, PfServer): the dedicated server holds the Takaro WebSocket, and a small agent in every playfield server forwards game events to it. It compiles against the server's own ModApi.dll, Mif.dll and Newtonsoft.Json.dll, fetched from the pinned depot manifest and checked by sha256."
+    "notes": "Empyrion - Galactic Survival dedicated server v1.20.1 build 5232, Steam build 26660180 on the public branch. The connector is the C# mod TakaroEmpyrion.dll, loaded by the game's own mod loader (ModTargets: Dedi, PfServer): the dedicated server holds the Takaro WebSocket, and a small agent in every playfield server forwards game events to it. It compiles against the server's own ModApi.dll, Mif.dll and Newtonsoft.Json.dll, fetched from the pinned depot manifest and checked by sha256."
   },
   "inputs": {
     "server": {
