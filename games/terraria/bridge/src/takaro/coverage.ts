@@ -181,7 +181,7 @@ export const EVENT_COVERAGE: Record<GameEventType, EventCoverage> = {
     status: 'live-supported',
     payloadShape: '{ timestamp: ISO8601, positions: [{ gameId, position: { x, y, z } }] }',
     liveVerification: 'plugin snapshot command and bridge tests; live Takaro proof pending',
-    reason: 'The TShock plugin reads all active players on the game thread in one command.',
+    reason: 'The TShock plugin reads all active players through one snapshot command.',
   },
   log: {
     status: 'live-supported',
