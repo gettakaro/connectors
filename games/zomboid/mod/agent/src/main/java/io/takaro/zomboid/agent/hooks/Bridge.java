@@ -4,13 +4,16 @@ import io.takaro.zomboid.agent.AgentLog;
 import io.takaro.zomboid.agent.EventManagerCallback;
 import io.takaro.zomboid.agent.MainThreadQueue;
 import io.takaro.zomboid.agent.PlayerRegistry;
+import io.takaro.zomboid.agent.PositionPublisher;
 import io.takaro.zomboid.agent.Pz;
 import io.takaro.zomboid.agent.Reconciler;
 import io.takaro.zomboid.agent.TokenBucket;
 import io.takaro.zomboid.agent.research.CommandProbeRuntime;
 import io.takaro.zomboid.core.EventEmitter;
 import io.takaro.zomboid.core.model.PlayerInfo;
+import io.takaro.zomboid.core.model.PlayerLocation;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -66,6 +69,8 @@ public final class Bridge {
     private static volatile boolean debugCatalog;
 
     private static volatile long lastReconcileMs;
+    private static final PositionPublisher positionPublisher = new PositionPublisher(
+            Pz::getPlayers, Pz::getPlayerLocation, System::nanoTime);
 
     private Bridge() {
     }
@@ -132,12 +137,19 @@ public final class Bridge {
                 }
             }
 
+            capturePositions();
+
             if (n % 6000L == 0L) {
                 AgentLog.log("tick count=" + n + " hooks[" + hooksFiredSummary() + "]");
             }
         } catch (Throwable t) {
             // never propagate into the game main loop
         }
+    }
+
+    private static void capturePositions() {
+        EventEmitter e = emitter;
+        if (e != null) positionPublisher.tick(e);
     }
 
     private static void startConnectorOnce() {
@@ -251,7 +263,13 @@ public final class Bridge {
             }
             String text = Pz.chatText(chatMessage);
             String channel = Pz.chatChannel(chatMessage);
-            e.emitChatMessage(eventPlayer(author, author), channel, text);
+            MainThreadQueue q = queue;
+            if (q != null) {
+                q.runOnMainThread(() -> e.emitChatMessage(eventPlayer(author, author), channel, text,
+                        Pz.getPlayerLocation(author)));
+            } else {
+                e.emitChatMessage(eventPlayer(author, author), channel, text);
+            }
         } catch (Throwable t) {
             // never propagate into the chat path
         }

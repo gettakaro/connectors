@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +29,8 @@ class ProtocolV1Test {
     private EventOutbox outbox;
     private List<String> sent;
     private boolean open;
+    private AtomicLong nowNanos;
+    private List<String> positionCloses;
     private TakaroWebSocketClient client;
 
     @BeforeEach
@@ -38,14 +42,17 @@ class ProtocolV1Test {
         outbox = new EventOutbox("stream-1", 3);
         sent = new CopyOnWriteArrayList<>();
         open = true;
+        nowNanos = new AtomicLong(TimeUnit.SECONDS.toNanos(100));
+        positionCloses = new ArrayList<>();
         client = newClient();
     }
 
     private TakaroWebSocketClient newClient() throws Exception {
-        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, outbox) {
+        return new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, outbox, nowNanos::get) {
             @Override public void send(String text) { sent.add(text); }
             @Override public boolean isOpen() { return open; }
             @Override public void close() { }
+            @Override public void close(int code, String reason) { positionCloses.add(reason); }
         };
     }
 
@@ -59,7 +66,159 @@ class ProtocolV1Test {
         Set<String> names = names(payload.getAsJsonArray("capabilities"));
         assertTrue(names.containsAll(Capabilities.ACTIONS));
         assertTrue(names.containsAll(Capabilities.EVENTS));
+        assertTrue(names.contains("events.player-positions"));
+        assertEquals(3, capability(payload.getAsJsonArray("capabilities"), "events.player-positions")
+                .getAsJsonObject("parameters").get("intervalSeconds").getAsInt());
         assertFalse(names.contains("map"), "no map before the image is ready");
+    }
+
+    @Test
+    void positionSnapshotIsCompleteAndNotQueuedWhileDisconnected() {
+        var positions = List.of(
+                new PlayerPositionSample("alice", new PlayerLocation(12, 34, 56, null)),
+                new PlayerPositionSample("bob", new PlayerLocation(70, 80, 90, null)));
+        client.onOpen(null);
+        client.emitPlayerPositions(positions);
+        assertEquals(0, outbox.size());
+
+        identify(1);
+        client.emitPlayerPositions(positions);
+        List<JsonObject> events = events();
+        assertEquals(1, events.size());
+        JsonObject event = events.get(0).getAsJsonObject("payload");
+        assertEquals("player-positions", event.get("type").getAsString());
+        JsonArray batch = event.getAsJsonObject("data").getAsJsonArray("positions");
+        assertEquals(2, batch.size());
+        assertEquals("alice", batch.get(0).getAsJsonObject().get("gameId").getAsString());
+        assertEquals(12, batch.get(0).getAsJsonObject().getAsJsonObject("position").get("x").getAsDouble());
+        assertEquals("bob", batch.get(1).getAsJsonObject().get("gameId").getAsString());
+        assertTrue(event.getAsJsonObject("data").has("timestamp"));
+
+        client.emitPlayerPositions(positions);
+        assertEquals(1, events().size(), "a second batch cannot pass without its receipt ACK");
+        client.onClose(1006, "gone", true);
+        client.emitPlayerPositions(positions);
+        assertEquals(0, outbox.size(), "stale position snapshots are discarded on disconnect");
+    }
+
+    @Test
+    void positionPacingStartsAfterItsMatchingReceiptAndNeverBuffersSamples() {
+        client.onOpen(null);
+        identify(1);
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))));
+        JsonObject position = events().get(0).getAsJsonObject("payload");
+        String stream = position.get("streamId").getAsString();
+        assertNotEquals(outbox.streamId(), stream);
+        assertEquals(0, outbox.size(), "transient positions never enter the durable gameplay outbox");
+
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(20));
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(4, 5, 6, null))));
+        assertEquals(1, events().size(), "a delayed ACK permits only one in-flight snapshot");
+        client.emitLog("gameplay continues");
+        assertEquals(2, events().size());
+        ack("wrong-stream", 1);
+        ack(stream, 2);
+        assertFalse(client.canPushPositions());
+        ack(stream, 1);
+        assertFalse(client.canPushPositions());
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(3) - 1);
+        assertFalse(client.canPushPositions());
+        nowNanos.incrementAndGet();
+        ack(stream, 1); // A duplicate ACK must not postpone the next ready time.
+        assertTrue(client.canPushPositions());
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(7, 8, 9, null))));
+        JsonObject latest = events().get(2).getAsJsonObject("payload");
+        assertEquals(2, latest.get("seq").getAsLong());
+        assertEquals(7, latest.getAsJsonObject("data").getAsJsonArray("positions").get(0)
+                .getAsJsonObject().getAsJsonObject("position").get("x").getAsDouble());
+        assertEquals(1, outbox.size(), "only the gameplay log is retained for replay");
+    }
+
+    @Test
+    void positionSnapshotRejectsExpiredAndFutureCapture() {
+        client.onOpen(null);
+        identify(1);
+        long oldCapture = nowNanos.get();
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(4));
+        var sample = List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null)));
+        client.emitPlayerPositions(sample, oldCapture);
+        client.emitPlayerPositions(sample, nowNanos.get() + 1);
+        assertTrue(events().isEmpty());
+        client.emitPlayerPositions(sample, nowNanos.get());
+        assertEquals(1, events().size());
+    }
+
+    @Test
+    void reconnectDropsOldCaptureAndPositionStreamAndTimesOutMissingReceipt() {
+        client.onOpen(null);
+        identify(1);
+        long capturedBeforeReconnect = nowNanos.get();
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))));
+        String oldStream = events().get(0).getAsJsonObject("payload").get("streamId").getAsString();
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(30));
+        assertFalse(client.canPushPositions());
+        assertFalse(client.canPushPositions());
+        assertEquals(List.of("position acknowledgement timed out"), positionCloses);
+        client.onClose(1006, "gone", true);
+        nowNanos.incrementAndGet();
+        sent.clear();
+        client.onOpen(null);
+        identify(1);
+        assertTrue(events().isEmpty(), "reconnect never replays positions");
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))),
+                capturedBeforeReconnect);
+        assertTrue(events().isEmpty(), "a capture from the old connection is rejected");
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(8, 9, 10, null))));
+        JsonObject fresh = events().get(0).getAsJsonObject("payload");
+        assertNotEquals(oldStream, fresh.get("streamId").getAsString());
+        assertEquals(1, fresh.get("seq").getAsLong());
+        ack(oldStream, 1);
+        assertFalse(client.canPushPositions());
+    }
+
+    private void ack(String stream, long seq) {
+        client.onMessage("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\""
+                + stream + "\",\"upTo\":" + seq + "}}");
+    }
+
+    @Test
+    void chatCarriesCurrentPositionOnlyOnV1() {
+        client.onOpen(null);
+        identify(1);
+        client.emitChatMessage(new PlayerInfo("alice", "Alice", null, null, null, null, null, 0),
+                "global", "hello", new PlayerLocation(12, 34, 56, null));
+        JsonObject data = events().get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertEquals(34, data.getAsJsonObject("position").get("y").getAsDouble());
+
+        client.onClose(1006, "gone", true);
+        sent.clear();
+        client.onOpen(null);
+        identify(0);
+        client.emitChatMessage(new PlayerInfo("alice", "Alice", null, null, null, null, null, 0),
+                "global", "hello", new PlayerLocation(12, 34, 56, null));
+        List<JsonObject> v0Events = events();
+        assertFalse(v0Events.get(v0Events.size() - 1).getAsJsonObject("payload")
+                .getAsJsonObject("data").has("position"));
+    }
+
+    @Test
+    void positionSnapshotRejectsDuplicatePlayers() {
+        client.onOpen(null);
+        identify(1);
+        client.emitPlayerPositions(List.of(
+                new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null)),
+                new PlayerPositionSample("alice", new PlayerLocation(4, 5, 6, null))));
+        assertEquals(0, events().size());
+    }
+
+    @Test
+    void outboxDropsSupersededPositionSnapshots() {
+        outbox.add("player-positions", new JsonObject());
+        outbox.add("chat-message", new JsonObject());
+        outbox.add("player-positions", new JsonObject());
+        outbox.discardType("player-positions");
+        assertEquals(1, outbox.size());
+        assertEquals("chat-message", outbox.unacknowledged().get(0).payload().get("type").getAsString());
     }
 
     @Test
@@ -412,6 +571,76 @@ class ProtocolV1Test {
         client.onClose(1008, "invalid_args", true);
         assertTrue(adapter.logs.stream().noneMatch(l -> l.startsWith("Reconnecting in")), adapter.logs.toString());
         assertTrue(adapter.logs.stream().anyMatch(l -> l.contains("registrationToken")), adapter.logs.toString());
+    }
+
+    @Test
+    void receiptTimeoutCannotDeadlockPinnedSocketTeardown() throws Exception {
+        config.setReconnectEnabled(false);
+        // Send/isOpen are faked; close and teardown use the pinned Java-WebSocket engine.
+        client = new TakaroWebSocketClient(new URI("ws://localhost:9999"), adapter, config, outbox, nowNanos::get) {
+            @Override public void send(String text) { sent.add(text); }
+            @Override public boolean isOpen() { return true; }
+        };
+        client.onOpen(null);
+        identify(1);
+        client.emitPlayerPositions(List.of(new PlayerPositionSample("alice", new PlayerLocation(1, 2, 3, null))));
+        nowNanos.addAndGet(TimeUnit.SECONDS.toNanos(30));
+        var engine = (org.java_websocket.WebSocketImpl) client.getConnection();
+        var held = new java.util.concurrent.CountDownLatch(1);
+        var tearDown = new java.util.concurrent.CountDownLatch(1);
+        var failures = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        Thread reader = new Thread(() -> {
+            try {
+                synchronized (engine) {
+                    held.countDown();
+                    if (!tearDown.await(2, TimeUnit.SECONDS)) throw new AssertionError("watchdog not started");
+                    engine.closeConnection(1006, "peer gone", true);
+                }
+            } catch (Throwable t) { failures.set(t); }
+        }, "test-socket-reader");
+        Thread watchdog = new Thread(() -> {
+            try { client.canPushPositions(); } catch (Throwable t) { failures.set(t); }
+        }, "test-game-watchdog");
+        reader.setDaemon(true);
+        watchdog.setDaemon(true);
+        reader.start();
+        assertTrue(held.await(2, TimeUnit.SECONDS));
+        watchdog.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (watchdog.getState() != Thread.State.BLOCKED && watchdog.isAlive() && System.nanoTime() < deadline)
+            Thread.onSpinWait();
+        boolean blockedOnSocket = watchdog.getState() == Thread.State.BLOCKED;
+        tearDown.countDown();
+        reader.join(2000);
+        watchdog.join(2000);
+        assertTrue(blockedOnSocket, "watchdog must reach the real socket monitor");
+        assertFalse(reader.isAlive(), "socket onClose must acquire positionLock without inversion");
+        assertFalse(watchdog.isAlive(), "game-thread timeout must finish");
+        assertNull(failures.get());
+        assertFalse(client.isIdentified());
+        client.retire();
+    }
+
+    @Test
+    void unreadableRosterWithdrawsAndRestoresPushInIdentifyAndCapabilityUpdates() {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.setPositionPushAvailable(false);
+        assertFalse(names(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities"))
+                .contains("events.player-positions"));
+        assertFalse(client.canPushPositions());
+        client.setPositionPushAvailable(false);
+        assertEquals(1, sent.size(), "unchanged unreadability does not spam manifests");
+        client.onOpen(null);
+        assertFalse(names(frame(1).getAsJsonObject("payload").getAsJsonArray("capabilities"))
+                .contains("events.player-positions"), "reconnect keeps the withdrawn capability");
+        identify(1);
+        sent.clear();
+        client.setPositionPushAvailable(true);
+        assertTrue(names(frame(0).getAsJsonObject("payload").getAsJsonArray("capabilities"))
+                .contains("events.player-positions"));
+        assertTrue(client.canPushPositions());
     }
 
     private void identify(int version) {
