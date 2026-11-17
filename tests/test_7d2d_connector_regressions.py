@@ -34,8 +34,9 @@ class SourceRegressionTests(unittest.TestCase):
 
     def test_transport_drives_the_session_state_machine(self):
         transport = self.source("src/WebSocket/WebSocketTransport.cs")
-        poll = transport.split("CheckInboundLiveness();", 1)[1].split("FlushPending();", 1)[0]
-        self.assertIn("_session.ApplyAcknowledgements();", poll)
+        poll = transport.split("private void DrainOutbound()", 1)[1].split("private void Buffer(", 1)[0]
+        self.assertLess(poll.index("_session.ApplyAcknowledgements();"), poll.index("CheckInboundLiveness(_ledger.PositionReceiptOverdue);"))
+        self.assertIn("FlushPending();", poll)
         deadline = transport.split("private void OnConnectDeadline(", 1)[1].split(
             "private string StalledStage", 1
         )[0]

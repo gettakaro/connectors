@@ -1124,18 +1124,23 @@ namespace Takaro.WebSocket
             _session.DeadSocketClosing = true;
 
             LogService.Instance.Info(
-                (positionReceiptOverdue
-                    ? "No position acknowledgement for 30s - treating socket as dead; "
-                    : $"No inbound traffic for {_session.SecondsSinceInbound()}s - treating socket as dead; ")
-                    + $"closing it ({_ledger.PendingCount} message(s) buffered)"
+                (
+                    positionReceiptOverdue
+                        ? "No position acknowledgement for 30s - treating socket as dead; "
+                        : $"No inbound traffic for {_session.SecondsSinceInbound()}s - treating socket as dead; "
+                ) + $"closing it ({_ledger.PendingCount} message(s) buffered)"
             );
 
             try
             {
                 // Async: a close handshake on a blackholed link would block this
                 // timer thread until the TCP send buffer drains.
-                socket.CloseAsync(CloseStatusCode.Away,
-                    positionReceiptOverdue ? "Position acknowledgement timeout" : "No inbound traffic");
+                socket.CloseAsync(
+                    CloseStatusCode.Away,
+                    positionReceiptOverdue
+                        ? "Position acknowledgement timeout"
+                        : "No inbound traffic"
+                );
             }
             catch (Exception ex)
             {

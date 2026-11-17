@@ -1300,21 +1300,43 @@ public static partial class ContractHarness
         long now = 1000L * TimeSpan.TicksPerSecond;
         var ledger = new OutboundLedger(10, 10, "position-timeout", utcTicks: () => now);
         ledger.RequeueInFlight(1, false);
-        ledger.Enqueue("position", true, false, isPosition: true,
-            generation: 1, createdAtTicks: now);
+        ledger.Enqueue(
+            "position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
         ledger.MarkWritten(ledger.NextToSend());
         True(!ledger.PositionReceiptOverdue, "a newly sent position has its full receipt budget");
         now += TimeSpan.FromMilliseconds(29999).Ticks;
         True(!ledger.PositionReceiptOverdue, "the deadline does not fire early");
         now += TimeSpan.FromMilliseconds(1).Ticks;
-        True(ledger.PositionReceiptOverdue, "a missing receipt expires even if ping traffic continues");
+        True(
+            ledger.PositionReceiptOverdue,
+            "a missing receipt expires even if ping traffic continues"
+        );
         Equal(0, ledger.AcknowledgePong(), "v1 pong cannot acknowledge the position");
-        True(ledger.PositionReceiptOverdue, "heartbeat traffic cannot suppress the receipt deadline");
-        Equal(1, ledger.AcknowledgeUpTo("position-timeout", 1), "matching receipt completes the batch");
+        True(
+            ledger.PositionReceiptOverdue,
+            "heartbeat traffic cannot suppress the receipt deadline"
+        );
+        Equal(
+            1,
+            ledger.AcknowledgeUpTo("position-timeout", 1),
+            "matching receipt completes the batch"
+        );
         True(!ledger.PositionReceiptOverdue, "a completed receipt clears the deadline");
         now += TimeSpan.FromSeconds(3).Ticks;
-        ledger.Enqueue("next-position", true, false, isPosition: true,
-            generation: 1, createdAtTicks: now);
+        ledger.Enqueue(
+            "next-position",
+            true,
+            false,
+            isPosition: true,
+            generation: 1,
+            createdAtTicks: now
+        );
         ledger.MarkWritten(ledger.NextToSend());
         now += TimeSpan.FromSeconds(30).Ticks;
         True(ledger.PositionReceiptOverdue, "the next batch has an independent receipt deadline");

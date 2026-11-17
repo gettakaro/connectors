@@ -96,13 +96,21 @@ namespace Takaro.Services
             StreamId = streamId ?? Guid.NewGuid().ToString("N");
             _logBudget = logBudget;
             _logWindowTicks = (logWindow ?? DefaultLogWindow).Ticks;
-            _utcTicks = utcTicks ?? (() => (long)(Stopwatch.GetTimestamp()
-                * (TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency)));
+            _utcTicks =
+                utcTicks
+                ?? (
+                    () =>
+                        (long)(
+                            Stopwatch.GetTimestamp()
+                            * (TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency)
+                        )
+                );
         }
 
         public long CurrentTicks => _utcTicks();
 
-        public bool PositionReceiptOverdue => _positionInFlight
+        public bool PositionReceiptOverdue =>
+            _positionInFlight
             && _utcTicks() - _positionSentAtTicks >= TimeSpan.FromSeconds(30).Ticks;
 
         /// <summary>Identifies the numbering of this ledger's events; new for every process.</summary>
