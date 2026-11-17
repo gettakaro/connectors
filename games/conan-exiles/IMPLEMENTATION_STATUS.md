@@ -12,5 +12,6 @@ discarded on reconnect. Missing position acknowledgements trigger a reconnect af
 The `chat-message` event includes the sender's position when the chat hook can read
 the player's pawn. The existing `getPlayerLocation` action remains available.
 
-Build and host tests cover these paths. Live Takaro verification of the push interval,
-poll suppression, and command location is pending.
+Build and host tests cover receipt pacing, transient delivery, reconnect freshness,
+and chat positions. An unreadable online player postpones the complete snapshot;
+partial batches are not published.

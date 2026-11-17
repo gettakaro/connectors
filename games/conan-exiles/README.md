@@ -79,7 +79,7 @@ Checked on server build 26672347 (Linux and Windows), 2026-11-15. ✅ works, ⚠
 | Connection | ✅ | Reconnects within about a second when a connection drops, then retries for up to 60 s apart while Takaro is down; events from an outage are delivered afterwards. |
 | Player list | ✅ | Steam64 id, IP and ping. |
 | Player location | ✅ | |
-| Position updates | ⚠️ | Protocol v1 publishes fresh online-player snapshots with a three-second minimum after receipt acknowledgement. Live Takaro verification is pending. |
+| Position updates | ✅ | Protocol v1 publishes complete fresh online-player snapshots with a three-second minimum after receipt acknowledgment. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
