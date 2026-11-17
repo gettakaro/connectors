@@ -14,6 +14,7 @@ and SourceMod 1.13 are installed by the operator.
 | `mod/addons/sourcemod/scripting/takaro_tf2.sp` | The plugin: Takaro protocol (v0 and v1 with event acks), game adapter, cvars. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_chat.inc` | Server chat name resolution and the one renderer for Takaro chat lines. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_reconnect.inc` | Reconnect policy: delay per failure streak, stable-session and liveness timeouts. |
+| `mod/addons/sourcemod/scripting/takaro_tf2_positions.inc` | Position snapshot pacing, exact-sequence receipts, and receipt deadlines. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc` | Generated weapon catalog for `listItems` (item definition index, in-game name). |
 | `mod/cfg/sourcemod/takaro_tf2.cfg` | The config template shipped in the zip (no secrets). |
 | `scripts/build-release.sh` | Release build for one catalog target. |
