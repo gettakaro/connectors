@@ -745,7 +745,7 @@ std::string CapabilityManifestJson(const std::string& gameVersion){
                           "events.player-death","events.entity-killed","events.log"})
         manifest.push_back(Json{{"name",name}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
-    manifest.push_back(Json{{"name","events.player-positions"},{"parameters",{{"intervalSeconds",5}}}});
+    manifest.push_back(Json{{"name","events.player-positions"},{"parameters",{{"intervalSeconds",3}}}});
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
 }

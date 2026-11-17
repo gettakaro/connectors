@@ -4,6 +4,7 @@
 #include "game_profile.h"
 #include "native_behavior.h"
 #include "native_persistence.h"
+#include "position_pacer.h"
 
 #include "actions.h"
 #include "common.h"
@@ -90,6 +91,8 @@ std::unordered_set<std::string> expiryInFlight;
 bool reconcileInFlight = false;
 bool positionsInFlight = false;
 uint64_t positionsSeq = 0;
+std::string positionsStream;
+PositionPacer positionPacer;
 bool banVerifyInFlight = false;
 bool banRecoveryPending = false;
 std::string banMetadataError;
@@ -511,6 +514,9 @@ void HandleFrame(const NativeTransport::Notice& n) {
         const Json p = Record(f.value("payload", Json::object()));
         const Json upTo = p.value("upTo", Json());
         // Never confirm past what this connection sent: a wrong ack must not drop unsent events.
+        if (Str(p, "streamId") == positionsStream && upTo.is_number_unsigned() &&
+            upTo.get<uint64_t>() <= positionsSeq)
+            positionPacer.Ack(upTo.get<uint64_t>(), Clock::now());
         if (Str(p, "streamId") == StreamId()) {
             if (upTo.is_number_unsigned() && upTo.get<uint64_t>() > ackedThrough)
                 ackedThrough = std::min(upTo.get<uint64_t>(), highestSentSeq);
@@ -522,6 +528,10 @@ void HandleFrame(const NativeTransport::Notice& n) {
         ++eventErrorCount;
         const Json p = Record(f.value("payload", Json::object()));
         const Json e = f.value("error", Json());
+        const Json seq = p.value("seq", Json());
+        if (Str(p, "streamId") == positionsStream && seq.is_number_unsigned() &&
+            seq.get<uint64_t>() <= positionsSeq)
+            positionPacer.Ack(seq.get<uint64_t>(), Clock::now());
         std::string why = e.is_object() ? Str(e, "code") + ": " + Str(e, "message") : e.is_string() ? e.get<std::string>() : "";
         lastError = "Takaro rejected event seq " + p.value("seq", Json()).dump() + (why.empty() ? "" : " (" + why + ")");
         PluginLog("native: %s", lastError.c_str());
@@ -963,7 +973,6 @@ void PumpShutdown() {
 void BridgeLoop() {
     auto nextPoll = Clock::now();
     auto nextExpiry = Clock::now(), nextReconcile = Clock::now(), nextBanIntent = Clock::now(),
-         nextPositions = Clock::now(),
          nextBanMetadata = Clock::now(),
          nextDurability = Clock::now();
     while (!stopping) {
@@ -1016,6 +1025,9 @@ void BridgeLoop() {
                 currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0;
                 earlyRequests.clear(); earlyRequestBytes = 0;
                 highestSentSeq = 0; unackedSince.reset();
+                positionsSeq = 0;
+                positionsStream = "vein-positions-" + BootId() + "-" + std::to_string(currentEpoch);
+                positionPacer.Reset(Clock::now());
                 sentEpochByOutboxId.clear();
                 Json p = {{"identityToken", identity}};
                 if (!registration.empty()) p["registrationToken"] = registration;
@@ -1162,14 +1174,17 @@ void BridgeLoop() {
             }
             if (completed.positions) {
                 positionsInFlight = false;
-                nextPositions = Clock::now() + std::chrono::seconds(5);
+                if (fresh) positionPacer.Reset(Clock::now());
                 if (fresh && identified && protocolVersion == 1 && completed.error.empty()) {
                     try {
                         std::string frame = NativeBehavior::PositionBatchFrame(completed.payload,
-                            "vein-positions-" + BootId(), positionsSeq + 1);
-                        NativeTransport::Queue({NativeTransport::Kind::Event,
-                            std::make_shared<const std::string>(std::move(frame)), currentEpoch, 0, false});
-                        ++positionsSeq;
+                            positionsStream, positionsSeq + 1);
+                        if (NativeTransport::Queue({NativeTransport::Kind::TransientEvent,
+                            std::make_shared<const std::string>(std::move(frame)), currentEpoch, 0, false})) {
+                            positionPacer.Sent(++positionsSeq, Clock::now());
+                        } else {
+                            NativeTransport::RequestClose(currentEpoch, 1013, "position queue full");
+                        }
                     } catch (const std::exception& ex) { lastError = ex.what(); }
                 }
             }
@@ -1255,9 +1270,13 @@ void BridgeLoop() {
         if (!gateMode && identified && Clock::now() >= nextReconcile) {
             ScheduleReconciliation(); nextReconcile = Clock::now() + std::chrono::seconds(30);
         }
-        if (!gateMode && identified && protocolVersion == 1 && Clock::now() >= nextPositions && !positionsInFlight) {
+        if (!gateMode && identified && protocolVersion == 1 && positionPacer.Ready(Clock::now()) && !positionsInFlight) {
             SchedulePositions();
-            if (!positionsInFlight) nextPositions = Clock::now() + std::chrono::seconds(1);
+        }
+        if (protocolVersion == 1 && identified && positionPacer.TimedOut(Clock::now())) {
+            lastError = "no player-positions eventAck for 30 s; reconnecting for a fresh snapshot";
+            NativeTransport::RequestClose(currentEpoch, 1013, "position ack timeout");
+            positionPacer.Reset(Clock::now());
         }
         if (protocolVersion == 1 && identified && unackedSince && Clock::now() - *unackedSince > kAckTimeout) {
             lastError = "no eventAck from Takaro for 30 s; reconnecting to resend";

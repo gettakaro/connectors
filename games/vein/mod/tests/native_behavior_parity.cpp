@@ -1,4 +1,5 @@
 #include "native_behavior.h"
+#include "position_pacer.h"
 #include "native_log.h"
 #include "native_map.h"
 #include "game_profile.h"
@@ -84,6 +85,26 @@ size_t PendingBanJobs(){return 0;}
 }
 
 int main(){
+    {
+        NativeBridge::PositionPacer pacer;
+        using namespace std::chrono;
+        const auto start = NativeBridge::PositionPacer::Time{};
+        pacer.Reset(start);
+        Check(!pacer.Ready(start + seconds(2)), "new connections wait one interval");
+        Check(pacer.Ready(start + seconds(3)), "first fresh position becomes eligible");
+        pacer.Sent(1, start + seconds(3));
+        Check(!pacer.Ready(start + seconds(20)), "delayed ack blocks additional samples");
+        pacer.Ack(0, start + seconds(20));
+        Check(!pacer.Ready(start + seconds(20)), "old ack cannot release pending position");
+        pacer.Ack(1, start + seconds(20));
+        Check(!pacer.Ready(start + seconds(22)), "interval begins at receipt acknowledgement");
+        Check(pacer.Ready(start + seconds(23)), "fresh sample after ack plus interval");
+        pacer.Sent(2, start + seconds(23));
+        Check(!pacer.TimedOut(start + seconds(52)) && pacer.TimedOut(start + seconds(53)), "missing position ack expires after 30 seconds");
+        pacer.Reset(start + seconds(53));
+        Check(!pacer.Ready(start + seconds(55)) && pacer.Ready(start + seconds(56)), "reconnect discards pending snapshot and delays fresh sampling");
+    }
+
     char tmp[]="/tmp/vein-behavior-XXXXXX";char* path=mkdtemp(tmp);Check(path,"mkdtemp");
     setenv("TAKARO_STATE_DIR",path,1);setenv("TAKARO_SENDER_NAME","Bot",1);
     setenv("TAKARO_CONFIG_FILE",(fs::path(path)/"takaro.cfg").c_str(),1);
@@ -184,7 +205,7 @@ int main(){
             Check(std::find(names.begin(),names.end(),name)!=names.end(),std::string("manifest declares ")+name);
         Check(std::find(names.begin(),names.end(),"testReachability")==names.end(),"testReachability is not a capability");
         const Json pushed=manifest[std::find(names.begin(),names.end(),"events.player-positions")-names.begin()];
-        Check(pushed["parameters"]["intervalSeconds"]==5,"player positions use a five second push interval");
+        Check(pushed["parameters"]["intervalSeconds"]==3,"player positions use a three second minimum interval");
         const Json batch=Parse(NativeBehavior::PositionBatchFrame(
             R"([{"gameId":"76561198000000001","position":{"x":1,"y":2,"z":3}}])", "vein-positions-test", 7));
         Check(batch["payload"]["type"]=="player-positions" && batch["payload"]["seq"]==7 &&

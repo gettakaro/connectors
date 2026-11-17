@@ -30,7 +30,12 @@ int main(int argc, char** argv) {
                     std::make_shared<const std::string>(R"({"seq":1})"), n.epoch, 1, false});
                 auto second = NativeTransport::Queue({NativeTransport::Kind::Event,
                     std::make_shared<const std::string>(R"({"seq":2})"), n.epoch, 2, false});
-                pruneReady = first && second && NativeTransport::PruneEventsBefore(2, n.epoch) == 1;
+                auto transientBefore = NativeTransport::Queue({NativeTransport::Kind::TransientEvent,
+                    std::make_shared<const std::string>(R"({"transient":true})"), n.epoch, 0, false});
+                const auto removed = NativeTransport::PruneEventsBefore(2, n.epoch);
+                auto transientAfter = NativeTransport::Queue({NativeTransport::Kind::TransientEvent,
+                    std::make_shared<const std::string>(R"({"transient":true})"), n.epoch, 0, false});
+                pruneReady = first && second && transientBefore && transientAfter && removed == 1;
             }
         }
         if (n.type == NativeTransport::NoticeType::Closed) ++closes;
