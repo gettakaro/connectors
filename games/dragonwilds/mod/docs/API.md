@@ -213,7 +213,9 @@ for it up to 15 s after login.
 - `truncated: true` means events between `since` and the oldest buffered event were dropped.
 - Types: `player-connected`, `player-disconnected`, `chat-message`, `player-positions`, `player-death`, `entity-killed`,
   `log`. `player-positions` snapshots are captured on the game thread every five seconds while a v1
-  Takaro connection is identified. These connection-scoped snapshots are discarded on disconnect rather than replayed. Players without a spawned, readable pawn are omitted. A failed
+  Takaro connection is identified. The next snapshot is sampled at least five seconds after Takaro
+  acknowledges the previous one, so transport stalls cannot bunch receipts inside the declared interval.
+  These connection-scoped snapshots are discarded on disconnect rather than replayed. Players without a spawned, readable pawn are omitted. A failed
   snapshot is skipped. Live acceptance of this new event remains unverified. `entity-killed` carries a readable `entity` name
   (`ADominionAICharacter::AIName`) with the Blueprint class in `entityCode`/`entityClass`, and the
   weapon that made the kill in `weapon`/`weaponCode`; `weaponSource` names the route that resolved

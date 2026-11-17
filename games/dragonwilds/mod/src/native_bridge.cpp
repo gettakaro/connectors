@@ -136,6 +136,9 @@ uint64_t highestSentSeq = 0;
 std::optional<Clock::time_point> unackedSince;
 constexpr auto kAckTimeout = std::chrono::seconds(30);
 uint64_t eventErrorCount = 0;
+uint64_t positionSeq = 0;
+bool positionAwaitingAck = false;
+Clock::time_point nextPositions, positionQueuedAt;
 bool liveEpoch = false;
 std::string lastError;
 struct Published {
@@ -293,6 +296,7 @@ Json MapEvent(const Json& e) {
 
 // Version 1 events and acks name this stream: one per process, as the protocol asks.
 std::string StreamId() { return "dragonwilds-" + BootId(); }
+std::string PositionStreamId() { return StreamId() + "-positions-" + std::to_string(currentEpoch); }
 
 // Version 0 keeps the free-form string; version 1 uses the standard { code, message } error.
 Json ErrorValue(const std::string& message) {
@@ -562,6 +566,14 @@ void HandleFrame(const NativeTransport::Notice& n) {
     } else if (type == "eventAck" && protocolVersion == 1) {
         const Json p = Record(f.value("payload", Json::object()));
         const Json upTo = p.value("upTo", Json());
+        if (Str(p, "streamId") == PositionStreamId()) {
+            if (positionAwaitingAck && upTo.is_number_unsigned() && upTo.get<uint64_t>() == positionSeq) {
+                positionAwaitingAck = false;
+                nextPositions = Clock::now() + std::chrono::seconds(5);
+            }
+            return;
+        }
+        if (Str(p, "streamId") != StreamId()) return;
         // Never confirm past what this connection sent: a wrong ack must not drop unsent events.
         if (Str(p, "streamId") == StreamId() && upTo.is_number_unsigned() && upTo.get<uint64_t>() > ackedThrough)
             ackedThrough = std::min(upTo.get<uint64_t>(), highestSentSeq);
@@ -1064,8 +1076,7 @@ void EnforceRequestDeadline() {
 
 void BridgeLoop() {
     auto nextPoll = Clock::now();
-    auto nextPositions = Clock::now();
-    uint64_t positionSeq = 0;
+    nextPositions = Clock::now();
     auto nextExpiry = Clock::now(), nextReconcile = Clock::now(), nextBanIntent = Clock::now(),
          nextBanMetadata = Clock::now(),
          nextDurability = Clock::now();
@@ -1118,6 +1129,8 @@ void BridgeLoop() {
             if (n.type == NativeTransport::NoticeType::Open) {
                 currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0;
                 positionSeq = 0;
+                positionAwaitingAck = false;
+                nextPositions = std::max(nextPositions, Clock::now() + std::chrono::seconds(5));
                 highestSentSeq = 0; unackedSince.reset();
                 sentEpochByOutboxId.clear();
                 Json p = {{"identityToken", identity}};
@@ -1305,19 +1318,25 @@ void BridgeLoop() {
                 }
             }
         }
-        if (!gateMode && identified && protocolVersion == 1 && Clock::now() >= nextPositions) {
+        if (positionAwaitingAck && Clock::now() - positionQueuedAt >= std::chrono::seconds(30))
+            NativeTransport::RequestClose(currentEpoch, 1013, "position acknowledgement timeout");
+        if (!gateMode && identified && protocolVersion == 1 && !positionAwaitingAck && Clock::now() >= nextPositions) {
             const uint64_t snapshotEpoch = currentEpoch;
             Actions::Result snapshot = Actions::PlayerPositions();
             if (snapshot.status == 200 && identified && liveEpoch && currentEpoch == snapshotEpoch) {
                 Json frame = {{"type", "gameEvent"}, {"payload", {
                     {"type", "player-positions"},
                     {"data", {{"positions", Json::parse(snapshot.body)}}},
-                    {"streamId", StreamId() + "-positions-" + std::to_string(currentEpoch)},
+                    {"streamId", PositionStreamId()},
                     {"seq", positionSeq + 1}
                 }}};
-                if (NativeTransport::Queue({NativeTransport::Kind::Position,
-                                            std::make_shared<const std::string>(frame.dump()),
-                                            currentEpoch, 0, false})) ++positionSeq;
+                auto encoded = std::make_shared<const std::string>(frame.dump());
+                if (NativeTransport::Queue({NativeTransport::Kind::Position, encoded, currentEpoch, 0, false})) {
+                    ++positionSeq;
+                    positionAwaitingAck = true;
+                    positionQueuedAt = Clock::now();
+                    if (wireDebug) WireLog("SEND", *encoded);
+                }
             } else if (snapshot.status != 200) {
                 lastError = "player positions snapshot: " + snapshot.body;
             }

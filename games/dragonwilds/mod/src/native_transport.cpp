@@ -314,7 +314,7 @@ void Run() {
             if (session.immediatePing || Clock::now() - session.lastPing >= std::chrono::seconds(5))
                 lws_callback_on_writable(session.wsi);
             std::lock_guard<std::mutex> g(mu);
-            if (closeRequest || !controls.empty() || !criticalResponses.empty() || !responses.empty() || !events.empty())
+            if (closeRequest || !controls.empty() || !criticalResponses.empty() || !responses.empty() || !positions.empty() || !events.empty())
                 lws_callback_on_writable(session.wsi);
         }
     }

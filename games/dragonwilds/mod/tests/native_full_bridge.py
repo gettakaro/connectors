@@ -85,6 +85,36 @@ class V1Run(Run):
     identify_reply = {'gameServerId': 'test-server', 'protocolVersion': 1}
 
 
+def position_ack_cadence(cert, key, state):
+    run = V1Run(cert, key, state)
+    is_position = lambda value: value['payload']['type'] == 'player-positions'
+    try:
+        first = run.game_event(is_position, timeout=8)
+        stream = first['payload']['streamId']
+        seq = first['payload']['seq']
+        assert first['payload']['data'] == {'positions': []}, first
+        assert not read(state / 'event-outbox.json')['pending'], 'snapshot entered durable outbox'
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': seq + 1}})
+        try:
+            run.game_event(is_position, timeout=6)
+            raise AssertionError('snapshot sent before matching acknowledgement')
+        except AssertionError as error:
+            assert str(error) == 'missing event', error
+        acked_at = time.monotonic()
+        run.peer.send(run.index, {'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': seq}})
+        second = run.game_event(is_position, timeout=8)
+        assert time.monotonic() - acked_at >= 5, 'next snapshot compressed into the declared interval'
+        assert second['payload']['seq'] == seq + 1, second
+        run.peer.close_session(run.index)
+        run.index = run.identify()
+        run.pending = []
+        fresh = run.game_event(is_position, timeout=8)
+        assert fresh['payload']['streamId'] != stream and fresh['payload']['seq'] == 1, fresh
+        print('production position snapshots wait for ack plus interval, stay transient and reset on reconnect: pass', flush=True)
+    finally:
+        run.close()
+
+
 def protocol_v1(cert, key, state):
     run = V1Run(cert, key, state)
     try:
@@ -800,7 +830,7 @@ def main():
         subprocess.run(['openssl', 'x509', '-req', '-in', str(csr), '-signkey', str(key),
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for test in (protocol_v1, protocol_v0_forced, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
+        for test in (position_ack_cadence, protocol_v1, protocol_v0_forced, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
                      replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
                      engine_before_plugin, ambiguous_engine_ban, newer_ban_after_crash, permanent_restart, timed_replacement,
                      failed_ban_write,
