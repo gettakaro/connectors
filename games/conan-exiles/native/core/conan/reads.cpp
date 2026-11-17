@@ -673,6 +673,43 @@ bool ReadService::Snapshot(std::vector<PlayerRecord>& out, std::string& error) {
     return true;
 }
 
+bool ReadService::PositionSnapshot(JsonValue& positions) {
+    std::lock_guard<std::mutex> g(mu_);
+    std::vector<PlayerRecord> players;
+    std::string error;
+    if (!Snapshot(players, error) || players.size() > 1000) return false;
+
+    JsonValue batch = takaro::JArr();
+    PlayerReader reader(*r_, layout_);
+    for (const PlayerRecord& player : players) {
+        if (!IsSteam64(player.steam64)) continue;
+        uintptr_t actor = player.pawn ? player.pawn : player.pc;
+        if (!actor) return false;
+        double v[3];
+        if (locationCheck_ == Check::Failed && player.pawn) {
+            if (!SlowLocation(actor, v)) return false;
+        } else {
+            Location loc;
+            if (!reader.Location(actor, loc, error)) return false;
+            v[0] = loc.x;
+            v[1] = loc.y;
+            v[2] = loc.z;
+        }
+        for (double coordinate : v)
+            if (!std::isfinite(coordinate) || coordinate <= -1e8 || coordinate >= 1e8) return false;
+        JsonValue entry = takaro::JObj();
+        takaro::Put(entry, "gameId", takaro::JStr(player.steam64));
+        JsonValue position = takaro::JObj();
+        takaro::Put(position, "x", takaro::JNum(v[0]));
+        takaro::Put(position, "y", takaro::JNum(v[1]));
+        takaro::Put(position, "z", takaro::JNum(v[2]));
+        takaro::Put(entry, "position", std::move(position));
+        batch.arr.push_back(std::move(entry));
+    }
+    positions = std::move(batch);
+    return true;
+}
+
 std::string ReadService::PlayerJson(const PlayerRecord& p) {
     ObjBuilder b;
     std::string name = !p.name.empty() ? p.name : !p.characterName.empty() ? p.characterName : p.steam64;

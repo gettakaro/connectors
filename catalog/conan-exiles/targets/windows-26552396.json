@@ -4,7 +4,7 @@
   "game": "conan-exiles",
   "platform": "windows",
   "revision": "26552396",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-11-12",

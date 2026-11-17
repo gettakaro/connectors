@@ -58,6 +58,9 @@ public:
     static bool Handles(const std::string& action);
     // Action worker thread. Always produces a result (ok payload or a structured error).
     takaro::ActionResult Execute(const std::string& action, const JsonValue& args);
+    // Worker thread: one online-player snapshot and location read for each pawn.
+    // False means the batch is incomplete and must not replace Takaro's last snapshot.
+    bool PositionSnapshot(JsonValue& positions);
     std::string HealthJson();
 
     // One warm-up step (index scan, layout, catalogues, text self-check). True once everything

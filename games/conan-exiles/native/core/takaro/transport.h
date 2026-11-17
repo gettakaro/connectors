@@ -18,7 +18,7 @@
 
 namespace takaro {
 
-enum class FrameKind { Control = 0, CriticalResponse = 1, Response = 2, Event = 3 };
+enum class FrameKind { Control = 0, CriticalResponse = 1, Response = 2, Position = 3, Event = 4 };
 enum class QueueStatus { Accepted, Disconnected, StaleEpoch, Full, TooLarge };
 const char* QueueStatusName(QueueStatus s);
 
@@ -59,7 +59,7 @@ public:
 constexpr size_t kMaxInboundBytes = 1u << 20;   // one Takaro message
 constexpr size_t kMaxOutboundFrame = 8u << 20;  // one outbound message (listItems is ~0.6 MiB)
 
-// Bounded per-kind FIFO queues with strict priority Control > CriticalResponse > Response > Event.
+// Bounded queues: Control > CriticalResponse > Response > Position > Event.
 // Not thread-safe; the owner locks.
 class FrameQueues {
 public:
@@ -77,8 +77,8 @@ public:
     uint64_t Rejected() const { return rejected_; }
 
 private:
-    std::deque<OutFrame> q_[4];
-    size_t bytes_[4] = {0, 0, 0, 0};
+    std::deque<OutFrame> q_[5];
+    size_t bytes_[5] = {0, 0, 0, 0, 0};
     uint64_t rejected_ = 0;
 };
 

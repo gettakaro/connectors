@@ -191,6 +191,20 @@ size_t Store::Acknowledge(const std::string& stream, uint64_t upTo) {
     return n;
 }
 
+size_t Store::DiscardType(const std::string& type) {
+    size_t n = 0;
+    for (auto it = outbox_.pending.begin(); it != outbox_.pending.end();) {
+        if (it->type == type) {
+            outbox_.pendingBytes -= it->frame.size();
+            it = outbox_.pending.erase(it);
+            n++;
+        } else {
+            ++it;
+        }
+    }
+    return n;
+}
+
 bool Store::SaveOutbox() { return Write("outbox", outboxPath_, OutboxJson(outbox_)); }
 
 }  // namespace takaro

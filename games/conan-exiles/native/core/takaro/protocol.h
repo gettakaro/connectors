@@ -12,7 +12,7 @@ namespace takaro {
 // The 19 actions Takaro's Generic game server can request, and the 6 event types it accepts.
 constexpr int kActionCount = 19;
 extern const char* const kActions[kActionCount];
-constexpr int kEventTypeCount = 6;
+constexpr int kEventTypeCount = 7;
 extern const char* const kEventTypes[kEventTypeCount];
 bool IsAction(const std::string& action);
 bool IsEventType(const std::string& type);

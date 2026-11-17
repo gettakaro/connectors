@@ -59,6 +59,8 @@ public:
     size_t ConfirmThrough(uint64_t outboxId);
     // Protocol 1 eventAck: removes every pending event of `stream` with seq <= upTo.
     size_t Acknowledge(const std::string& stream, uint64_t upTo);
+    // Position batches are current-state snapshots, not history to replay after reconnect.
+    size_t DiscardType(const std::string& type);
     const std::string& StreamId() const { return streamId_; }
     bool SaveOutbox();
 

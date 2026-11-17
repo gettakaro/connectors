@@ -28,6 +28,9 @@ bool Bridge::Start() {
     if (started_.exchange(true)) return false;
     stopping_ = false;
     storeNotes_ = o_.store->Load();
+    if (o_.store->DiscardType("player-positions")) {
+        o_.store->SaveOutbox();
+    }
     NativeLog("takaro: state dir %s: %s", o_.store->Dir().c_str(), storeNotes_.c_str());
     int64_t now = o_.steadyMs();
     if (o_.watcher) o_.watcher->Announce(o_.config, now);
@@ -179,6 +182,10 @@ void Bridge::HandleNotice(Notice& n) {
     switch (n.type) {
         case NoticeType::Open: {
             epoch_ = n.epoch;
+            connectionOpenedAt_ = o_.steadyMs();
+            latestPosition_.clear();
+            positionPacer_.Reset(NewStreamId(), connectionOpenedAt_);
+            positionCloseRequested_ = false;
             open_ = true;
             identified_ = false;
             opens_++;
@@ -217,6 +224,8 @@ void Bridge::HandleNotice(Notice& n) {
             open_ = false;
             identified_ = false;
             protocol_ = 0;
+            latestPosition_.clear();
+            if (o_.store->DiscardType("player-positions")) outboxDirty_ = true;
             closes_++;
             NativeLog("takaro: WebSocket closed (epoch %llu): %s; %zu event(s) unconfirmed, kept for replay",
                       (unsigned long long)n.epoch, o_.config.Redact(n.text).c_str(),
@@ -295,6 +304,10 @@ void Bridge::HandleFrame(uint64_t epoch, const std::string& text) {
     } else if (type == "eventError") {
         const JsonValue& p = AsRecord(msg.get("payload"));
         const JsonValue& e = AsRecord(msg.get("error"));
+        auto stream = Str(p.get("streamId"));
+        auto seq = Num(p.get("seq"));
+        if (stream && seq && *seq >= 0)
+            positionPacer_.Acknowledge(*stream, (uint64_t)*seq, o_.steadyMs());
         eventErrors_++;
         lastEventError_ = Str(e.get("code")).value_or("?") + ": " + o_.config.Redact(Str(e.get("message")).value_or("")) +
                           " (seq " + JsString(p.get("seq")) + ")";
@@ -476,6 +489,16 @@ void Bridge::PollEvents() {
         return;
     }
     for (auto& e : events) {
+        if (e.type == "player-positions") {
+            int64_t captured = (int64_t)e.capturedAtMs;
+            int64_t now = o_.steadyMs();
+            if (identified_ && protocol_ == 1 && e.data.type == JsonValue::Object &&
+                captured >= connectionOpenedAt_ && now - captured < kPositionIntervalMs) {
+                latestPosition_ = CreateGameEvent(e.type, e.data);
+                positionCapturedAt_ = captured;
+            }
+            continue;
+        }
         if (!IsEventType(e.type) || e.data.type != JsonValue::Object) {
             eventsRejected_++;
             NativeLog("takaro: dropping an event with an unknown type '%s'", e.type.c_str());
@@ -493,6 +516,7 @@ void Bridge::PollEvents() {
 
 void Bridge::DeliverEvents() {
     if (!open_ || !identified_ || !o_.store->OutboxUsable()) return;
+    DeliverPosition(o_.steadyMs());
     auto& pending = o_.store->Outbox().pending;
     auto it = std::upper_bound(pending.begin(), pending.end(), lastQueuedId_,
                                [](uint64_t id, const PendingEvent& e) { return id < e.id; });
@@ -514,6 +538,23 @@ void Bridge::DeliverEvents() {
     }
 }
 
+void Bridge::DeliverPosition(int64_t now) {
+    if (protocol_ != 1 || positionCloseRequested_) return;
+    if (positionPacer_.TimedOut(now)) {
+        positionCloseRequested_ = true;
+        latestPosition_.clear();
+        o_.transport->RequestClose(epoch_, "position acknowledgement timed out");
+        return;
+    }
+    if (!latestPosition_.empty() && now - positionCapturedAt_ >= kPositionIntervalMs) latestPosition_.clear();
+    if (latestPosition_.empty() || !positionPacer_.CanSend(now)) return;
+    std::string frame = WithStream(latestPosition_, positionPacer_.Stream(), positionPacer_.NextSeq());
+    if (o_.transport->Queue({FrameKind::Position, Text(std::move(frame)), epoch_, 0}) != QueueStatus::Accepted) return;
+    positionPacer_.Sent(now);
+    latestPosition_.clear();
+    eventsQueued_++;
+}
+
 std::string Bridge::ErrorFrame(const std::string& requestId, const std::string& code, const std::string& message) const {
     return protocol_ >= 1 ? CreateErrorResponseV1(requestId, code.empty() ? kGameError : code, message)
                           : CreateErrorResponse(requestId, message);
@@ -524,6 +565,10 @@ void Bridge::HandleEventAck(const JsonValue& msg) {
     auto stream = Str(p.get("streamId"));
     auto upTo = Num(p.get("upTo"));
     if (protocol_ < 1 || !stream || !upTo || *upTo < 0) return;
+    if (*stream == positionPacer_.Stream()) {
+        positionPacer_.Acknowledge(*stream, (uint64_t)*upTo, o_.steadyMs());
+        return;
+    }
     acks_++;
     size_t n = o_.store->Acknowledge(*stream, (uint64_t)*upTo);
     ackedEvents_ += n;

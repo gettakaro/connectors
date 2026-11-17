@@ -42,7 +42,7 @@ struct EventKeys {
 const EventKeys kEvents[] = {
     {"player-connected", {"player", "msg", "timestamp"}},
     {"player-disconnected", {"player", "msg", "timestamp"}},
-    {"chat-message", {"player", "channel", "recipient", "msg", "timestamp"}},
+    {"chat-message", {"player", "channel", "recipient", "position", "msg", "timestamp"}},
     {"player-death", {"player", "attacker", "position", "msg", "timestamp"}},
     {"entity-killed", {"player", "entity", "weapon", "msg", "timestamp"}},
     {"log", {"msg", "timestamp"}},
@@ -88,12 +88,20 @@ JsonValue ConnectedPayload(const PlayerId& p) {
     return o;
 }
 
-JsonValue ChatPayload(const PlayerId& p, const std::string& conanChannel, const std::string& msg) {
+JsonValue ChatPayload(const PlayerId& p, const std::string& conanChannel, const std::string& msg,
+                      const Position& position) {
     if (!p.Valid() || TrimWs(msg).empty()) return JNull();
     JsonValue o = JObj();
     Put(o, "player", PlayerJson(p));
     Put(o, "channel", JStr(MapChannel(conanChannel)));
     Put(o, "msg", JStr(msg));
+    if (position.has && std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z)) {
+        JsonValue point = JObj();
+        Put(point, "x", JNum(position.x));
+        Put(point, "y", JNum(position.y));
+        Put(point, "z", JNum(position.z));
+        Put(o, "position", std::move(point));
+    }
     return o;
 }
 

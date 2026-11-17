@@ -32,11 +32,12 @@ std::string MapChannel(const std::string& conanChannel);
 
 // Each returns an Object, or Null when a required field is missing (the event is then not sent).
 JsonValue ConnectedPayload(const PlayerId& p);  // player-connected and player-disconnected
-JsonValue ChatPayload(const PlayerId& p, const std::string& conanChannel, const std::string& msg);
 struct Position {
     bool has = false;
     double x = 0, y = 0, z = 0;
 };
+JsonValue ChatPayload(const PlayerId& p, const std::string& conanChannel, const std::string& msg,
+                      const Position& position = {});
 // attacker only when the killer is another player. msg is a readable summary.
 JsonValue DeathPayload(const PlayerId& victim, const PlayerId* attacker, const Position& pos, const std::string& msg);
 JsonValue KilledPayload(const PlayerId& killer, const std::string& entity, const std::string& weapon);
