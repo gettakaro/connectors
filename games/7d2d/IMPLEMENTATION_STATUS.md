@@ -139,7 +139,9 @@ All published via `mod/src/WebSocket/GameEventPublisher.cs` (non-blocking outbou
 - **`player-positions`** — implemented for protocol v1; the existing main-thread
   sampler pushes the full online-player snapshot every 3 seconds. Pending snapshots
   replace older ones, expire after 5 seconds, and are discarded on reconnect rather
-  than replayed. Live Takaro verification is pending.
+  than replayed. The sender keeps one batch in flight and waits at least 3 seconds
+  after Takaro's acknowledgement before sending another; gameplay events can pass a
+  parked batch. Live Takaro verification is pending.
 - **`entity-killed`** — Live-supported; real vanilla-client non-player kill with
   player attribution and non-empty held weapon
 - **`player-death`** — Live-supported; real vanilla-client fall death with

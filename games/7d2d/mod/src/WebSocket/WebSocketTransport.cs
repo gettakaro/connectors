@@ -447,6 +447,12 @@ namespace Takaro.WebSocket
                         $"Error sending WebSocket message (attempt {_headFailureCount}): "
                             + $"{ex.GetType().FullName}: {ex.Message}"
                     );
+                    if (head.IsPosition)
+                    {
+                        _ledger.DropFailedPosition(head);
+                        _headFailureCount = 0;
+                        return;
+                    }
                     if (IsInboundStale() || !IsSendable(socket))
                     {
                         // The link is suspect or the socket is already

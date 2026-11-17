@@ -76,6 +76,9 @@ namespace Takaro.Services
         private readonly Func<long> _utcTicks;
         private readonly Queue<long> _logConfirmedAt = new Queue<long>();
         private int _logsInFlight;
+        private bool _positionInFlight;
+        private long _nextPositionAtTicks;
+        private static readonly long PositionIntervalTicks = TimeSpan.FromSeconds(3).Ticks;
 
         public OutboundLedger(
             int maxPending,
@@ -179,6 +182,8 @@ namespace Takaro.Services
                         eventsHeld = true;
                     continue;
                 }
+                if (entry.IsPosition && (_positionInFlight || _utcTicks() < _nextPositionAtTicks))
+                    continue;
                 if (!eventsHeld)
                     return Number(entry);
             }
@@ -232,6 +237,8 @@ namespace Takaro.Services
 
             if (head.IsLog)
                 _logsInFlight++;
+            if (head.IsPosition)
+                _positionInFlight = true;
 
             if (head.Replayable)
             {
@@ -257,6 +264,16 @@ namespace Takaro.Services
         {
             if (entry != null)
                 _pending.Remove(entry);
+        }
+
+        public void DropFailedPosition(Entry entry)
+        {
+            if (entry == null || !entry.IsPosition || !_pending.Remove(entry))
+                return;
+            _nextPositionAtTicks = Math.Max(
+                _nextPositionAtTicks,
+                _utcTicks() + PositionIntervalTicks
+            );
         }
 
         /// <summary>
@@ -319,6 +336,25 @@ namespace Takaro.Services
             return confirmed;
         }
 
+        public bool RejectPosition(string streamId, long seq)
+        {
+            if (streamId != StreamId)
+                return false;
+            for (
+                LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.First;
+                node != null;
+                node = node.Next
+            )
+            {
+                if (!node.Value.Value.IsPosition || node.Value.Value.Seq != seq)
+                    continue;
+                Confirmed(node.Value.Value);
+                _inFlight.Remove(node);
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// The socket the in-flight events were written on is gone: put them back
         /// at the front of the backlog, oldest first, and start a new generation
@@ -329,6 +365,11 @@ namespace Takaro.Services
         {
             ConfirmsByPong = confirmsByPong;
             int requeued = 0;
+            if (_positionInFlight)
+                _nextPositionAtTicks = Math.Max(
+                    _nextPositionAtTicks,
+                    _utcTicks() + PositionIntervalTicks
+                );
             for (
                 LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.Last;
                 node != null;
@@ -350,6 +391,7 @@ namespace Takaro.Services
             }
 
             _inFlight.Clear();
+            _positionInFlight = false;
             _logsInFlight = 0;
             _pingMarks.Clear();
             _lastPingMark = _writeSequence;
@@ -401,6 +443,14 @@ namespace Takaro.Services
 
         private void Confirmed(Entry entry)
         {
+            if (entry.IsPosition)
+            {
+                _positionInFlight = false;
+                _nextPositionAtTicks = Math.Max(
+                    _nextPositionAtTicks,
+                    _utcTicks() + PositionIntervalTicks
+                );
+            }
             if (!entry.IsLog)
                 return;
             _logsInFlight--;

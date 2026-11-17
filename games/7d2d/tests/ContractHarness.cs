@@ -64,6 +64,7 @@ public static partial class ContractHarness
             AssertMissingLocalisationIsNotShown();
             AssertOutboundLedgerReplaysUnconfirmedEvents();
             AssertPositionSnapshotsStayCurrentAcrossReconnects();
+            AssertPositionBatchesWaitForAcknowledgement();
             AssertBanCaptureKeepsOneRecordPerPlayer();
             AssertUnbanLiftsTheEntriesTheMirrorReports();
             AssertBanCaptureMergesBothStores();
@@ -1291,6 +1292,98 @@ public static partial class ContractHarness
         now += TimeSpan.FromSeconds(5).Ticks;
         Equal("gameplay", ledger.NextToSend().Json, "an expired snapshot never reaches the socket");
         Equal(1, ledger.PendingCount, "expired snapshot is removed without dropping gameplay");
+    }
+
+    private static void AssertPositionBatchesWaitForAcknowledgement()
+    {
+        long now = 1000L * TimeSpan.TicksPerSecond;
+        var ledger = new OutboundLedger(10, 10, "stream-a", utcTicks: () => now);
+        var session = new TransportSession(ledger, () => now);
+        long socket = session.BeginSocket();
+        True(session.MarkOpened(socket), "position test socket opens");
+        True(session.MarkIdentifySent(socket), "position test socket identifies");
+        Equal(
+            InboundKind.IdentifyAccepted,
+            session.HandleInbound(socket, true, AcceptedV1).Kind,
+            "position test negotiates v1"
+        );
+        True(session.TryConfirm(), "position test identifies fully");
+        session.ReplayUnconfirmedOnNewSocket();
+
+        ledger.Enqueue(
+            "position-1",
+            true,
+            false,
+            isPosition: true,
+            generation: socket,
+            createdAtTicks: now
+        );
+        OutboundLedger.Entry first = ledger.NextToSend();
+        ledger.MarkWritten(first);
+        ledger.Enqueue(
+            "position-2",
+            true,
+            false,
+            isPosition: true,
+            generation: socket,
+            createdAtTicks: now
+        );
+        ledger.Enqueue("gameplay", true, false);
+        Equal(
+            "gameplay",
+            ledger.NextToSend().Json,
+            "gameplay passes the position awaiting Takaro ack"
+        );
+        ledger.MarkWritten(ledger.NextToSend());
+        True(ledger.NextToSend() == null, "only one position may be in flight");
+
+        Equal(
+            InboundKind.EventAck,
+            session
+                .HandleInbound(
+                    socket,
+                    true,
+                    "{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"stream-a\",\"upTo\":1}}"
+                )
+                .Kind,
+            "Takaro acknowledges the first position"
+        );
+        session.ApplyAcknowledgements();
+        now += TimeSpan.FromMilliseconds(2999).Ticks;
+        True(ledger.NextToSend() == null, "second position stays parked before three seconds");
+        now += TimeSpan.FromMilliseconds(1).Ticks;
+        OutboundLedger.Entry second = ledger.NextToSend();
+        Equal("position-2", second.Json, "fresh position releases three seconds after ack");
+        Equal(3L, second.Seq, "gameplay and position sequence follow wire order");
+        ledger.MarkWritten(second);
+
+        ledger.Enqueue(
+            "position-3",
+            true,
+            false,
+            isPosition: true,
+            generation: socket,
+            createdAtTicks: now
+        );
+        Equal(
+            InboundKind.EventError,
+            session
+                .HandleInbound(
+                    socket,
+                    true,
+                    "{\"type\":\"eventError\",\"payload\":{\"streamId\":\"stream-a\",\"seq\":3},\"error\":{\"code\":\"invalid_args\",\"message\":\"too soon\"}}"
+                )
+                .Kind,
+            "a rejected position has its own eventError"
+        );
+        session.ApplyAcknowledgements();
+        True(ledger.NextToSend() == null, "rejected position also starts a three-second wait");
+        now += TimeSpan.FromSeconds(3).Ticks;
+        Equal(
+            "position-3",
+            ledger.NextToSend().Json,
+            "the next current snapshot recovers after rejection"
+        );
     }
 
     private static Takaro.Persistence.BanRecord BanRecordFor(
