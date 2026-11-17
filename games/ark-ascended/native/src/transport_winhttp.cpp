@@ -670,6 +670,8 @@ void WinHttpTransport::SendLoop(Epoch* e) {
                 sendCv_.wait_for(l, std::chrono::milliseconds(200));
             }
         }
+        if (f.expires != std::chrono::steady_clock::time_point{} &&
+            std::chrono::steady_clock::now() >= f.expires) continue;
         int64_t t0 = Now();
         DWORD r = WinHttpWebSocketSend(e->ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, (PVOID)f.text->data(),
                                        (DWORD)f.text->size());

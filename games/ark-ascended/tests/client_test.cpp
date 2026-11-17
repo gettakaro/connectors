@@ -232,6 +232,190 @@ static void test_events_wait_for_identify() {
     CHECK(r.CountEvents() == 1);
 }
 
+static tj::Value PositionBatch(const char* id) {
+    tj::Value rows = tj::Value::array();
+    rows.push(tj::obj({{"gameId", tj::str(id)}, {"position", tj::obj({{"x", tj::num(1)}, {"y", tj::num(2)}, {"z", tj::num(3)}})}}));
+    return tj::obj({{"positions", std::move(rows)}});
+}
+
+static size_t PositionCount(Harness& r) {
+    size_t count = 0;
+    for (const auto& f : r.t.sent) count += f.kind == native::FrameKind::Position;
+    return count;
+}
+
+static void PositionAck(Harness& r, uint64_t epoch, const std::string& stream, int seq) {
+    r.Notify(NoticeType::Frame, epoch, tj::dump(tj::obj({{"type", tj::str("eventAck")},
+        {"payload", tj::obj({{"streamId", tj::str(stream)}, {"upTo", tj::num(seq)}})}})));
+}
+
+static void test_fresh_positions() {
+    Config cfg;
+    cfg.positionInterval = std::chrono::milliseconds(30);
+    Harness r(cfg);
+    CHECK(!r.c->BeginPositionRead());
+    r.Open(1);
+    CHECK(!r.c->BeginPositionRead());
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    auto read = r.c->BeginPositionRead();
+    CHECK(read);
+    if (!read) return;
+    r.c->EmitFreshPositions(*read, PositionBatch("first"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 1 && r.CountEvents() == 0);
+    auto sent = r.Last();
+    const auto stream = sent.get("payload")->get("streamId")->as_string();
+    CHECK(stream != "boot-1" && sent.get("payload")->get("seq")->as_number() == 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(45));
+    CHECK(!r.c->BeginPositionRead()); // Receipt, not elapsed producer time, releases the next read.
+    r.c->Emit("chat-message", tj::obj({{"msg", tj::str("chat while positions await receipt")}}));
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);
+    PositionAck(r, 1, "boot-1", 1);
+    CHECK(!r.c->BeginPositionRead());
+    PositionAck(r, 1, stream, 2);
+    CHECK(!r.c->BeginPositionRead());
+    PositionAck(r, 1, stream, 1);
+    CHECK(!r.c->BeginPositionRead());
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    auto second = r.c->BeginPositionRead();
+    CHECK(second);
+    if (!second) return;
+    r.c->EmitFreshPositions(*second, PositionBatch("after-receipt"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 2 && r.Last().get("payload")->get("seq")->as_number() == 2);
+    PositionAck(r, 1, stream, 2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    auto blocked = r.c->BeginPositionRead();
+    CHECK(blocked);
+    r.Notify(NoticeType::Closed, 1);
+    r.t.sent.clear();
+    r.Open(2);
+    if (blocked) r.c->EmitFreshPositions(*blocked, PositionBatch("old-read-crossed-reconnect"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    auto fresh = r.c->BeginPositionRead();
+    CHECK(fresh);
+    if (!fresh) return;
+    r.c->EmitFreshPositions(*fresh, PositionBatch("fresh-epoch"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 1);
+    CHECK(r.Last().get("payload")->get("seq")->as_number() == 1);
+    CHECK(r.Last().get("payload")->get("streamId")->as_string() != stream);
+    CHECK(r.Last().get("payload")->get("data")->get("positions")->as_array()[0].get("gameId")->as_string() == "fresh-epoch");
+    PositionAck(r, 1, stream, 1);
+    CHECK(!r.c->BeginPositionRead());
+    r.Notify(NoticeType::Closed, 2);
+    r.Open(3, 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    CHECK(!r.c->BeginPositionRead());
+}
+
+static void test_position_deadlines_and_backpressure() {
+    Config cfg;
+    cfg.positionInterval = std::chrono::milliseconds(10);
+    cfg.maxPositionAge = std::chrono::milliseconds(20);
+    cfg.positionAckDeadline = std::chrono::milliseconds(50);
+    Harness r(cfg);
+    r.Open(1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    auto stale = r.c->BeginPositionRead();
+    CHECK(stale);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    if (stale) r.c->EmitFreshPositions(*stale, PositionBatch("expired-read"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 0);
+    auto refused = r.c->BeginPositionRead();
+    CHECK(refused);
+    r.t.next = native::QueueStatus::Full;
+    if (refused) r.c->EmitFreshPositions(*refused, PositionBatch("refused"));
+    r.c->PumpOnce();
+    r.t.next = native::QueueStatus::Accepted;
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 0); // Refused coordinates are discarded, never retried stale.
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    auto accepted = r.c->BeginPositionRead();
+    CHECK(accepted);
+    if (accepted) r.c->EmitFreshPositions(*accepted, PositionBatch("accepted"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    r.c->PumpOnce();
+    CHECK(r.t.closes == 1 && !r.c->Identified() && !r.c->BeginPositionRead());
+    r.c->PumpOnce();
+    CHECK(r.t.closes == 1);
+    r.Notify(NoticeType::Closed, 1);
+    r.Open(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    auto afterStop = r.c->BeginPositionRead();
+    CHECK(afterStop);
+    r.c->Stop();
+    if (afterStop) r.c->EmitFreshPositions(*afterStop, PositionBatch("completed-after-stop"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 1);
+}
+
+static void test_positions_do_not_ack_gameplay_or_replay_cached_reads() {
+    Config cfg;
+    cfg.positionInterval = std::chrono::milliseconds(10);
+    cfg.maxPositionAge = std::chrono::milliseconds(20);
+    cfg.eventWindow = 1;
+    Harness r(cfg);
+    r.Open(1);
+    r.c->Emit("log", tj::obj({{"msg", tj::str("durable-first")}}));
+    r.c->Emit("log", tj::obj({{"msg", tj::str("durable-second")}}));
+    r.c->PumpOnce();
+    CHECK(r.CountEvents() == 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    auto old = r.c->BeginPositionRead();
+    CHECK(old);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    auto fresh = r.c->BeginPositionRead();
+    CHECK(fresh);
+    if (old) r.c->EmitFreshPositions(*old, PositionBatch("late-generation"));
+    if (fresh) r.c->EmitFreshPositions(*fresh, PositionBatch("fresh-generation"));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 1); // Full gameplay window cannot block positions.
+    const auto stream = r.Last().get("payload")->get("streamId")->as_string();
+    CHECK(r.Last().get("payload")->get("data")->get("positions")->as_array()[0].get("gameId")->as_string() == "fresh-generation");
+    PositionAck(r, 1, stream, 1);
+    CHECK(r.CountEvents() == 1); // Position receipt cannot acknowledge durable-first.
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    auto cached = r.c->BeginPositionRead();
+    CHECK(cached);
+    if (cached) r.c->EmitFreshPositions(*cached, PositionBatch("worker-stalled"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    r.c->PumpOnce();
+    CHECK(PositionCount(r) == 1);
+    r.Notify(NoticeType::Closed, 1);
+    r.t.sent.clear();
+    r.Open(2);
+    CHECK(r.CountEvents() == 1 && PositionCount(r) == 0);
+    CHECK(r.Last().get("payload")->get("seq")->as_number() == 1);
+    CHECK(r.Last().get("payload")->get("data")->get("msg")->as_string() == "durable-first");
+}
+
+static void test_position_transport_expiry() {
+    native::FrameQueues queues;
+    native::OutFrame p;
+    p.kind = native::FrameKind::Position;
+    p.text = std::make_shared<const std::string>("positions");
+    p.expires = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    CHECK(queues.Push(p) == native::QueueStatus::Expired);
+    p.expires = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+    CHECK(queues.Push(p) == native::QueueStatus::Accepted);
+    CHECK(queues.Push(p) == native::QueueStatus::Full);
+    native::OutFrame chat;
+    chat.kind = native::FrameKind::Event;
+    chat.text = std::make_shared<const std::string>("chat");
+    CHECK(queues.Push(chat) == native::QueueStatus::Accepted);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    native::OutFrame out;
+    CHECK(queues.Pop(out) && out.kind == native::FrameKind::Event);
+    CHECK(queues.TotalFrames() == 0 && queues.TotalBytes() == 0);
+}
+
 static void test_event_window() {
     Config cfg;
     cfg.eventWindow = 2;
@@ -323,6 +507,10 @@ int main() {
     test_late_complete_dropped();
     test_events_ack_and_replay();
     test_events_wait_for_identify();
+    test_fresh_positions();
+    test_position_deadlines_and_backpressure();
+    test_position_transport_expiry();
+    test_positions_do_not_ack_gameplay_or_replay_cached_reads();
     test_event_window();
     test_event_cap_counts_drops();
     test_queue_refusal_retries();
