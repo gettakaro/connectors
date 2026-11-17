@@ -65,7 +65,7 @@ Checked on server build 21241282 (game version 361.7). ✅ works, ⚠️ works w
 | Connection | ✅ | Connects once the world has loaded. |
 | Player list | ✅ | |
 | Player location | ✅ | |
-| Player position updates | ⚠️ | Protocol v1 sends current online pawn positions with a 3-second wait after each acknowledged batch; live Takaro verification pending. |
+| Player position updates | ✅ | Protocol v1 pushes current online pawn positions with a 3-second wait after each acknowledged batch. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |

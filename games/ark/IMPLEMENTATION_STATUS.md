@@ -21,5 +21,6 @@ or the sample is stale. `getPlayerLocation` remains supported for protocol v0
 and callers that explicitly request it; its retained death and departure
 positions are excluded from push batches.
 
-Source and fake Takaro contract tests are implemented. Real client movement,
-Takaro `eventSearch`, and tracking readback remain unverified for this change.
+Current pawn snapshots, positioned chat, and fresh reconnect streams are supported
+on Linux 21241282. Position acknowledgements pace only the transient stream;
+gameplay events retain their durable delivery cursor.
