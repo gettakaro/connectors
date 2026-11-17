@@ -4,6 +4,7 @@
 
 #include <sourcemod>
 #include "takaro_tf2_reconnect.inc"
+#include "takaro_tf2_positions.inc"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -44,6 +45,25 @@ void ExpectDelay(const char[] name, int streak, int baseMs, int capMs, int jitte
 
 public void OnPluginStart()
 {
+  PositionReceiptState positions;
+  positions.Reset(100.0);
+  ExpectInt("position initial cooldown", positions.Ready(102.9) ? 1 : 0, 0);
+  ExpectInt("position initial deadline", positions.Ready(103.0) ? 1 : 0, 1);
+  positions.Sent(1, 103.0);
+  ExpectInt("position waits for receipt", positions.Ready(120.0) ? 1 : 0, 0);
+  ExpectInt("future position receipt ignored", positions.Acknowledge(2, 120.0) ? 1 : 0, 0);
+  ExpectInt("old position receipt ignored", positions.Acknowledge(0, 120.0) ? 1 : 0, 0);
+  ExpectInt("position timeout does not fire early", positions.Expired(132.9) ? 1 : 0, 0);
+  ExpectInt("missing position receipt expires", positions.Expired(133.0) ? 1 : 0, 1);
+  ExpectInt("matching position receipt", positions.Acknowledge(1, 133.0) ? 1 : 0, 1);
+  ExpectInt("duplicate position receipt ignored", positions.Acknowledge(1, 134.0) ? 1 : 0, 0);
+  ExpectInt("position interval begins after receipt", positions.Ready(135.9) ? 1 : 0, 0);
+  ExpectInt("duplicate receipt does not delay next snapshot", positions.Ready(136.0) ? 1 : 0, 1);
+  positions.Sent(2, 136.0);
+  positions.Reset(140.0);
+  ExpectInt("reconnect drops position receipt", positions.Expired(180.0) ? 1 : 0, 0);
+  ExpectInt("reconnect waits full interval", positions.Ready(142.9) ? 1 : 0, 0);
+  ExpectInt("reconnect can send fresh snapshot", positions.Ready(143.0) ? 1 : 0, 1);
   // First retry after a stable session: 0.25-1.0 s whatever the configured backoff.
   ExpectDelay("stable drop, no jitter", 0, 1000, 60000, 0, 250);
   ExpectDelay("stable drop, half jitter", 0, 1000, 60000, 500, 625);

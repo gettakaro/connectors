@@ -57,7 +57,7 @@
     "entity-killed covers TF2 object_destroyed events (Engineer buildings), not every entity removal",
     "giveItem is unsupported: a TF2 server cannot grant Steam items, so shop item delivery is unavailable",
     "sendMessage shows the server chat name as a green [<name>] prefix in the chat line: TF2 has no separate sender field for server messages",
-    "player-positions is implemented for v1 with complete fresh five-second snapshots, but remains unverified through Takaro and a real TF2 client; batches defer while an online player has no live pawn"
+    "player-positions is implemented for v1 with complete fresh snapshots at least three seconds after the previous receipt, but remains unverified through Takaro and a real TF2 client; batches defer while an online player has no live pawn"
   ],
   "sourceRefs": [
     "mod/addons/sourcemod/scripting/takaro_tf2.sp",

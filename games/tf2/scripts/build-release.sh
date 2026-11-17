@@ -73,7 +73,7 @@ tar -xzf "$cache/downloads/sourcemod-linux.tar.gz" -C "$stage/sm" addons/sourcem
 # The release version goes into the plugin the server reports; the tracked source keeps its own.
 scripting="$project_root/mod/addons/sourcemod/scripting"
 cp "$scripting/takaro_tf2.sp" "$scripting/takaro_tf2_item_catalog.inc" "$scripting/takaro_tf2_chat.inc" \
-    "$scripting/takaro_tf2_reconnect.inc" "$stage/src/"
+    "$scripting/takaro_tf2_reconnect.inc" "$scripting/takaro_tf2_positions.inc" "$stage/src/"
 cp "$project_root/tests/takaro_tf2_chat_test.sp" "$project_root/tests/takaro_tf2_reconnect_test.sp" "$stage/src/"
 python3 -I - "$stage/src/takaro_tf2.sp" "$version" <<'PY'
 import re, sys
