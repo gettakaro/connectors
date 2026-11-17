@@ -68,11 +68,13 @@ export class PositionPusher {
       return false;
     }
     if (now < this.nextSendAt) return false;
+    this.nextSendAt = now + POSITION_INTERVAL_MS;
     const generation = this.generation;
     const players = this.deps.online();
     const ids = [...new Set(players.map((p) => p.gameId))];
     if (ids.length > MAX_POSITION_BATCH) return false;
     this.busy = true;
+    let sent = false;
     try {
       if (this.deps.ready && !await this.deps.ready()) {
         this.deps.availability?.(false);
@@ -88,10 +90,13 @@ export class PositionPusher {
       if (!this.deps.takaro.identified() || this.deps.takaro.getProtocolVersion() !== 1
           || this.deps.takaro.getConnectionEpoch() !== epoch || this.generation !== generation) return false;
       const sentAt = this.deps.now?.() ?? Date.now();
-      if (sentAt < this.nextSendAt) return false;
+      if (sentAt < now || sentAt - now > POSITION_INTERVAL_MS) {
+        this.deps.availability?.(false);
+        return false;
+      }
       const positions = ids.map((gameId, i) => ({ gameId, position: locations[i]! }));
       this.deps.availability?.(true);
-      const sent = this.deps.takaro.sendGameEvent('player-positions', { timestamp: new Date(sentAt).toISOString(), positions });
+      sent = this.deps.takaro.sendGameEvent('player-positions', { timestamp: new Date(now).toISOString(), positions });
       if (sent) {
         this.lastSendAt = sentAt;
         this.pendingId = this.deps.takaro.lastSendId();
@@ -102,6 +107,9 @@ export class PositionPusher {
       logger.debug(`Live position snapshot unavailable: ${(error as Error).message}`);
       return false;
     } finally {
+      if (!sent && this.generation === generation && this.deps.takaro.getConnectionEpoch() === epoch) {
+        this.nextSendAt = Math.max(this.nextSendAt, (this.deps.now?.() ?? Date.now()) + POSITION_INTERVAL_MS);
+      }
       this.busy = false;
     }
   }

@@ -141,6 +141,7 @@ describe('Dune position pushes', () => {
     expect(await pusher.tick()).toBe(false);
     expect(availability).toHaveBeenLastCalledWith(false);
     ready = true;
+    now += POSITION_INTERVAL_MS;
     expect(await pusher.tick()).toBe(true);
     expect(availability).toHaveBeenLastCalledWith(true);
     now += POSITION_INTERVAL_MS;
@@ -148,6 +149,40 @@ describe('Dune position pushes', () => {
     expect(await pusher.tick()).toBe(false);
     expect(availability).toHaveBeenLastCalledWith(false);
     expect(sendGameEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds retries when an online player has no readable pawn', async () => {
+    const h = harness();
+    h.location.mockResolvedValueOnce(null as never);
+    expect(await h.pusher.tick()).toBe(false);
+    for (let now = 10_250; now < 13_000; now += 250) {
+      h.setNow(now);
+      expect(await h.pusher.tick()).toBe(false);
+    }
+    expect(h.location).toHaveBeenCalledTimes(2);
+    h.setNow(13_000);
+    expect(await h.pusher.tick()).toBe(true);
+    expect(h.location).toHaveBeenCalledTimes(4);
+  });
+
+  it('drops over-age reads and waits before capturing a fresh replacement', async () => {
+    const h = harness();
+    let finish!: (value: typeof position) => void;
+    const reading = new Promise<typeof position>((resolve) => { finish = resolve; });
+    h.location.mockImplementation(() => reading);
+    const pending = h.pusher.tick();
+    h.setNow(13_001);
+    finish(position);
+    expect(await pending).toBe(false);
+    expect(h.sendGameEvent).not.toHaveBeenCalled();
+    h.location.mockResolvedValue({ ...position, x: 99 });
+    h.setNow(16_000);
+    expect(await h.pusher.tick()).toBe(false);
+    h.setNow(16_001);
+    expect(await h.pusher.tick()).toBe(true);
+    expect(h.sendGameEvent).toHaveBeenLastCalledWith('player-positions', expect.objectContaining({
+      positions: [{ gameId: 'a', position: { ...position, x: 99 } }, { gameId: 'b', position: { ...position, x: 99 } }],
+    }));
   });
 
   it('whitelists chat and batch positions including nested fields', () => {
