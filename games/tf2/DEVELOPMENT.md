@@ -29,7 +29,7 @@ a matching receipt, the server waits three seconds before capturing another comp
 Each included in-game client contributes its current server entity origin and map dimension,
 including dead players and spectators. Missing entities defer the batch. Reconnects discard
 old snapshots, and chat includes the sender's current entity position.
-This path still needs a real-client Takaro check before it is marked live-supported.
+Real-client position acceptance was exercised on Linux server26334371 with Windows client26334388. Other catalog target combinations retain build coverage.
 
 The zip mirrors the server's `tf/` folder (`addons/sourcemod/...` and `cfg/sourcemod/...`).
 

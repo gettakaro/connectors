@@ -65,7 +65,7 @@ Checked on TF2 server version 11138802 (Steam build 25995664), 2026-10-20. ✅ w
 | Connection | ✅ | A dropped connection is back within about 2 s. |
 | Player list | ✅ | SteamID64, IP and ping. |
 | Player location | ✅ | |
-| Live player positions | ⚠️ | Protocol v1 sends a fresh complete batch at least 3 seconds after the previous receipt; real-client validation remains pending. |
+| Live player positions | ✅ | Protocol v1 sends complete current positions at least 3 seconds after the previous receipt. Movement, chat waypoint and reconnect verified on Linux server26334371 with Windows client26334388. |
 | Teleport | ✅ | |
 | Player inventory | ⚠️ | Equipped weapons only. |
 | Item list | ✅ | |
