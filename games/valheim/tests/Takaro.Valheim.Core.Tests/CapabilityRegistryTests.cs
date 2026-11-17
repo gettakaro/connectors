@@ -114,7 +114,7 @@ public sealed class CapabilityRegistryTests
         Assert.AreEqual("schema-fallback", root.GetProperty("actions").GetProperty("listLocations").GetString());
         foreach (var eventName in RequiredEvents)
         {
-            Assert.AreEqual(eventName == "player-positions" ? "schema-fallback" : "live-supported",
+            Assert.AreEqual("live-supported",
                 root.GetProperty("events").GetProperty(eventName).GetString(), eventName);
         }
 
