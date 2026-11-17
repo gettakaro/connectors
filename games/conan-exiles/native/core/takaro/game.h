@@ -19,6 +19,7 @@ struct ActionResult {
 struct GameEvent {
     std::string type;  // one of the 6 Takaro event types
     JsonValue data;
+    uint64_t capturedAtMs = 0;  // current-state snapshots only, monotonic capture time
 };
 
 class Game {

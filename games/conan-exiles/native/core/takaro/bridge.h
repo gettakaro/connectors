@@ -18,6 +18,7 @@
 #include "takaro/config_watch.h"
 #include "takaro/game.h"
 #include "takaro/outbox.h"
+#include "takaro/position_pacer.h"
 #include "takaro/transport.h"
 
 #include <atomic>
@@ -94,6 +95,7 @@ private:
     std::string ErrorFrame(const std::string& requestId, const std::string& code, const std::string& message) const;
     void CheckManifest(int64_t now);
     void HandleEventAck(const JsonValue& msg);
+    void DeliverPosition(int64_t now);
 
     BridgeOptions o_;
     std::thread thread_;
@@ -125,6 +127,10 @@ private:
     bool outboxDirty_ = false;
     int64_t lastOutboxSave_ = 0, nextPoll_ = 0, nextPublish_ = 0, nextHealthFile_ = 0;
     std::string storeNotes_;
+    PositionPacer positionPacer_;
+    std::string latestPosition_;
+    int64_t positionCapturedAt_ = 0, connectionOpenedAt_ = 0;
+    bool positionCloseRequested_ = false;
 
     uint64_t requests_ = 0, responses_ = 0, errorResponses_ = 0, duplicates_ = 0, malformed_ = 0, overloads_ = 0,
              timeouts_ = 0, lateResults_ = 0, droppedResponses_ = 0, identifyErrors_ = 0, identifies_ = 0,

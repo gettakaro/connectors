@@ -1,11 +1,13 @@
 # Conan Exiles connector implementation status
 
 The native connector implements protocol v1 `events.player-positions` with a declared
-4-second minimum interval. Its worker samples every 5 seconds to allow for delivery
-jitter. It reads one online-player snapshot and emits a batch only when all locations
-can be read. Position batches are sent only on an identified v1 connection. Older
-unconfirmed batches are discarded when replaced or after a disconnect, so stale
-locations are not replayed.
+3-second minimum interval. Its worker samples every 3 seconds and emits a batch only
+when every online player's location can be read. Position batches use a separate,
+connection-scoped stream and never enter the durable gameplay outbox. Only one batch
+can be in flight; the next waits until three seconds after Takaro acknowledges receipt.
+Unsent snapshots are replaced by fresh samples, expire after three seconds, and are
+discarded on reconnect. Missing position acknowledgements trigger a reconnect after
+30 seconds.
 
 The `chat-message` event includes the sender's position when the chat hook can read
 the player's pawn. The existing `getPlayerLocation` action remains available.

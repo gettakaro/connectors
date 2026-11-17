@@ -21,6 +21,7 @@
 #include "takaro/outbox.h"
 #include "takaro/protocol.h"
 #include "takaro/transport.h"
+#include "takaro/position_pacer.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -396,13 +397,17 @@ static void TestQueuesAndHeartbeat() {
         return o;
     };
     q.Push(f(FrameKind::Event, "e"));
+    q.Push(f(FrameKind::Position, "p"));
     q.Push(f(FrameKind::Response, "r"));
     q.Push(f(FrameKind::Control, "c"));
     q.Push(f(FrameKind::CriticalResponse, "x"));
     std::string order;
     OutFrame out;
     while (q.Pop(out)) order += *out.text;
-    EQ(order, "cxre");
+    EQ(order, "cxrpe");
+    CHECK(q.Push(f(FrameKind::Position, "p")) == QueueStatus::Accepted, "position queue admits one frame");
+    CHECK(q.Push(f(FrameKind::Position, "p")) == QueueStatus::Full, "position queue is bounded to one frame");
+    q.Clear();
     CHECK(q.Push(f(FrameKind::Response, std::string(kMaxOutboundFrame + 1, 'a'))) == QueueStatus::TooLarge, "too large");
     for (int i = 0; i < 64; i++) q.Push(f(FrameKind::Control, "c"));
     CHECK(q.Push(f(FrameKind::Control, "c")) == QueueStatus::Full, "control bound");
@@ -428,6 +433,24 @@ static void TestQueuesAndHeartbeat() {
     CHECK(h.OnPongId(4) == 9 && h.Confirmed() == 9, "pong 4 confirms through 9");
     h.OnInbound(4000);
     CHECK(!h.Dead(4000 + p.idleMs) && h.Dead(4001 + p.idleMs), "idle watchdog");
+}
+
+static void TestPositionPacer() {
+    takaro::PositionPacer p;
+    p.Reset("positions-one", 100);
+    CHECK(p.CanSend(100) && p.NextSeq() == 1, "a new position stream starts immediately at sequence one");
+    p.Sent(100);
+    CHECK(!p.CanSend(20000), "a delayed transport cannot queue a second position before receipt acknowledgement");
+    CHECK(!p.Acknowledge("other-stream", 1, 20000), "another stream cannot release a position");
+    CHECK(!p.Acknowledge("positions-one", 2, 20000), "a future sequence cannot release a position");
+    CHECK(p.Acknowledge("positions-one", 1, 20000), "matching receipt acknowledgement releases position");
+    CHECK(!p.CanSend(22999) && p.CanSend(23000), "interval starts at receipt acknowledgement, not the delayed write");
+    CHECK(!p.Acknowledge("positions-one", 1, 23000) && p.CanSend(23000), "duplicate acknowledgement cannot postpone publication");
+    p.Sent(23000);
+    CHECK(!p.TimedOut(52999) && p.TimedOut(53000), "missing receipt acknowledgement has a bounded timeout");
+    p.Reset("positions-two", 54000);
+    CHECK(p.CanSend(54000) && p.NextSeq() == 1 && !p.TimedOut(90000), "reconnect clears pending receipt and resets sequence");
+    CHECK(!p.Acknowledge("positions-one", 2, 54000), "late old-connection acknowledgement cannot affect new stream");
 }
 
 static void TestPins() {
@@ -906,7 +929,7 @@ static void TestProtocolV1() {
        "locations.list console.execute chat.send players.teleport moderation.kick moderation.ban moderation.unban "
        "moderation.listBans server.shutdown events.player-connected events.player-disconnected events.chat-message "
        "events.player-death events.entity-killed events.log events.player-positions ");
-    CHECK(m.find("{\"name\":\"events.player-positions\",\"parameters\":{\"intervalSeconds\":4}}") != std::string::npos,
+    CHECK(m.find("{\"name\":\"events.player-positions\",\"parameters\":{\"intervalSeconds\":3}}") != std::string::npos,
           "position interval declared: %s", m.c_str());
     region = "ExiledLands";
     m = ad.CapabilityManifest();
@@ -1225,6 +1248,7 @@ int main() {
     TestConfigWatcher();
     TestOutbox();
     TestQueuesAndHeartbeat();
+    TestPositionPacer();
     TestReconnectPolicy();
     TestPins();
     TestMaps();

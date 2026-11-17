@@ -485,6 +485,62 @@ def protocol_v1(binary, cert, key, root):
         fake.close()
 
 
+def position_pacing(binary, cert, key, root):
+    fake = FakeTakaro(key, cert)
+    fake.protocol = 1
+    fake.auto_ack = False
+    h = Harness(binary, fake, cert, root / 'position_pacing')
+    def positions(connection=None):
+        return [e for e in events_of(fake.log, connection) if e.get('type') == 'player-positions']
+    def emit(x):
+        h.emit('player-positions', {'positions': [{'gameId': '76561198000000001',
+                                                  'position': {'x': x, 'y': 2, 'z': 3}}]})
+    try:
+        eventually(lambda: h.health()['identified'], what='identified position connection')
+        emit(1)
+        eventually(lambda: len(positions()) == 1, what='first position frame')
+        first = positions()[0]
+        stream = first['streamId']
+        check(first['seq'] == 1 and h.health()['outbox']['pending'] == 0,
+              'positions are sequenced outside the durable gameplay outbox')
+        emit(2)
+        h.emit('chat-message', chat(1))
+        eventually(lambda: any(e.get('type') == 'chat-message' for e in events_of(fake.log)),
+                   what='gameplay passes an unacknowledged position')
+        fake.current().send_json({'type': 'eventAck', 'payload': {'streamId': 'wrong', 'upTo': 1}})
+        fake.current().send_json({'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': 2}})
+        time.sleep(0.3)
+        check(len(positions()) == 1, 'wrong or future ACK cannot release another position')
+        acknowledged_at = time.monotonic()
+        fake.current().send_json({'type': 'eventAck', 'payload': {'streamId': stream, 'upTo': 1}})
+        time.sleep(2.5)
+        emit(3)
+        time.sleep(0.2)
+        check(len(positions()) == 1, 'position cadence starts after receipt ACK rather than first write')
+        eventually(lambda: len(positions()) == 2, what='fresh position after ACK interval')
+        check(time.monotonic() - acknowledged_at >= 3 and positions()[1]['data']['positions'][0]['position']['x'] == 3,
+              'latest fresh sample replaces the older queued position')
+        emit(4)
+        prior = len(fake.conns)
+        fake.drop_all()
+        eventually(lambda: len(fake.conns) > prior and fake.conns[-1].alive and h.health()['identified'],
+                   timeout=15, what='position reconnect')
+        connection = fake.conns[-1].index
+        time.sleep(0.3)
+        check(not positions(connection), 'reconnect never replays a prior position snapshot')
+        emit(5)
+        eventually(lambda: len(positions(connection)) == 1, what='new-connection position')
+        fresh = positions(connection)[0]
+        check(fresh['streamId'] != stream and fresh['seq'] == 1 and
+              fresh['data']['positions'][0]['position']['x'] == 5,
+              'reconnect starts a new position stream using only current coordinates')
+        h.quit()
+    finally:
+        if h.proc.poll() is None:
+            h.kill()
+        fake.close()
+
+
 def main():
     binary = sys.argv[1]
     with tempfile.TemporaryDirectory(prefix='conan-wire-') as tmp:
@@ -492,7 +548,7 @@ def main():
         key, cert = make_cert(root)
         only = os.environ.get('WIRE_ONLY')
         for name, fn in (('basics', basics), ('outage', outage), ('restart', restart), ('rejected', rejected),
-                         ('protocol_v1', protocol_v1),
+                         ('protocol_v1', protocol_v1), ('position_pacing', position_pacing),
                          ('refused', refused)):
             if only and name not in only.split(','):
                 continue

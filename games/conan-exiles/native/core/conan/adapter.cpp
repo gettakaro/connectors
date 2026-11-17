@@ -9,6 +9,7 @@
 #include "gtstats.h"
 #include "takaro/json_util.h"
 #include "takaro/protocol.h"
+#include "takaro/position_pacer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -107,7 +108,8 @@ Adapter::Adapter(AdapterOptions o) : o_(std::move(o)) {
         positionWorker_ = std::thread([this] {
             std::unique_lock<std::mutex> lock(positionMu_);
             while (!positionStopping_) {
-                if (positionCv_.wait_for(lock, std::chrono::seconds(5), [this] { return positionStopping_.load(); }))
+                if (positionCv_.wait_for(lock, std::chrono::milliseconds(takaro::kPositionIntervalMs),
+                                         [this] { return positionStopping_.load(); }))
                     break;
                 lock.unlock();
                 JsonValue positions;
@@ -258,7 +260,7 @@ std::string Adapter::CapabilityManifest() {
         if (std::string(c->status) == "live-supported") add(ObjBuilder().S("name", std::string("events.") + c->name).Done());
     if (o_.ready && o_.positions)
         add(ObjBuilder().S("name", "events.player-positions")
-                .Raw("parameters", ObjBuilder().N("intervalSeconds", 4).Done()).Done());
+                .Raw("parameters", ObjBuilder().N("intervalSeconds", takaro::kPositionIntervalMs / 1000).Done()).Done());
     if (const MapCalibration* map = MapForRegion(o_.region()))
         add(ObjBuilder()
                 .S("name", "map")
@@ -271,6 +273,11 @@ bool Adapter::IsBanned(const std::string& steam64) const { return mutations_ && 
 
 void Adapter::Emit(GameEvent ev) {
     std::lock_guard<std::mutex> g(mu_);
+    if (ev.type == "player-positions") {
+        ev.capturedAtMs = NowMs();
+        events_.erase(std::remove_if(events_.begin(), events_.end(),
+                                    [](const GameEvent& e) { return e.type == "player-positions"; }), events_.end());
+    }
     while (events_.size() >= kMaxQueuedEvents) {
         auto victim = std::find_if(events_.begin(), events_.end(), [](const GameEvent& e) { return e.type == "log"; });
         if (victim == events_.end()) victim = events_.begin();
