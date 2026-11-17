@@ -111,7 +111,7 @@ Game actions, events, levels and Characters checked on game 97.17 (Steam build 2
 | Connection | ✅ | Connects once the world has loaded and reconnects by itself after a restart or network drop. |
 | Player list | ✅ | Name, ping and IP. Steam players carry their Steam id, so they are the same player as in your other Steam games; other players carry their Epic (EOS) id. |
 | Player location | ✅ | Live position; offline players give the last position seen since the server started. |
-| Live position updates | ⚠️ | Protocol v1 sends current positions of spawned players every five seconds; live verification is pending. |
+| Live position updates | ⚠️ | Protocol v1 pushes current spawned-player positions with a three-second wait after each acknowledged batch; live verification is pending. |
 | Teleport | ✅ | Online players. |
 | Player inventory | ⚠️ | Carried and equipped items of an online player. Account cosmetics are left out. |
 | Player levels and skills | ✅ | Character level, experience and progress to the next level. The level rises when the player spends the point, as in the game. ARK has no separate skill levels. |

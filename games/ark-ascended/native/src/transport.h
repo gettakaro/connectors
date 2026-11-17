@@ -8,6 +8,7 @@
 // written before that ping. An event is therefore confirmed only by the pong of a LATER ping on the
 // same connection. Notices reach the bridge through a sink that must only enqueue.
 #pragma once
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -17,15 +18,16 @@
 
 namespace native {
 
-enum class FrameKind { Control = 0, CriticalResponse = 1, Response = 2, Event = 3 };
-enum class QueueStatus { Accepted, Disconnected, StaleEpoch, Full, TooLarge };
+enum class FrameKind { Control = 0, CriticalResponse = 1, Response = 2, Position = 3, Event = 4 };
+enum class QueueStatus { Accepted, Disconnected, StaleEpoch, Full, TooLarge, Expired };
 const char* QueueStatusName(QueueStatus s);
 
 struct OutFrame {
     FrameKind kind = FrameKind::Control;
     std::shared_ptr<const std::string> text;
     uint64_t epoch = 0;     // must equal the open connection's epoch
-    uint64_t outboxId = 0;  // events only
+    uint64_t outboxId = 0;  // durable gameplay events only
+    std::chrono::steady_clock::time_point expires{};
 };
 
 enum class NoticeType { Open, Frame, Confirmed, Closed, Error };
@@ -57,7 +59,7 @@ public:
 constexpr size_t kMaxInboundBytes = 1u << 20;   // one Takaro message
 constexpr size_t kMaxOutboundFrame = 8u << 20;  // one outbound message (listItems is ~0.6 MiB)
 
-// Bounded per-kind FIFO queues with strict priority Control > CriticalResponse > Response > Event.
+// Bounded per-kind FIFO queues with strict priority Control > CriticalResponse > Response > Position > Event.
 // Not thread-safe; the owner locks.
 class FrameQueues {
 public:
@@ -75,8 +77,8 @@ public:
     uint64_t Rejected() const { return rejected_; }
 
 private:
-    std::deque<OutFrame> q_[4];
-    size_t bytes_[4] = {0, 0, 0, 0};
+    std::deque<OutFrame> q_[5];
+    size_t bytes_[5] = {0, 0, 0, 0, 0};
     uint64_t rejected_ = 0;
 };
 

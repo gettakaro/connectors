@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -28,7 +29,9 @@ struct Config {
     std::string gameVersion;
     bool wireDebug = false;
     std::chrono::milliseconds callDeadline{9000};  // Takaro gives up after 10 s
-    std::chrono::milliseconds positionInterval{5000};
+    std::chrono::milliseconds positionInterval{3000};
+    std::chrono::milliseconds positionAckDeadline{30000};
+    std::chrono::milliseconds maxPositionAge{2000};
     size_t maxPendingCalls = 64;
     size_t eventWindow = 64;
     size_t maxQueuedEvents = 8192;
@@ -83,8 +86,10 @@ public:
     bool NextCall(GameCall& out);
     void Complete(const GameCall& call, Outcome outcome);
     void Emit(const std::string& type, tj::Value data);
-    // Position snapshots are replaceable and must never replay after a reconnect.
-    void EmitFreshPositions(tj::Value data);
+    struct PositionRead { uint64_t epoch = 0, generation = 0; };
+    // Reserve before touching game objects; a reconnect invalidates the entire read.
+    std::optional<PositionRead> BeginPositionRead();
+    void EmitFreshPositions(PositionRead read, tj::Value data);
 
     bool Identified() const { return identified_.load(); }
     int ProtocolVersion() const { return protocol_.load(); }
@@ -99,8 +104,6 @@ private:
     struct QueuedEvent {
         uint64_t seq = 0;
         std::shared_ptr<const std::string> v0, v1;
-        bool freshPositions = false;
-        std::chrono::steady_clock::time_point captured{};
     };
     struct Finished {
         GameCall call;
@@ -117,8 +120,9 @@ private:
     void ExpireCalls();
     void PumpEvents();
     void DropAcked(uint64_t upTo);
-    void DropFreshPositions();  // mu_ held
-    void QueueEvent(const std::string& type, tj::Value data, bool freshPositions);
+    void ResetPositions(uint64_t epoch);  // mu_ held
+    void PumpPositions();
+    void QueueEvent(const std::string& type, tj::Value data);
     std::string IdentifyFrame() const;
 
     Config config_;
@@ -138,7 +142,12 @@ private:
     std::deque<QueuedEvent> events_;
     size_t eventsSent_ = 0;  // events_[0..eventsSent_) are written and await an ack
     uint64_t nextSeq_ = 1;
-    std::chrono::steady_clock::time_point lastPositionsSent_{};
+    struct PositionSnapshot { tj::Value data; std::chrono::steady_clock::time_point captured; };
+    std::optional<PositionSnapshot> positions_;
+    std::string positionStreamId_;
+    uint64_t positionEpoch_ = 0, positionGeneration_ = 0, positionSeq_ = 0, pendingPositionSeq_ = 0;
+    bool readingPositions_ = false;
+    std::chrono::steady_clock::time_point positionReadAt_{}, nextPositionReadAt_{}, positionSentAt_{};
     bool stopping_ = false;
 
     // Worker-only.

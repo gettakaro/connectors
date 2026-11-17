@@ -80,6 +80,8 @@ void Client::Stop() {
         std::lock_guard<std::mutex> lock(mu_);
         if (stopping_) return;
         stopping_ = true;
+        identified_ = false;
+        ResetPositions(0);
     }
     cv_.notify_all();
     if (worker_.joinable()) worker_.join();
@@ -128,19 +130,29 @@ void Client::PumpOnce() {
     }
     ExpireCalls();
     PumpEvents();
+    PumpPositions();
 }
 
 void Client::HandleNotice(native::Notice& n) {
     switch (n.type) {
-        case native::NoticeType::Open:
+        case native::NoticeType::Open: {
+            if (n.epoch <= epoch_) break;
             epoch_ = n.epoch;
+            identified_ = false;
+            protocol_ = 0;
+            {
+                std::lock_guard<std::mutex> lock(mu_);
+                eventsSent_ = 0;
+                ResetPositions(n.epoch);
+            }
             SendIdentify(n.epoch);
             break;
+        }
         case native::NoticeType::Frame:
             HandleFrame(n.epoch, n.text);
             break;
         case native::NoticeType::Confirmed:
-            if (protocol_.load() == 0) DropAcked(n.outboxId);
+            if (n.epoch == epoch_ && protocol_.load() == 0) DropAcked(n.outboxId);
             break;
         case native::NoticeType::Closed:
         case native::NoticeType::Error: {
@@ -149,7 +161,7 @@ void Client::HandleNotice(native::Notice& n) {
             protocol_ = 0;
             std::lock_guard<std::mutex> lock(mu_);
             eventsSent_ = 0;  // unacked events go out again; Takaro dedupes by (streamId, seq)
-            DropFreshPositions();
+            ResetPositions(0);
             // Nobody is left to hear the answer, and Takaro may send the request again after reconnecting,
             // so a queued action must not run behind its back.
             calls_.clear();
@@ -186,6 +198,7 @@ void Client::SendIdentify(uint64_t epoch) {
 }
 
 void Client::HandleFrame(uint64_t epoch, const std::string& raw) {
+    if (epoch != epoch_) return;
     if (config_.wireDebug) log_("takaro-wire RECV " + Clip(raw, 2000));
     auto message = tj::parse(raw);
     if (!message || !message->is_object()) {
@@ -194,6 +207,7 @@ void Client::HandleFrame(uint64_t epoch, const std::string& raw) {
     }
     const std::string kind = Str(message->get("type"));
     if (kind == "identifyResponse") {
+        if (identified_.load()) return;
         const tj::Value& payload = Record(message->get("payload"));
         const tj::Value* failure = message->get("error") ? message->get("error") : payload.get("error");
         if (failure && !failure->is_null()) {
@@ -209,7 +223,11 @@ void Client::HandleFrame(uint64_t epoch, const std::string& raw) {
         }
         const tj::Value* v = payload.get("protocolVersion");
         protocol_ = (v && v->is_number() && v->as_number() == 1) ? 1 : 0;
-        identified_ = true;
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            nextPositionReadAt_ = std::chrono::steady_clock::now() + config_.positionInterval;
+            identified_ = true;
+        }
         transport_->MarkIdentified(epoch);
         log_("takaro: identified gameServerId=" + id + " protocol=" + std::to_string(protocol_.load()));
         return;
@@ -217,8 +235,19 @@ void Client::HandleFrame(uint64_t epoch, const std::string& raw) {
     if (kind == "eventAck") {
         const tj::Value& payload = Record(message->get("payload"));
         const tj::Value* upTo = payload.get("upTo");
-        if (Str(payload.get("streamId")) == streamId_ && upTo && upTo->is_number() && upTo->as_number() >= 0)
-            DropAcked(static_cast<uint64_t>(upTo->as_number()));
+        const auto stream = Str(payload.get("streamId"));
+        if (upTo && upTo->is_number()) {
+            {
+                std::lock_guard<std::mutex> lock(mu_);
+                if (stream == positionStreamId_ && pendingPositionSeq_ &&
+                    upTo->as_number() == static_cast<double>(pendingPositionSeq_)) {
+                    pendingPositionSeq_ = 0;
+                    nextPositionReadAt_ = std::chrono::steady_clock::now() + config_.positionInterval;
+                }
+            }
+            if (stream == streamId_ && upTo->as_number() >= 0)
+                DropAcked(static_cast<uint64_t>(upTo->as_number()));
+        }
         return;
     }
     if (kind == "eventError") {
@@ -327,26 +356,107 @@ void Client::Complete(const GameCall& call, Outcome outcome) {
     cv_.notify_all();
 }
 
-void Client::Emit(const std::string& type, tj::Value data) { QueueEvent(type, std::move(data), false); }
+void Client::Emit(const std::string& type, tj::Value data) { QueueEvent(type, std::move(data)); }
 
-void Client::EmitFreshPositions(tj::Value data) {
-    if (identified_.load() && protocol_.load() == 1) QueueEvent("player-positions", std::move(data), true);
+void Client::ResetPositions(uint64_t epoch) {
+    positions_.reset();
+    readingPositions_ = false;
+    ++positionGeneration_;
+    positionEpoch_ = epoch;
+    positionStreamId_ = epoch ? streamId_ + "-positions-" + std::to_string(epoch) : "";
+    positionSeq_ = pendingPositionSeq_ = 0;
 }
 
-void Client::DropFreshPositions() {
-    for (size_t i = 0; i < events_.size();) {
-        if (!events_[i].freshPositions) { ++i; continue; }
-        if (i < eventsSent_) --eventsSent_;
-        events_.erase(events_.begin() + static_cast<std::ptrdiff_t>(i));
+std::optional<Client::PositionRead> Client::BeginPositionRead() {
+    std::lock_guard<std::mutex> lock(mu_);
+    const auto now = std::chrono::steady_clock::now();
+    if (readingPositions_ && now - positionReadAt_ >= config_.maxPositionAge) {
+        readingPositions_ = false;
+        ++positionGeneration_;
+    }
+    if (stopping_ || !identified_.load() || protocol_.load() != 1 || !positionEpoch_ ||
+        pendingPositionSeq_ || positions_ || readingPositions_ || now < nextPositionReadAt_)
+        return std::nullopt;
+    readingPositions_ = true;
+    positionReadAt_ = now;
+    return PositionRead{positionEpoch_, ++positionGeneration_};
+}
+
+void Client::EmitFreshPositions(PositionRead read, tj::Value data) {
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (!readingPositions_ || read.epoch != positionEpoch_ || read.generation != positionGeneration_)
+            return;
+        readingPositions_ = false;
+        if (stopping_ || !identified_.load() || protocol_.load() != 1 ||
+            std::chrono::steady_clock::now() - positionReadAt_ >= config_.maxPositionAge)
+            return;
+        data.set("timestamp", tj::str(NowIso()));
+        positions_ = PositionSnapshot{std::move(data), positionReadAt_};
+    }
+    cv_.notify_all();
+}
+
+void Client::PumpPositions() {
+    native::OutFrame frame;
+    uint64_t seq = 0, epoch = 0;
+    std::string stream;
+    std::optional<PositionSnapshot> snapshot;
+    bool timedOut = false;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        const auto now = std::chrono::steady_clock::now();
+        if (!identified_.load() || protocol_.load() != 1) return;
+        epoch = positionEpoch_;
+        if (pendingPositionSeq_) {
+            if (now - positionSentAt_ < config_.positionAckDeadline) return;
+            identified_ = false;
+            ResetPositions(0);
+            timedOut = true;
+        } else if (positions_) {
+            if (now - positions_->captured >= config_.maxPositionAge) {
+                positions_.reset();
+                return;
+            }
+            seq = ++positionSeq_;
+            stream = positionStreamId_;
+            snapshot = std::move(positions_);
+            positions_.reset();
+            pendingPositionSeq_ = seq;
+            positionSentAt_ = now;
+        } else {
+            return;
+        }
+    }
+    if (timedOut) {
+        log_("takaro: position acknowledgement deadline exceeded");
+        transport_->RequestClose(epoch, "position acknowledgement timeout");
+        return;
+    }
+    frame.kind = native::FrameKind::Position;
+    frame.epoch = epoch;
+    frame.expires = snapshot->captured + config_.maxPositionAge;
+    frame.text = std::make_shared<const std::string>(tj::dump(tj::obj({
+        {"type", tj::str("gameEvent")}, {"payload", tj::obj({
+            {"type", tj::str("player-positions")}, {"data", std::move(snapshot->data)},
+            {"streamId", tj::str(stream)}, {"seq", tj::num(static_cast<double>(seq))}})}})));
+    const auto text = frame.text;
+    const auto result = transport_->Queue(std::move(frame));
+    if (result == native::QueueStatus::Accepted) {
+        if (config_.wireDebug) log_("takaro-wire SEND " + Clip(*text, 2000));
+    } else {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (positionEpoch_ == epoch && pendingPositionSeq_ == seq) {
+            pendingPositionSeq_ = 0;
+            nextPositionReadAt_ = std::chrono::steady_clock::now() + config_.positionInterval;
+        }
     }
 }
 
-void Client::QueueEvent(const std::string& type, tj::Value data, bool freshPositions) {
+void Client::QueueEvent(const std::string& type, tj::Value data) {
     // When it happened: an event held through an outage must not take the time it finally arrived.
     data.set("timestamp", tj::str(NowIso()));
     QueuedEvent e;
-    e.freshPositions = freshPositions;
-    e.captured = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lock(mu_);
         e.seq = nextSeq_++;
@@ -360,10 +470,6 @@ void Client::QueueEvent(const std::string& type, tj::Value data, bool freshPosit
     e.v1 = std::make_shared<const std::string>(tj::dump(tj::obj({{"type", tj::str("gameEvent")}, {"payload", std::move(v1)}})));
     {
         std::lock_guard<std::mutex> lock(mu_);
-        if (freshPositions) {
-            if (!identified_.load() || protocol_.load() != 1) return;
-            DropFreshPositions();
-        }
         if (events_.size() >= config_.maxQueuedEvents) {
             events_.pop_front();
             if (eventsSent_ > 0) --eventsSent_;
@@ -380,28 +486,19 @@ void Client::PumpEvents() {
     for (;;) {
         native::OutFrame f;
         uint64_t seq = 0;
-        bool freshPositions = false;
         {
             std::lock_guard<std::mutex> lock(mu_);
             if (eventsSent_ >= events_.size() || eventsSent_ >= config_.eventWindow) return;
             const QueuedEvent& e = events_[eventsSent_];
-            if (e.freshPositions) {
-                const auto now = std::chrono::steady_clock::now();
-                if (now - e.captured >= config_.positionInterval) { DropFreshPositions(); continue; }
-                if (lastPositionsSent_ != std::chrono::steady_clock::time_point{} &&
-                    now - lastPositionsSent_ < config_.positionInterval) return;
-            }
             f.kind = native::FrameKind::Event;
             f.text = v1 ? e.v1 : e.v0;
             f.epoch = epoch_;
             f.outboxId = e.seq;
             seq = e.seq;
-            freshPositions = e.freshPositions;
         }
         if (config_.wireDebug) log_("takaro-wire SEND " + Clip(*f.text, 2000));
         if (transport_->Queue(std::move(f)) != native::QueueStatus::Accepted) return;  // retried on the next pass
         std::lock_guard<std::mutex> lock(mu_);
-        if (freshPositions) lastPositionsSent_ = std::chrono::steady_clock::now();
         for (size_t i = eventsSent_; i < events_.size(); ++i) {
             if (events_[i].seq != seq) continue;
             eventsSent_ = i + 1;

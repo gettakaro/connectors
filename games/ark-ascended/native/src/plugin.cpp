@@ -43,7 +43,7 @@ constexpr wchar_t kCallbackId[] = L"TakaroAsa";
 constexpr auto kTickBudget = std::chrono::milliseconds(2);
 constexpr auto kBanSweep = std::chrono::seconds(30);
 constexpr auto kSurvivorSweep = std::chrono::seconds(2);
-constexpr auto kPositionInterval = std::chrono::seconds(5);
+constexpr auto kPositionInterval = std::chrono::seconds(3);
 constexpr auto kExitDelay = std::chrono::seconds(4);
 constexpr size_t kMaxConsoleOutput = 32768;
 constexpr char kGameName[] = "ARK: Survival Ascended";
@@ -89,7 +89,6 @@ std::vector<takaro::CatalogRow> g_items, g_entities;
 tj::Value g_itemsJson, g_entitiesJson, g_locationsJson;
 
 std::chrono::steady_clock::time_point g_nextBanSweep{}, g_nextSurvivorSweep{}, g_exitAt{};
-std::chrono::steady_clock::time_point g_nextPositionBatch{};
 bool g_exitPending = false;
 
 std::thread g_tail;
@@ -891,10 +890,8 @@ void SweepSurvivors() {
 }
 
 void SweepPositions() {
-    if (!g_client->Identified() || g_client->ProtocolVersion() != 1) return;
-    const auto now = std::chrono::steady_clock::now();
-    if (now < g_nextPositionBatch) return;
-    g_nextPositionBatch = now + kPositionInterval;
+    const auto read = g_client->BeginPositionRead();
+    if (!read) return;
     tj::Value positions = tj::Value::array();
     size_t count = 0;
     std::set<std::string> seen;
@@ -910,7 +907,7 @@ void SweepPositions() {
         positions.push(tj::obj({{"gameId", tj::str(eos)}, {"position", PositionJson(at.X, at.Y, at.Z)}}));
         ++count;
     }
-    g_client->EmitFreshPositions(tj::obj({{"positions", std::move(positions)}}));
+    g_client->EmitFreshPositions(*read, tj::obj({{"positions", std::move(positions)}}));
 }
 
 void OnTick(float) {

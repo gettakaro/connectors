@@ -12,6 +12,7 @@ const char* QueueStatusName(QueueStatus s) {
         case QueueStatus::StaleEpoch: return "stale-epoch";
         case QueueStatus::Full: return "full";
         case QueueStatus::TooLarge: return "too-large";
+        case QueueStatus::Expired: return "expired";
     }
     return "?";
 }
@@ -21,12 +22,15 @@ FrameQueues::Limit FrameQueues::LimitFor(FrameKind k) {
         case FrameKind::Control: return {64, 1u << 20};
         case FrameKind::CriticalResponse: return {256, 1u << 20};
         case FrameKind::Response: return {256, 32u << 20};
+        case FrameKind::Position: return {1, 1u << 20};
         case FrameKind::Event: return {1024, 8u << 20};
     }
     return {0, 0};
 }
 
 QueueStatus FrameQueues::Push(OutFrame f) {
+    if (f.expires != std::chrono::steady_clock::time_point{} && std::chrono::steady_clock::now() >= f.expires)
+        return QueueStatus::Expired;
     if (!f.text || f.text->size() > kMaxOutboundFrame) {
         rejected_++;
         return QueueStatus::TooLarge;
@@ -43,7 +47,12 @@ QueueStatus FrameQueues::Push(OutFrame f) {
 }
 
 bool FrameQueues::Pop(OutFrame& out) {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
+        while (!q_[i].empty() && q_[i].front().expires != std::chrono::steady_clock::time_point{} &&
+               std::chrono::steady_clock::now() >= q_[i].front().expires) {
+            bytes_[i] -= q_[i].front().text->size();
+            q_[i].pop_front();
+        }
         if (q_[i].empty()) continue;
         out = std::move(q_[i].front());
         q_[i].pop_front();
@@ -54,7 +63,7 @@ bool FrameQueues::Pop(OutFrame& out) {
 }
 
 void FrameQueues::Clear() {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         q_[i].clear();
         bytes_[i] = 0;
     }
@@ -66,7 +75,7 @@ size_t FrameQueues::TotalFrames() const {
     return n;
 }
 
-size_t FrameQueues::TotalBytes() const { return bytes_[0] + bytes_[1] + bytes_[2] + bytes_[3]; }
+size_t FrameQueues::TotalBytes() const { size_t n = 0; for (auto b : bytes_) n += b; return n; }
 
 void Heartbeat::Reset(int64_t nowMs) {
     pings_.clear();
