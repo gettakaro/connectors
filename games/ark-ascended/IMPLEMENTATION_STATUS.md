@@ -24,5 +24,6 @@ its behavior is separate from the live position stream.
 
 - `tests/client_test.cpp` covers v1 shape, interval, replacement, reconnect discard, and v0 exclusion.
 - `tests/check_capabilities.py` checks the manifest and capability registry match the source.
-- Windows DLL compilation and a real Takaro/client check are still required. `liveVerified` stays
-  false in `capabilities.json` until that run.
+- A clean pinned MSVC build and a real Windows client verified current position batches,
+  chat-position waypoint creation, quiet ACK pacing without location polling, and fresh
+  positions after reconnect on server game 97.21 and client game 98.4.0.
