@@ -481,7 +481,7 @@ Ownership values are `server-owned`, `upstream-blocked` or `unsupported`.
 | `chat-message` | `live-supported` | Routed `Say`/`ChatMessage` RPCs from the authenticated peer, collapsed within 3 seconds; works when a player is alone. |
 | `player-death` | `live-supported` | Routed `OnDeath` RPC targeting the authenticated peer's own character, with player, position and timestamp. |
 | `entity-killed` | `live-supported` | Valheim's own kill credit (`Game.RegisterKill`) via the kill-witness player-list entry; every player kill counted; assists vetoed only with the optional mod (see *Event sources and trust*). |
-| `player-positions` | `schema-fallback` | On protocol v1, at least three seconds after the previous acknowledgement, a single Unity-thread snapshot of all online players is pushed when each has a current server-observed position. The 30-second `getPlayerLocation` cache is never used for this batch. Live Takaro and game-client proof is pending. |
+| `player-positions` | `live-supported` | On protocol v1, at least three seconds after the previous acknowledgement, a single Unity-thread snapshot of all online players is pushed when each has a current server-observed position. The 30-second `getPlayerLocation` cache is never used for this batch. Live-verified on Valheim 1.0.21 through Takaro staging, including movement, current-position chat commands, a quiet online connection and fresh-stream reconnect. |
 
 ## Server-owned action semantics
 
