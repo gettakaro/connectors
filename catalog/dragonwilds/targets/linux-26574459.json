@@ -4,7 +4,7 @@
   "game": "dragonwilds",
   "platform": "linux",
   "revision": "26574459",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-11-12",
@@ -14,7 +14,7 @@
       "takaro-maint install of this target on the dev rig 2026-11-12: declared sha256 verified, server ++dominion+live-CL-260223 (game 1.0.2.1) boots with the plugin (113/113 symbols from a cold .sym scan, PreLogin ban hooks bound, 6/6 reflection boot checks)",
       "connector-runner e2e 2026-11-12 (gettakaro/connectors#906, staging domain): real PC client (Steam build 26574764) through hosted Takaro on this target - player-connected 70035899-b2ef-4919-b98b-8745e10a799b, chat-message 1d90039f-09ce-412f-a2a1-7c1c5aca1008, command-executed 08dd022f-93ef-43ab-8dd9-31ff3b102c51 (@ping, Pong rendered in game) and 998daa27-eb13-4a5b-b927-f2ea497ee8e2 (@balance), player-death af1873af-81e9-4d02-8c9a-b4e2c1e867c5, entity-killed 58e623d4-179e-4a08-8c9a-ddd1045941b8 (real kill, Kebbit, weapon Bronze Sword), player-disconnected e6d7fc34-6dea-47a1-ac66-51f13b275760 (kick), d8f9148f-d0c9-4c41-8e4e-7172d957f9a1 (leave, one event) and edf3cca6-7d22-4455-93a0-b6466c9bbdc4 (reconcile after shutdown); testReachability, getPlayers, sendMessage, executeConsoleCommand, giveItem, teleportPlayer, kickPlayer, banPlayer (rejoin refused at PreLogin), unbanPlayer, shutdown and Discord both ways passed"
     ],
-    "notes": "Steam pin of the public branch head observed 2026-11-12 (build published 2026-11-12, manifest dated 2026-11-10): tool app 4019830, Linux depot 3501791, build 26574459. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` stays `contract` because hosted CI cannot run this pin: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.1 GB Steam depot) that a hosted runner does not install. The runtime results from a manual run on a real server are listed under evidence."
+    "notes": "Steam pin of the public branch head observed 2026-11-12 (build published 2026-11-12, manifest dated 2026-11-10): tool app 4019830, Linux depot 3501791, build 26574459. Superseded as the default by linux-26670300; kept so a server still on this build gets a matching plugin. The plugin resolves every engine address from this build's own `.sym` at load time, so the target needs no source change. `verification.required` stays `contract` because hosted CI cannot run this pin: the plugin's unit and native connector suites run on every build, but a real boot needs a Dragonwilds Linux dedicated server (~5.1 GB Steam depot) that a hosted runner does not install. The runtime results from a manual run on a real server are listed under evidence."
   },
   "inputs": {
     "server": {
