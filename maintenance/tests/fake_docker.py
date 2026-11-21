@@ -282,6 +282,24 @@ def process_is_gone(pid: int) -> bool:
     return fields[0] == "Z"
 
 
+async def stub_gameplay(run: Any, fake: Any) -> None:
+    """Every selected gameplay row passes, the way a player that did everything would report it."""
+    from takaro_maint.games.minecraft import gameplay
+    from takaro_maint.verify.checks import CheckResult
+
+    del fake
+    detail = {
+        "client": {"library": "mineflayer@stub", "loginVersion": "stub", "viaProxy": None},
+        "manualCoverage": list(gameplay.MANUAL_COVERAGE),
+        "problems": [],
+    }
+    for check_id in gameplay.CHECK_IDS:
+        if run.wanted(check_id):
+            run.record(CheckResult(check_id, "pass", 0, detail if check_id == "gameplay-join" else {"problems": []}))
+        else:
+            run.skip(check_id, run.not_selected_reason(check_id))
+
+
 def install_docker_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Path:
     """Point ``TAKARO_MAINT_DOCKER`` at the stub and return its state directory.
 
@@ -298,6 +316,9 @@ def install_docker_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request
     monkeypatch.setenv("STUB_SERVER", str(server))
     monkeypatch.setenv("STUB_RUN_ID", "t1")
     monkeypatch.setenv("TAKARO_MAINT_DOCKER", f"{shlex.quote(sys.executable)} {shlex.quote(str(stub))}")
+    # The stub server speaks the connector protocol but fields no player; the gameplay rows
+    # have their own tests against a scripted player (test_minecraft_gameplay.py).
+    monkeypatch.setattr("takaro_maint.games.minecraft.gameplay.run_gameplay", stub_gameplay)
 
     def _kill_survivors() -> None:
         # The safety net for a test that dies before the runner's `finally` runs its `rm`.

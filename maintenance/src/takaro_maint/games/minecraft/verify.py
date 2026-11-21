@@ -21,9 +21,10 @@ from ...exit_codes import UpstreamUnavailable
 from ...verify import checks, checks_lifecycle
 from ...verify.hooks import GameHooks
 from ...verify.report import build_report, write_report
+from . import gameplay
 from .fabric import TARGET_CHECK_PREFIX
 
-CHECK_IDS = checks_lifecycle.CHECK_IDS
+CHECK_IDS = (*gameplay.CHECK_IDS, *checks_lifecycle.CHECK_IDS)
 
 # The first log line that names the runtime, one marker per platform. Cheap to test for,
 # so a multi-megabyte log is not run through three regexes line by line.
@@ -109,6 +110,7 @@ def hosted_identity(target: Any, run_id: str, nonce: str) -> str:
 
 
 async def after_protocol(run: Any, fake: Any, alive: Any) -> None:
+    await gameplay.run_gameplay(run, fake)
     if run.wanted("reconnect"):
         run.record(await checks_lifecycle.check_reconnect(run, fake, alive))
     else:
@@ -228,7 +230,14 @@ async def run_hosted(
         run.record(await _hosted_heartbeat(takaro, server_ids))
         run.record(await _hosted_players(takaro, server_ids))
 
-        for check_id in ("catalog-items", "catalog-entities", "console", "reconnect", "negative-wrong-target"):
+        for check_id in (
+            "catalog-items",
+            "catalog-entities",
+            "console",
+            *gameplay.CHECK_IDS,
+            "reconnect",
+            "negative-wrong-target",
+        ):
             run.skip(check_id, HOSTED_SKIP)
 
         run.record(await _hosted_shutdown(takaro, container, server_ids))

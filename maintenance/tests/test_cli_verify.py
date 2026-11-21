@@ -248,7 +248,7 @@ def docker_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest
     return install_docker_stub(tmp_path, monkeypatch, request)
 
 
-def test_a_full_stubbed_run_reaches_protocol_level(
+def test_a_full_stubbed_run_reaches_gameplay_level(
     run: Any, wired: Any, tmp_path: Path, docker_stub: Path, repo_root: Path
 ) -> None:
     from jsonschema import Draft202012Validator
@@ -279,7 +279,7 @@ def test_a_full_stubbed_run_reaches_protocol_level(
     report = json.loads((out / "fabric-26.2" / "report.json").read_text())
     schema = json.loads((repo_root / "catalog/schema/v1/verify-report.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(report)) == []
-    assert report["level"] == "protocol"
+    assert report["level"] == "gameplay"
     assert report["outcome"] == "pass"
     assert {check["id"] for check in report["checks"] if check["status"] == "pass"} >= {
         "build",

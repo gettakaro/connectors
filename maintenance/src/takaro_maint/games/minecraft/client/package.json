@@ -1,0 +1,11 @@
+{
+  "name": "takaro-maint-minecraft-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The headless player takaro-maint verify drives through a Minecraft target's gameplay checks",
+  "type": "module",
+  "main": "client.mjs",
+  "dependencies": {
+    "mineflayer": "4.39.0"
+  }
+}
