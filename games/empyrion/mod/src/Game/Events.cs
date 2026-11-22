@@ -13,7 +13,7 @@ using TakaroEmpyrion.Protocol;
 namespace TakaroEmpyrion.Game
 {
     /// <summary>
-    /// Translates game signals into the six Takaro events. Sources: v1 Event_Player_Connected/Disconnected,
+    /// Translates game signals into Takaro events. Sources: v1 Event_Player_Connected/Disconnected,
     /// v2 ChatMessageSent (typed sender + channel; v1 Event_ChatMessage is the fallback, deduplicated),
     /// v1 Event_Statistics(PlayerDied), v1 Event_GameEvent(KilledEntity), playfield load/unload as log lines.
     /// Handlers are called on the game thread and only queue work.
@@ -192,9 +192,18 @@ namespace TakaroEmpyrion.Game
             }
             Fire(async () =>
             {
-                PlayerRecord r = _players.ByEntity(senderEntity) ?? await _actions.RefreshPlayer(senderEntity);
+                PlayerRecord r;
+                bool positionFresh = true;
+                try { r = await _actions.RefreshPlayer(senderEntity); }
+                catch (Exception e)
+                {
+                    positionFresh = false;
+                    r = _players.ByEntity(senderEntity) ?? await _actions.KnownPlayer(senderEntity);
+                    if (r == null) throw;
+                    _log.Debug("chat position unavailable for entity " + senderEntity + ": " + e.Message);
+                }
                 var data = new JObject { ["player"] = PlayerRegistry.ToTakaro(r), ["channel"] = channel, ["msg"] = text };
-                JObject pos = PlayerRegistry.PositionOf(r);
+                JObject pos = positionFresh ? PlayerRegistry.PositionOf(r) : null;
                 if (pos != null) data["position"] = pos;
                 if (channel == "whisper" && recipientEntity > 0)
                 {

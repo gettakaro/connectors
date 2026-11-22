@@ -7,6 +7,7 @@ namespace TakaroEmpyrion.Protocol
     public static class Capabilities
     {
         public static readonly int[] OfferedVersions = { 0, 1 };
+        public const int PositionIntervalSeconds = 3;
 
         /// <summary>
         /// Takaro's action -> Capability table. testReachability is always allowed; getMapTile is covered by the
@@ -41,6 +42,7 @@ namespace TakaroEmpyrion.Protocol
             foreach (string action in actions)
                 if (ForAction.TryGetValue(action, out string cap) && seen.Add(cap)) manifest.Add(new JObject { ["name"] = cap });
             foreach (string type in EventTypes) manifest.Add(new JObject { ["name"] = "events." + type });
+            manifest.Add(new JObject { ["name"] = "events.player-positions", ["parameters"] = new JObject { ["intervalSeconds"] = PositionIntervalSeconds } });
             if (mapCapability != null) manifest.Add(mapCapability);
             return manifest;
         }

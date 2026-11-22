@@ -38,6 +38,7 @@ public static partial class ContractTests
         Run("map tiles", MapTiles);
         Run("map real data", MapRealData);
         Run("wire v1", WireV1);
+        Run("transient position receipt pacing", PositionDelivery);
         Run("reconnect delays", ReconnectDelays);
         Run("reconnect wire", ReconnectWire);
         Run("reconnect slow uplink", ReconnectSlowUplink);
@@ -173,7 +174,7 @@ public static partial class ContractTests
         Check(same, "capabilities.json == Coverage registry",
             string.Join(", ", fromCode.Where(kv => !fromJson.TryGetValue(kv.Key, out string s) || s != kv.Value).Select(kv => kv.Key)));
         Check(Actions.Supported.All(a => fromCode.ContainsKey(a)), "every handled action has a coverage entry");
-        Check(Coverage.All.Count(e => e.Kind == "action") == 19 && Coverage.All.Count(e => e.Kind == "event") == 6, "19 actions + 6 events classified");
+        Check(Coverage.All.Count(e => e.Kind == "action") == 19 && Coverage.All.Count(e => e.Kind == "event") == 7, "19 actions + 7 events classified");
     }
 
     // ------------------------------------------------------------------ wire (fake Takaro + fake game)
@@ -332,6 +333,13 @@ public static partial class ContractTests
         var got = new Dictionary<string, JObject>();
         for (int i = 0; i < 2; i++) { JObject o = Next(sock, x => (string)x["type"] == "response"); if (o != null) got[(string)o["requestId"]] = o; }
         Check(got.ContainsKey(a1) && (double)got[a1]["payload"]["x"] == 1 && (string)got[a1]["payload"]["dimension"] == "Akua", "WIRE-2 location answered by its requestId");
+        PlayerInfo moved = game.Players[101];
+        moved.pos = new PVector3(7, 8, 9);
+        game.Players[101] = moved;
+        JArray snapshot = actions.CurrentPositions().Result;
+        Check(snapshot.Count == 1 && (string)snapshot[0]["gameId"] == "76561198000000001"
+              && (double)snapshot[0]["position"]["x"] == 7 && (string)snapshot[0]["position"]["dimension"] == "Akua",
+              "position snapshot reads current PlayerInfo.pos and stable gameId");
         Check(got.ContainsKey(a2) && got[a2]["payload"] is JArray && (string)got[a2]["payload"][0]["player"]["gameId"] == "76561198000000002", "WIRE-2 listBans answered by its requestId, bare array");
 
         // WIRE-3 args shapes
