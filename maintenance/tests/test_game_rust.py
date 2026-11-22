@@ -39,7 +39,7 @@ from takaro_maint.steam import vdf
 from takaro_maint.tracker import identity
 
 GAME = "rust"
-TARGET = "carbon-26498655"
+TARGET = "carbon-26778019"
 APP = 258550
 VERSION = "0.0.6-dev.abc1234"
 ARTIFACT = f"takaro-rust-plugin-{TARGET}-{VERSION}.cs"
@@ -260,12 +260,12 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     env = payload["env"]
     assert env["RUST_STEAM_APP"] == "258550"
     assert env["RUST_STEAM_BRANCH"] == "public"
-    assert env["RUST_STEAM_BUILDID"] == "26498655"
-    assert env["RUST_STEAM_DEPOTS"] == "258552:7175333784427202048;258554:8417394343345843224"
-    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26498655-{version}.cs"
+    assert env["RUST_STEAM_BUILDID"] == "26778019"
+    assert env["RUST_STEAM_DEPOTS"] == "258552:3849593360004026679;258554:814960451527197808"
+    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26778019-{version}.cs"
     assert env["RUST_CARBON_ASSET"] == "Carbon.Linux.Release.tar.gz"
     assert env["RUST_CARBON_TAG"] == "production_build"
-    assert env["RUST_CARBON_SHA256"] == "5c9c5f80904516732b15324badba921622f3c8f5b77e3cfe120d8c16489aa795"
+    assert env["RUST_CARBON_SHA256"] == "4b35974806ae6caf65dcd2c07e85f3a44b3979f0883d739a52b628111c781b24"
     assert env["RUST_CARBON_DOWNLOAD_URL"] == (
         "https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
     )
@@ -276,9 +276,9 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     assert not any(key.endswith("_JAVA") for key in env)
 
     assert payload["resolvedUrls"]["server"].startswith(
-        "steam://app/258550/branch/public/build/26498655/depot/258552/manifest/7175333784427202048"
+        "steam://app/258550/branch/public/build/26778019/depot/258552/manifest/3849593360004026679"
     )
-    assert "258554/manifest/8417394343345843224" in payload["resolvedUrls"]["server"]
+    assert "258554/manifest/814960451527197808" in payload["resolvedUrls"]["server"]
     # The Carbon asset is addressed by the URL that actually serves the bytes: the API's
     # asset-id URL answers with JSON unless the request asks for octet-stream, which
     # `catalog validate --online` (and anything else that re-hashes it) cannot do.
