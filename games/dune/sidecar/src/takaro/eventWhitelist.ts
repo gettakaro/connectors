@@ -36,9 +36,10 @@ export const EVENT_FIELDS: Record<GameEventType, readonly string[]> = {
   log: [],
   'player-connected': ['player'],
   'player-disconnected': ['player'],
-  'chat-message': ['player', 'channel', 'recipient', 'msg'],
+  'chat-message': ['player', 'channel', 'recipient', 'msg', 'position'],
   'player-death': ['player', 'attacker', 'position'],
   'entity-killed': ['player', 'entity', 'weapon'],
+  'player-positions': ['positions'],
 };
 
 const PLAYER_KEYS: Record<string, readonly string[]> = {
@@ -74,6 +75,24 @@ export function sanitizeGameEvent(type: GameEventType, data: unknown): Sanitized
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (!allowed.has(key)) {
       removed.push(key);
+      continue;
+    }
+    if (key === 'positions' && Array.isArray(value)) {
+      out[key] = value.map((item, index) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+        const entry: Record<string, unknown> = {};
+        for (const [entryKey, entryValue] of Object.entries(item)) {
+          if (entryKey === 'gameId') entry.gameId = entryValue;
+          else if (entryKey === 'position' && entryValue && typeof entryValue === 'object' && !Array.isArray(entryValue)) {
+            entry.position = Object.fromEntries(Object.entries(entryValue).filter(([k]) => {
+              if ((POSITION_FIELDS as readonly string[]).includes(k)) return true;
+              removed.push(`positions.${index}.position.${k}`);
+              return false;
+            }));
+          } else removed.push(`positions.${index}.${entryKey}`);
+        }
+        return entry;
+      });
       continue;
     }
     const nested = PLAYER_KEYS[key];

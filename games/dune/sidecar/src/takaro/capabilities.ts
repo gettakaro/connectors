@@ -35,9 +35,13 @@ export const ACTION_CAPABILITY: Record<Exclude<GameServerAction, 'testReachabili
  * The Capability Manifest sent with a version 1 identify (and as a `capabilities` replacement when the game build
  * changes). `gameVersion` is the running game build, null while unknown.
  */
-export function buildManifest(dimensions: readonly MapDimension[], gameVersion: string | null = null): Capability[] {
+export function buildManifest(dimensions: readonly MapDimension[], gameVersion: string | null = null, livePositions = false): Capability[] {
   const manifest: Capability[] = Object.values(ACTION_CAPABILITY).map((name) => ({ name }));
-  for (const type of GAME_EVENT_TYPES) manifest.push({ name: `events.${type}` });
+  for (const type of GAME_EVENT_TYPES) {
+    if (type === 'player-positions') {
+      if (livePositions) manifest.push({ name: 'events.player-positions', parameters: { intervalSeconds: 3 } });
+    } else manifest.push({ name: `events.${type}` });
+  }
   if (dimensions.length) manifest.push({ name: 'map', parameters: { dimensions: dimensions.map((d) => ({ ...d })) } });
   manifest.push(gameProfileCapability(gameVersion));
   return manifest;
