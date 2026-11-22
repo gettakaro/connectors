@@ -1,4 +1,5 @@
 #include "../src/action_bindings.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <limits>
@@ -10,7 +11,7 @@ int64_t inventory_quantity = 2;
 int grant_increment = 3;
 bool grant_result = true;
 bool teleport_result = true;
-// The engine refuses a standing survivor below this height.
+// The engine lifts a standing survivor placed below this height up to it.
 float teleport_floor = -std::numeric_limits<float>::infinity();
 FVector position{};
 FRotator orientation{12.0f, 34.0f, 56.0f};
@@ -28,9 +29,8 @@ bool teleport(void*, bool flag, FVector target, FRotator rotation) {
   ++teleport_calls;
   assert(!flag && rotation.pitch == orientation.pitch && rotation.yaw == orientation.yaw &&
          rotation.roll == orientation.roll);
-  const bool placed = teleport_result && target.z >= teleport_floor;
-  if (placed) position = target;
-  return placed;
+  if (teleport_result) position = FVector{target.x, target.y, std::max(target.z, teleport_floor)};
+  return teleport_result;
 }
 FVector location(void*) { return position; }
 FRotator rotation(void*) { return orientation; }
@@ -64,20 +64,20 @@ int main() {
   assert(teleport_player(controller, pawn, destination, api) == Result::verified);
   assert(teleport_calls == 1);
   teleport_result = false;
-  teleport_calls = 0;
   assert(teleport_player(controller, pawn, destination, api) == Result::rejected);
-  assert(teleport_calls == 4);
   teleport_result = true;
-  // A point saved below standing height: refused at 240 and 265, placed 50 higher.
-  teleport_floor = 280;
-  teleport_calls = 0;
+  // A point saved while prone: the engine lifts the survivor 40 units to standing height.
+  teleport_floor = destination.z + 40;
   assert(teleport_player(controller, pawn, destination, api) == Result::verified);
-  assert(teleport_calls == 3 && position.z == 290 && position.x == destination.x);
-  // Never more than 100 higher.
-  teleport_floor = 341;
-  teleport_calls = 0;
-  assert(teleport_player(controller, pawn, destination, api) == Result::rejected);
-  assert(teleport_calls == 4);
+  assert(position.z == destination.z + 40);
+  // A lift beyond 100, or a fall below the point, is not where Takaro asked.
+  teleport_floor = destination.z + 101;
+  assert(teleport_player(controller, pawn, destination, api) == Result::unverified);
+  teleport_floor = -std::numeric_limits<float>::infinity();
+  Api sank = api; sank.location = [](void*) { return FVector{100, -50, 214}; };
+  assert(teleport_player(controller, pawn, destination, sank) == Result::unverified);
+  Api moved = api; moved.location = [](void*) { return FVector{130, -50, 240}; };
+  assert(teleport_player(controller, pawn, destination, moved) == Result::unverified);
   teleport_floor = -std::numeric_limits<float>::infinity();
   position = FVector{0, 0, 0};
   Api no_readback = api; no_readback.location = [](void*) { return FVector{0, 0, 0}; };

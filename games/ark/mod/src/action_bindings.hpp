@@ -139,24 +139,24 @@ inline std::optional<bool> dispatch_teleport(void* controller, void* pawn, FVect
 }
 
 // A point saved while the survivor lay down after login, crouched or went prone sits below a
-// standing survivor, and the engine refuses to place the standing capsule there. Each refusal
-// tries the same point a little higher; the survivor then drops onto the ground.
-inline constexpr float kTeleportLifts[] = {0.0f, 25.0f, 50.0f, 100.0f};
+// standing survivor. The engine still teleports there, but lifts the standing capsule out of the
+// ground (about 40 units from prone), so the vertical check allows that lift.
+inline constexpr float kTeleportTolerance = 25.0f;
+inline constexpr float kTeleportMaxLift = 100.0f;
 
 inline Result teleport_player(void* controller, void* pawn, FVector target, const Api& api = {}) {
   if (!api.location) return Result::invalid;
-  for (const float lift : kTeleportLifts) {
-    const FVector attempt{target.x, target.y, target.z + lift};
-    const std::optional<bool> dispatched = dispatch_teleport(controller, pawn, attempt, api);
-    if (!dispatched) return Result::invalid;
-    if (!*dispatched) continue;
-    const FVector actual = api.location(pawn);
-    if (!std::isfinite(actual.x) || !std::isfinite(actual.y) || !std::isfinite(actual.z))
-      return Result::unverified;
-    const float dx = actual.x - attempt.x, dy = actual.y - attempt.y, dz = actual.z - attempt.z;
-    return dx * dx + dy * dy + dz * dz <= 25.0f * 25.0f ? Result::verified : Result::unverified;
-  }
-  return Result::rejected;
+  const std::optional<bool> dispatched = dispatch_teleport(controller, pawn, target, api);
+  if (!dispatched) return Result::invalid;
+  if (!*dispatched) return Result::rejected;
+  const FVector actual = api.location(pawn);
+  if (!std::isfinite(actual.x) || !std::isfinite(actual.y) || !std::isfinite(actual.z))
+    return Result::unverified;
+  const float dx = actual.x - target.x, dy = actual.y - target.y, dz = actual.z - target.z;
+  return dx * dx + dy * dy <= kTeleportTolerance * kTeleportTolerance && dz >= -kTeleportTolerance &&
+                 dz <= kTeleportMaxLift
+             ? Result::verified
+             : Result::unverified;
 }
 
 } // namespace ark_actions
