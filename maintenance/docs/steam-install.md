@@ -136,3 +136,4 @@ fingerprint, so a re-pinned target never compiles against the previous build's a
 - Run an in-place updater (`app_update`, LinuxGSM auto-install) against a pinned install.
 - Upload game files anywhere. The cache is local; the release carries the connector only.
 - Put a credential in the catalog, a log or the command's output.
+
