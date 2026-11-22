@@ -75,7 +75,7 @@ block of `*` lines says what to fix (missing token, wrong token or a name alread
 
 ## What works, what doesn't
 
-Checked on game build 1287369 (Enshrouded 1.0), 2026-11-06. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on game build 1287369 (Enshrouded 1.0), 2026-11-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
