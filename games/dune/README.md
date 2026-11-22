@@ -111,6 +111,7 @@ Checked on server build 26081962, 2026-10-22. ✅ works, ⚠️ works with a lim
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Player levels and skills | ✅ | Character level and XP, plus the five specializations. |
+| Characters | ✅ | One character per account on each world. Deleting it and starting again makes a new character with its own levels. |
 | Item list | ✅ | |
 | Entity list | ✅ | The full list needs the plugin. |
 | Locations | ⚠️ | Takaro does not use them for Generic servers. |
