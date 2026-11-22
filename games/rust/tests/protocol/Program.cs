@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
 internal static class Program
@@ -27,6 +29,9 @@ internal static class Program
         IdentifyReplies();
         Responses();
         Events();
+        Positions();
+        PositionPacing();
+        AbandonedSocketOperation();
         Profile();
         Reconnect();
         Console.WriteLine("checks: " + _checks + ", failures: " + _failures);
@@ -41,14 +46,14 @@ internal static class Program
     private static void Manifest()
     {
         var names = Names(Connector.BuildManifest());
-        Check(names.Count == 22, "manifest: 16 actions and 6 events (" + names.Count + ")");
+        Check(names.Count == 23, "manifest: 16 actions and 7 events (" + names.Count + ")");
         foreach (var expected in new[]
         {
             "players.list", "players.get", "players.location", "players.inventory", "players.teleport",
             "items.list", "items.give", "entities.list", "locations.list", "chat.send", "console.execute",
             "moderation.kick", "moderation.ban", "moderation.unban", "moderation.listBans", "server.shutdown",
             "events.player-connected", "events.player-disconnected", "events.chat-message",
-            "events.player-death", "events.entity-killed", "events.log",
+            "events.player-death", "events.entity-killed", "events.log", "events.player-positions",
         })
             Check(names.Contains(expected), "manifest: declares " + expected);
         Check(names.Distinct().Count() == names.Count, "manifest: no duplicate names");
@@ -59,7 +64,9 @@ internal static class Program
 
         var map = new JObject { ["name"] = "map", ["parameters"] = new JObject() };
         var withMap = Names(Connector.BuildManifest(map, null));
-        Check(withMap.Count == 23 && withMap.Last() == "map", "manifest: optional capabilities are appended, nulls skipped");
+        Check(withMap.Count == 24 && withMap.Last() == "map", "manifest: optional capabilities are appended, nulls skipped");
+        var positions = (JObject)Connector.BuildManifest().Single(c => (string)c["name"] == "events.player-positions");
+        Check((int)positions["parameters"]["intervalSeconds"] == 3, "manifest: positions declare a 3 second interval");
 
         Check(Connector.IsDeclaredAction("getPlayers") && Connector.IsDeclaredAction("shutdown"), "declared: action handlers");
         Check(!Connector.IsDeclaredAction("getMapInfo") && !Connector.IsDeclaredAction("testReachability")
@@ -72,7 +79,7 @@ internal static class Program
         Check((string)payload["identityToken"] == "ident" && (string)payload["registrationToken"] == "reg", "identify: tokens");
         var versions = payload["protocolVersions"].Select(v => (int)v).ToArray();
         Check(versions.SequenceEqual(new[] { 0, 1 }), "identify: offers protocol versions [0, 1]");
-        Check(payload["capabilities"] is JArray caps && caps.Count == 22, "identify: carries the manifest");
+        Check(payload["capabilities"] is JArray caps && caps.Count == 23, "identify: carries the manifest");
         var empty = Connector.BuildIdentifyPayload(null, null, new JArray());
         Check((string)empty["identityToken"] == "" && (string)empty["registrationToken"] == "", "identify: missing tokens are empty strings");
         Check((string)payload["game"] == "rust", "identify: game is the slug rust");
@@ -248,6 +255,71 @@ internal static class Program
         Check((string)v0["type"] == "gameEvent" && (string)v0["payload"]["type"] == "chat-message"
             && v0["payload"]["streamId"] == null && v0["payload"]["seq"] == null && (string)v0["payload"]["data"]["msg"] == "one",
             "v0 frame: no streamId or seq");
+    }
+
+    private static void Positions()
+    {
+        var samples = new[]
+        {
+            new KeyValuePair<string, JObject>("76561198000000001", new JObject { ["x"] = 12.5, ["y"] = 3, ["z"] = -9 }),
+            new KeyValuePair<string, JObject>("76561198000000002", new JObject { ["x"] = -1, ["y"] = 4, ["z"] = 7 }),
+        };
+        var data = Connector.PlayerPositionsData(samples);
+        var positions = (JArray)data["positions"];
+        Check(positions.Count == 2 && (string)positions[0]["gameId"] == samples[0].Key
+            && (double)positions[0]["position"]["x"] == 12.5, "positions: all players retain IDs and coordinates");
+        Check(data.Properties().Select(p => p.Name).SequenceEqual(new[] { "positions" }), "positions: event data has only the protocol field");
+        var eventFrame = Connector.PositionEventFrame(data, "positions-stream", 1);
+        Check((string)eventFrame["payload"]["type"] == "player-positions"
+            && eventFrame["payload"]["data"]["positions"] is JArray
+            && (string)eventFrame["payload"]["streamId"] == "positions-stream"
+            && (long)eventFrame["payload"]["seq"] == 1, "positions: separate v1 event stream");
+
+        var duplicate = Connector.PlayerPositionsData(samples.Concat(new[] { samples[0] }));
+        Check(((JArray)duplicate["positions"]).Count == 2, "positions: duplicate game IDs are omitted");
+        var oversized = Connector.PlayerPositionsData(Enumerable.Range(0, 1001)
+            .Select(i => new KeyValuePair<string, JObject>(i.ToString(), new JObject { ["x"] = i, ["y"] = 0, ["z"] = 0 })));
+        Check(((JArray)oversized["positions"]).Count == 1000, "positions: protocol batch limit");
+    }
+
+    private static void PositionPacing()
+    {
+        var pacer = new Connector.PositionPacer(1000);
+        Check(!pacer.Ready(0), "positions: unavailable before identify");
+        pacer.Reset("connection-one");
+        Check(pacer.Begin(100) == 1 && !pacer.Ready(20000), "positions: one batch waits for its acknowledgement even after network delay");
+        Check(!pacer.Acknowledge("gameplay", 1, 20000) && !pacer.Acknowledge("connection-one", 2, 20000),
+            "positions: another stream or future ack cannot release the pending snapshot");
+        Check(pacer.Acknowledge("connection-one", 1, 20000), "positions: matching receipt acknowledgement releases pending snapshot");
+        Check(!pacer.Ready(22999) && pacer.Ready(23000), "positions: next send waits the declared interval after acknowledgement");
+        Check(!pacer.Acknowledge("connection-one", 1, 22999) && pacer.Begin(23000) == 2,
+            "positions: duplicate acknowledgements do not move the deadline");
+        Check(!pacer.Expired(52999) && pacer.Expired(53000), "positions: missing acknowledgement has a bounded timeout");
+        pacer.Reset("connection-two");
+        Check(pacer.Ready(53001) && pacer.Begin(53001) == 1, "positions: reconnect drops pending state and starts a new stream");
+        Check(!pacer.Acknowledge("connection-one", 2, 54000), "positions: old connection acknowledgement cannot affect new stream");
+    }
+
+    private static void AbandonedSocketOperation()
+    {
+        using (var cts = new CancellationTokenSource())
+        {
+            var pending = new TaskCompletionSource<bool>();
+            var lifecycle = Connector.AwaitUntilCancelled(pending.Task, cts.Token);
+            cts.Cancel();
+            Check(SpinWait.SpinUntil(() => lifecycle.IsCompleted, 2000) && lifecycle.IsCanceled,
+                "socket lifecycle: watchdog cancellation retires an operation that ignores cancellation");
+            pending.SetException(new InvalidOperationException("late socket failure"));
+        }
+        try
+        {
+            Connector.AwaitUntilCancelled(Task.FromException(new InvalidOperationException("connect failed")), CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Check(false, "socket lifecycle: propagate an immediate failure");
+        }
+        catch (InvalidOperationException) { Check(true, "socket lifecycle: propagate an immediate failure"); }
+        Connector.AwaitUntilCancelled(Task.CompletedTask, CancellationToken.None).GetAwaiter().GetResult();
+        Check(true, "socket lifecycle: successful operation completes normally");
     }
 
     private static void Reconnect()
