@@ -14,6 +14,7 @@ and SourceMod 1.13 are installed by the operator.
 | `mod/addons/sourcemod/scripting/takaro_tf2.sp` | The plugin: Takaro protocol (v0 and v1 with event acks), game adapter, cvars. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_chat.inc` | Server chat name resolution and the one renderer for Takaro chat lines. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_reconnect.inc` | Reconnect policy: delay per failure streak, stable-session and liveness timeouts. |
+| `mod/addons/sourcemod/scripting/takaro_tf2_positions.inc` | Position snapshot pacing, exact-sequence receipts, and receipt deadlines. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc` | Generated weapon catalog for `listItems` (item definition index, in-game name). |
 | `mod/cfg/sourcemod/takaro_tf2.cfg` | The config template shipped in the zip (no secrets). |
 | `scripts/build-release.sh` | Release build for one catalog target. |
@@ -23,6 +24,13 @@ and SourceMod 1.13 are installed by the operator.
 | `tests/takaro_tf2_reconnect_test.sp` | Unit tests for `takaro_tf2_reconnect.inc`, run the same way. |
 | `tests/validate-static.mjs` | Source-level contract checks (actions, events, cvars, wire shapes, `capabilities.json`). |
 | `capabilities.json` | What each Takaro action and event does on TF2. |
+
+Protocol v1 advertises `events.player-positions` with a three-second minimum interval. After
+a matching receipt, the server waits three seconds before capturing another complete batch.
+Each included in-game client contributes its current server entity origin and map dimension,
+including dead players and spectators. Missing entities defer the batch. Reconnects discard
+old snapshots, and chat includes the sender's current entity position.
+Real-client position acceptance was exercised on Linux server26334371 with Windows client26334388. Other catalog target combinations retain build coverage.
 
 The zip mirrors the server's `tf/` folder (`addons/sourcemod/...` and `cfg/sourcemod/...`).
 

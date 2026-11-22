@@ -7,6 +7,7 @@
 #include "takaro_tf2_item_catalog.inc"
 #include "takaro_tf2_chat.inc"
 #include "takaro_tf2_reconnect.inc"
+#include "takaro_tf2_positions.inc"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -71,6 +72,10 @@ bool g_OfferedV1 = false;
 // Version 0 sends the queue once and clears it.
 char g_StreamId[48];
 int g_NextSeq = 1;
+// Position samples are transient. They use a separate stream and are never replayed after reconnect.
+char g_PositionStreamId[48];
+int g_PositionSeq = 1;
+PositionReceiptState g_PositionReceipt;
 // Intel home positions per team (index 2 = RED, 3 = BLU), cached at round start while flags are home.
 float g_FlagHome[4][3];
 bool g_FlagHomeSet[4];
@@ -135,7 +140,8 @@ public void OnPluginStart()
   RegServerCmd("takaro_tf2_reconnect", Command_Reconnect);
   RegServerCmd("takaro_tf2_state", Command_State);
 
-  CreateTimer(5.0, Timer_CheckEventAck, _, TIMER_REPEAT);
+  CreateTimer(1.0, Timer_CheckEventAck, _, TIMER_REPEAT);
+  CreateTimer(0.25, Timer_PlayerPositions, _, TIMER_REPEAT);
   CreateTimer(0.1, Timer_Connection, _, TIMER_REPEAT);
 
   EmitLogEvent("info", "Takaro TF2 connector loaded");
@@ -335,6 +341,11 @@ void EmitChatMessage(int client, bool teamOnly, const char[] text)
     data.SetString("channel", "global");
   }
   data.SetString("msg", text);
+  if (g_ProtocolVersion == 1 && IsValidEntity(client)) {
+    JSONObject position = CurrentPlayerPosition(client);
+    data.Set("position", position);
+    delete position;
+  }
   EmitGameEvent("chat-message", data);
   delete data;
   delete player;
@@ -662,6 +673,9 @@ void OnTakaroMessage(WebSocket ws, const JSON message, int wireSize)
         }
         float now = GetEngineTime();
         g_LastAckTime = now;
+        Format(g_PositionStreamId, sizeof(g_PositionStreamId), "tf2-pos-%d-%d", GetTime(), GetRandomInt(100000, 999999));
+        g_PositionSeq = 1;
+        g_PositionReceipt.Reset(now);
         g_IdentifiedAt = now;
         if (g_LostAt > 0.0) {
           LogMessage("[TakaroTF2] Takaro identity accepted: gameServerId=%s protocol=%d, %.2f s after the connection was lost (%d event(s) queued)",
@@ -767,6 +781,14 @@ JSONArray BuildCapabilityManifest()
     capabilities.Push(capability);
     delete capability;
   }
+  JSONObject positions = new JSONObject();
+  positions.SetString("name", "events.player-positions");
+  JSONObject parameters = new JSONObject();
+  parameters.SetInt("intervalSeconds", 3);
+  positions.Set("parameters", parameters);
+  capabilities.Push(positions);
+  delete parameters;
+  delete positions;
   if (g_CvarShutdownEnabled.BoolValue) {
     JSONObject capability = new JSONObject();
     capability.SetString("name", "server.shutdown");
@@ -1527,6 +1549,73 @@ void EmitGameEvent(const char[] eventType, JSON data)
   }
 }
 
+JSONObject CurrentPlayerPosition(int client)
+{
+  float origin[3];
+  GetClientAbsOrigin(client, origin);
+  JSONObject position = new JSONObject();
+  position.SetFloat("x", origin[0]);
+  position.SetFloat("y", origin[1]);
+  position.SetFloat("z", origin[2]);
+  char map[PLATFORM_MAX_PATH];
+  GetCurrentMap(map, sizeof(map));
+  position.SetString("dimension", map);
+  return position;
+}
+
+Action Timer_PlayerPositions(Handle timer)
+{
+  if (!g_Identified || g_ProtocolVersion != 1) {
+    return Plugin_Continue;
+  }
+
+  if (!g_PositionReceipt.Ready(GetEngineTime()) || g_WebSocket == null || !g_WebSocket.Connected) {
+    return Plugin_Continue;
+  }
+
+  // Dead players and spectators still expose their current server entity origin.
+  for (int client = 1; client <= MaxClients; client++) {
+    if (IsTakaroClient(client) && !IsValidEntity(client)) {
+      return Plugin_Continue;
+    }
+  }
+
+  JSONArray positions = new JSONArray();
+  for (int client = 1; client <= MaxClients; client++) {
+    if (!IsTakaroClient(client)) {
+      continue;
+    }
+    char gameId[64], steamId[64], platformId[80];
+    ResolveClientIdentity(client, gameId, sizeof(gameId), steamId, sizeof(steamId), platformId, sizeof(platformId));
+    JSONObject entry = new JSONObject();
+    entry.SetString("gameId", gameId);
+    JSONObject position = CurrentPlayerPosition(client);
+    entry.Set("position", position);
+    positions.Push(entry);
+    delete position;
+    delete entry;
+  }
+
+  JSONObject data = new JSONObject();
+  data.Set("positions", positions);
+  JSONObject payload = new JSONObject();
+  payload.SetString("type", "player-positions");
+  payload.Set("data", data);
+  payload.SetString("streamId", g_PositionStreamId);
+  int seq = g_PositionSeq++;
+  payload.SetInt("seq", seq);
+  JSONObject frame = new JSONObject();
+  frame.SetString("type", "gameEvent");
+  frame.Set("payload", payload);
+  SendJson(frame);
+  g_PositionReceipt.Sent(seq, GetEngineTime());
+  delete frame;
+  delete payload;
+  delete data;
+  delete positions;
+  return Plugin_Continue;
+}
+
 void SendOutboxEntry(int index)
 {
   if (g_WebSocket == null || !g_WebSocket.Connected) {
@@ -1575,7 +1664,7 @@ void FlushOutbox()
 void HandleEventAck(const JSON message)
 {
   char streamId[48];
-  if (!message.PtrTryGetString("/payload/streamId", streamId, sizeof(streamId)) || !StrEqual(streamId, g_StreamId)) {
+  if (!message.PtrTryGetString("/payload/streamId", streamId, sizeof(streamId))) {
     return;
   }
 
@@ -1588,6 +1677,12 @@ void HandleEventAck(const JSON message)
     return;
   }
 
+  if (StrEqual(streamId, g_PositionStreamId)) {
+    g_PositionReceipt.Acknowledge(upTo, GetEngineTime());
+    return;
+  }
+  if (!StrEqual(streamId, g_StreamId)) return;
+
   while (g_OutboxSeq.Length > 0 && g_OutboxSeq.Get(0) <= upTo) {
     RemoveOutboxEntry(0);
   }
@@ -1597,6 +1692,10 @@ void HandleEventAck(const JSON message)
 // Version 1: no eventAck for ACK_TIMEOUT_SECONDS while events are pending -> reconnect, which resends them.
 Action Timer_CheckEventAck(Handle timer)
 {
+  if (g_ProtocolVersion == 1 && g_Identified && g_PositionReceipt.Expired(GetEngineTime())) {
+    DropConnection("position acknowledgement timed out after 30 seconds");
+    return Plugin_Continue;
+  }
   if (g_ProtocolVersion == 1 && g_Identified && g_OutboxSeq.Length > 0
     && GetEngineTime() - g_LastAckTime > ACK_TIMEOUT_SECONDS) {
     char reason[96];
