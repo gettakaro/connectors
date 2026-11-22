@@ -65,6 +65,9 @@ public static class PlayerMapper
             XboxLiveId: identity.XboxLiveId);
     }
 
+    /// <summary>A transport round-trip time in milliseconds, or null when it is not a real measurement.</summary>
+    public static int? ToPing(int milliseconds) => milliseconds is > 0 and < 60_000 ? milliseconds : null;
+
     /// <summary>
     /// The character behind a player ZDO, or null until the ZDO has reached the server. The game
     /// writes the id and name onto the ZDO when it spawns the character, for vanilla clients too.

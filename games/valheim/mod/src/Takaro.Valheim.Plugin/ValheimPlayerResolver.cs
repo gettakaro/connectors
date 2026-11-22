@@ -26,7 +26,7 @@ public sealed class ValheimPlayerResolver
             playerId,
             null,
             null,
-            null)) with
+            ReadPing(PeerOf(player)))) with
         {
             Character = ReadCharacter(player.m_characterID, player.m_name)
         };
@@ -54,10 +54,38 @@ public sealed class ValheimPlayerResolver
             platformId,
             null,
             null,
-            null)) with
+            ReadPing(peer))) with
         {
             Character = ReadCharacter(peer.m_characterID, peer.m_playerName)
         };
+    }
+
+    private static ZNetPeer? PeerOf(ZNet.PlayerInfo player)
+    {
+        var network = ZNet.instance;
+        return network is null || player.m_characterID.IsNone() ? null : network.GetPeer(player.m_characterID.UserID);
+    }
+
+    /// <summary>
+    /// The round-trip time the game's own transport measures for this peer, in milliseconds;
+    /// null when the socket has no measurement yet.
+    /// </summary>
+    private static int? ReadPing(ZNetPeer? peer)
+    {
+        try
+        {
+            if (peer?.m_socket is not { } socket)
+            {
+                return null;
+            }
+
+            socket.GetConnectionQuality(out _, out _, out var ping, out _, out _);
+            return PlayerMapper.ToPing(ping);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static TakaroCharacter? ReadCharacter(ZDOID characterZdoId, string? fallbackName)
