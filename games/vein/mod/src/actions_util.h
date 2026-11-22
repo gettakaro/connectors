@@ -232,4 +232,12 @@ std::string CharacterJson(const std::string& id, const std::string& name, const 
 // keeps its name. Returns "" when the refusal is something else.
 std::string RefusalHint(const std::string& why, const std::string& serverName);
 
+// Host and port of the game's own HTTP API (`VEIN_HTTP_API`, e.g. `http://127.0.0.1:8080/`). Only
+// plain `http://` is accepted; false for an empty, `https://` or malformed value.
+bool ParseHttpBase(const std::string& url, std::string& host, int& port);
+
+// One blocking `POST <path>` with an empty body to host:port. Returns the HTTP status, 0 when the
+// connection was made but no answer arrived within timeoutMs, or -1 when nothing accepted it. For the game's local HTTP API only; never call it on the game thread.
+int PostEmpty(const std::string& host, int port, const std::string& path, int timeoutMs);
+
 }  // namespace ActionsUtil

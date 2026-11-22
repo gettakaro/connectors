@@ -14,6 +14,7 @@
 #include "actions.h"
 
 #include "actions_util.h"
+#include "config_file.h"
 
 #include "events.h"
 #include "gamethread.h"
@@ -1714,6 +1715,24 @@ void* ShutdownThread(void*) {
         0, 500 * 1000 * 1000
     };
     nanosleep(&half, nullptr);
+    // The game's own HTTP API saves the world and then exits by itself. A save takes several
+    // seconds (clone, then an asynchronous write), so a fixed wait before SIGTERM can cut it off.
+    std::string host;
+    int port = 0;
+    const char* api = ConfigFile::Get("VEIN_HTTP_API");
+    if (ActionsUtil::ParseHttpBase(api ? api : "http://127.0.0.1:8080", host, port)) {
+        // The game answers once the save has started, which can take seconds on a busy server.
+        int status = ActionsUtil::PostEmpty(host, port, "/saveandexit", 30000);
+        PluginLog("shutdown: POST /saveandexit on the game HTTP API -> %d", status);
+        if ((status >= 200 && status < 300) || status == 0) {
+            // The game exits once the save is written (status 0: it accepted the request but was too
+            // busy to answer in time, which is still a save under way). Only if it never does, stop it ourselves.
+            for (int i = 0; i < 240; i++) nanosleep(&half, nullptr);
+            PluginLog("shutdown: the game did not exit within 120 s of /saveandexit; sending SIGTERM");
+            kill(getpid(), SIGTERM);
+            return nullptr;
+        }
+    }
     auto saveRequested = std::make_shared<bool>(false);
     bool saveCompleted = GameThread::Run(
         [saveRequested] {
@@ -1730,7 +1749,7 @@ void* ShutdownThread(void*) {
         5000);
     PluginLog("shutdown: saveRequested=%d", (int)(saveCompleted && *saveRequested));
     if (saveCompleted && *saveRequested) {
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 40; i++) {
             struct timespec ts {
                 0, 500 * 1000 * 1000
             };
@@ -3562,6 +3581,20 @@ Actions::Result Actions::Command(const JsonValue& body) {
         return wrap(verb == "kick" ? Kick(b) : verb == "ban" ? Ban(b) : Unban(b));
     }
     if (verb == "save") {
+        // The game's own HTTP API confirms the save; the admin component's request does not, and on
+        // a dedicated server it is often ignored.
+        std::string host;
+        int port = 0;
+        const char* api = ConfigFile::Get("VEIN_HTTP_API");
+        if (ActionsUtil::ParseHttpBase(api ? api : "http://127.0.0.1:8080", host, port)) {
+            int status = ActionsUtil::PostEmpty(host, port, "/save", 5000);
+            if (status >= 200 && status < 300)
+                return {200, "{\"success\":true,\"output\":\"save started by the game (POST /save -> " +
+                                 std::to_string(status) + ")\"}"};
+            if (status == 0)  // accepted, but no answer yet
+                return {200, "{\"success\":true,\"output\":\"POST /save sent; the game did not answer within 5 s "
+                             "and may still be saving\"}"};
+        }
         return OnGameThread("command save", []() -> JobOut {
             std::string why;
             void* admin = FindAdminComponent(why);
@@ -3569,7 +3602,8 @@ Actions::Result Actions::Command(const JsonValue& body) {
             if (!save) return JobOut::Error(501, "UAdminComponent::Server_RequestDedicatedServerSave unresolved");
             if (!admin) return JobOut::Error(503, why);
             save(admin);
-            return CommandOutput(true, "save requested");
+            return CommandOutput(true, "save requested through the admin component; VEIN does not confirm it. "
+                                       "Set HTTPPort in Game.ini for a confirmed save");
         });
     }
     if (verb == "shutdown") return Shutdown();

@@ -76,7 +76,7 @@ Checked on VEIN 0.025h3 (server build 25969514), 2026-10-22. ✅ works, ⚠️ w
 | Ban list | ✅ | |
 | Give an item | ✅ | |
 | Shop | ✅ | |
-| Shut down the server | ✅ | Saves first. |
+| Shut down the server | ⚠️ | Saves first when VEIN's HTTP API is on (`HTTPPort` in Game.ini); otherwise the last autosave counts. |
 | Player joined / left | ✅ | |
 | Chat messages | ✅ | |
 | Player death | ✅ | |

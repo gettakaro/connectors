@@ -14,6 +14,10 @@
 #include "chat_probe.h"
 #include "reconnect_policy.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <thread>
 #include <cmath>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1523,6 +1527,61 @@ static void TestReconnectPolicy() {
     }
 }
 
+static void TestParseHttpBase() {
+    std::string host;
+    int port = 0;
+    CHECK(ActionsUtil::ParseHttpBase("http://127.0.0.1:8080", host, port), "plain base");
+    EQ(host, "127.0.0.1");
+    CHECK(port == 8080, "port %d", port);
+    CHECK(ActionsUtil::ParseHttpBase("http://localhost/api///", host, port), "path and default port");
+    EQ(host, "localhost");
+    CHECK(port == 80, "port %d", port);
+    CHECK(!ActionsUtil::ParseHttpBase("", host, port), "empty disables");
+    CHECK(!ActionsUtil::ParseHttpBase("https://127.0.0.1:8080", host, port), "https is not the local API");
+    CHECK(!ActionsUtil::ParseHttpBase("http://:8080", host, port), "no host");
+    CHECK(!ActionsUtil::ParseHttpBase("http://h:99999", host, port), "port range");
+    CHECK(!ActionsUtil::ParseHttpBase("http://h:80x", host, port), "port digits");
+    // Nothing listens on port 1: refused, -1, and it returns within the timeout.
+    CHECK(ActionsUtil::PostEmpty("127.0.0.1", 1, "/save", 500) == -1, "closed port gives -1");
+    {
+        // Accepted but never answered: 0 after the timeout.
+        int quiet = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in qa{};
+        qa.sin_family = AF_INET;
+        qa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t ql = sizeof qa;
+        CHECK(quiet >= 0 && bind(quiet, (sockaddr*)&qa, sizeof qa) == 0 && listen(quiet, 1) == 0 &&
+                  getsockname(quiet, (sockaddr*)&qa, &ql) == 0, "quiet listener");
+        CHECK(ActionsUtil::PostEmpty("127.0.0.1", ntohs(qa.sin_port), "/save", 300) == 0, "no answer gives 0");
+        close(quiet);
+    }
+    // A listener that records the request line and answers 204, like the game's API does.
+    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t alen = sizeof addr;
+    CHECK(srv >= 0 && bind(srv, (sockaddr*)&addr, sizeof addr) == 0 && listen(srv, 1) == 0 &&
+              getsockname(srv, (sockaddr*)&addr, &alen) == 0, "listener");
+    std::string seen;
+    std::thread t([&] {
+        int c = accept(srv, nullptr, nullptr);
+        if (c < 0) return;
+        char buf[512];
+        ssize_t n = recv(c, buf, sizeof buf, 0);
+        if (n > 0) seen.assign(buf, static_cast<size_t>(n));
+        const char* reply = "HTTP/1.1 204 No Content\r\n\r\n";
+        send(c, reply, strlen(reply), MSG_NOSIGNAL);
+        close(c);
+    });
+    int st = ActionsUtil::PostEmpty("127.0.0.1", ntohs(addr.sin_port), "/saveandexit", 2000);
+    t.join();
+    close(srv);
+    CHECK(st == 204, "status %d", st);
+    CHECK(seen.rfind("POST /saveandexit HTTP/1.1\r\n", 0) == 0, "request line: %s", seen.c_str());
+    CHECK(seen.find("Content-Length: 0") != std::string::npos, "empty body declared");
+}
+
 int main() {
     // Code under test reads settings through ConfigFile::Current(), which creates its file.
     char cfgDir[] = "/tmp/takaro-unit-XXXXXX";
@@ -1578,6 +1637,7 @@ int main() {
     TestCharacterIdFormatting();
     TestKillWeaponName();
     TestLocationRefusal();
+    TestParseHttpBase();
     TestConfigFileParse();
     TestConfigFileLookup();
     TestConfigResolve();
