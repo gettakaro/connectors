@@ -67,6 +67,7 @@ Checked on TF2 server version 11138802 (Steam build 25995664), 2026-10-20. ✅ w
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ⚠️ | Equipped weapons only. |
+| Player levels and skills | ❌ | A TF2 server has no player level to read. Casual and Competitive ranks stay with Valve's matchmaking, and scores reset every match. |
 | Item list | ✅ | |
 | Entity list | ✅ | Buildings, the sapper and Halloween bosses. |
 | Locations | ✅ | Intelligence, team spawns and control points. |
