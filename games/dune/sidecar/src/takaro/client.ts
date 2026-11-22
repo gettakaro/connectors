@@ -14,8 +14,21 @@ import {
 } from './protocol.js';
 
 export interface TakaroClientOptions {
+  /** Backoff base for consecutive failed attempts (default 2s); doubles per failure, with jitter. */
   baseReconnectMs?: number;
+  /** Backoff cap (default 60s). */
   maxReconnectMs?: number;
+  /** Centre of the first retry after a stable session dropped (default 300 ms; jittered to 0.5x-1.5x, so 150-450 ms). */
+  fastReconnectMs?: number;
+  /** An identified connection that stays up this long counts as stable and resets the failure streak (default 5s). */
+  stableAfterMs?: number;
+  /**
+   * Give up on an opening socket (TCP connect + TLS + upgrade) after this long (default 10s). Without it a connect
+   * into a blackholed path waits for the kernel's SYN retries (~2 min) before the next attempt is even scheduled.
+   */
+  handshakeTimeoutMs?: number;
+  /** Random source for the jitter, [0, 1). Tests pin it. */
+  random?: () => number;
   /** How often to ping Takaro while the socket is open (default 5s). */
   pingIntervalMs?: number;
   /** Terminate the socket when no frame/pong has arrived for this long (default 20s). */
@@ -45,7 +58,13 @@ export interface TakaroClientOptions {
 export class TakaroWsClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  /** Consecutive attempts that ended before the connection became stable. 0 = the last session was stable. */
   private reconnectAttempts = 0;
+  private stableTimer: NodeJS.Timeout | null = null;
+  private readonly fastReconnectMs: number;
+  private readonly stableAfterMs: number;
+  private readonly random: () => number;
+  private readonly handshakeTimeoutMs: number;
   private shuttingDown = false;
   private isIdentified = false;
   private gameServerId: string | null = null;
@@ -83,6 +102,10 @@ export class TakaroWsClient extends EventEmitter {
     super();
     this.baseReconnectMs = options.baseReconnectMs ?? 2000;
     this.maxReconnectMs = options.maxReconnectMs ?? 60000;
+    this.fastReconnectMs = options.fastReconnectMs ?? 300;
+    this.stableAfterMs = options.stableAfterMs ?? 5000;
+    this.random = options.random ?? Math.random;
+    this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? 10_000;
     this.pingIntervalMs = options.pingIntervalMs ?? 5_000;
     this.idleTimeoutMs = options.idleTimeoutMs ?? 20_000;
     this.maxMissedPongs = options.maxMissedPongs ?? 2;
@@ -113,7 +136,7 @@ export class TakaroWsClient extends EventEmitter {
       return;
     }
     logger.info(`Connecting to Takaro at ${this.url}`);
-    const ws = new WebSocket(this.url);
+    const ws = new WebSocket(this.url, this.handshakeTimeoutMs > 0 ? { handshakeTimeout: this.handshakeTimeoutMs } : {});
     this.ws = ws;
 
     ws.on('open', () => {
@@ -140,6 +163,7 @@ export class TakaroWsClient extends EventEmitter {
       if (this.ws !== ws) return;
       logger.warn(`Takaro WebSocket closed code=${code} reason=${reason.toString()}`);
       this.stopWatchdog();
+      this.stopStableTimer();
       this.outstandingPings = [];
       this.ws = null;
       this.isIdentified = false;
@@ -193,7 +217,17 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   nextReconnectDelay(): number {
-    return Math.min(this.maxReconnectMs, this.baseReconnectMs * 2 ** this.reconnectAttempts);
+    return reconnectDelay(this.reconnectAttempts, {
+      fastMs: this.fastReconnectMs,
+      baseMs: this.baseReconnectMs,
+      maxMs: this.maxReconnectMs,
+      random: this.random,
+    });
+  }
+
+  private stopStableTimer(): void {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = null;
   }
 
   /**
@@ -321,6 +355,7 @@ export class TakaroWsClient extends EventEmitter {
     if (old) {
       this.ws = null;
       this.stopWatchdog();
+      this.stopStableTimer();
       this.outstandingPings = [];
       this.isIdentified = false;
       this.gameServerId = null;
@@ -351,6 +386,7 @@ export class TakaroWsClient extends EventEmitter {
   shutdown(): void {
     this.shuttingDown = true;
     this.stopWatchdog();
+    this.stopStableTimer();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     const ws = this.ws;
@@ -397,7 +433,19 @@ export class TakaroWsClient extends EventEmitter {
           this.ws?.close();
           break;
         }
-        this.reconnectAttempts = 0;
+        // The failure streak resets only once this connection has stayed up for a while (stableAfterMs): a socket
+        // that identifies and then drops at once still counts as a failure and keeps backing off.
+        this.stopStableTimer();
+        {
+          const ws = this.ws;
+          this.stableTimer = setTimeout(() => {
+            this.stableTimer = null;
+            if (this.ws !== ws || !this.isIdentified) return;
+            if (this.reconnectAttempts) logger.info('Takaro connection stable, reconnect backoff reset');
+            this.reconnectAttempts = 0;
+          }, this.stableAfterMs);
+          this.stableTimer.unref?.();
+        }
         this.isIdentified = true;
         this.gameServerId = payload.gameServerId ?? payload.server?.id ?? null;
         this.protocolVersion = payload.protocolVersion === 1 ? 1 : 0;
@@ -457,10 +505,31 @@ export class TakaroWsClient extends EventEmitter {
   private scheduleReconnect(): void {
     if (this.shuttingDown || this.reconnectTimer) return;
     const delay = this.nextReconnectDelay();
+    const kind = this.reconnectAttempts === 0 ? 'fast first retry' : `failure streak ${this.reconnectAttempts}`;
     this.reconnectAttempts += 1;
-    logger.info(`Reconnecting to Takaro in ${delay}ms`);
+    logger.info(`Reconnecting to Takaro in ${delay}ms (${kind})`);
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
+}
+
+export interface ReconnectPolicy {
+  fastMs: number;
+  baseMs: number;
+  maxMs: number;
+  random: () => number;
+}
+
+/**
+ * Reconnect delay (gettakaro/connectors#858). `failures` = consecutive attempts that ended before the connection was
+ * stable. 0 means a stable, identified session just dropped: retry almost at once (fastMs x 0.5-1.5, so a Takaro
+ * deploy does not get every server back in the same millisecond). Every further failure doubles from baseMs, capped at
+ * maxMs, and waits a random 50-100% of that ("equal jitter"), so the waits stay spread out at the cap too.
+ */
+export function reconnectDelay(failures: number, p: ReconnectPolicy): number {
+  const r = Math.min(Math.max(p.random(), 0), 1);
+  if (failures <= 0) return Math.round(Math.min(p.maxMs, p.fastMs * (0.5 + r)));
+  const exp = Math.min(p.maxMs, p.baseMs * 2 ** Math.min(failures - 1, 30));
+  return Math.round(exp * (0.5 + 0.5 * r));
 }
 
 export interface ConfigHint {
