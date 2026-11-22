@@ -177,6 +177,12 @@ export const EVENT_COVERAGE: Record<GameEventType, EventCoverage> = {
     liveVerification: 'TShock plugin emits TAKARO_EVENT entity-killed marker parsed by log tailer',
     reason: 'The optional Takaro Terraria Events TShock plugin hooks ServerApi.Hooks.NpcKilled and emits structured log markers.',
   },
+  'player-positions': {
+    status: 'live-supported',
+    payloadShape: '{ timestamp: ISO8601, positions: [{ gameId, position: { x, y, z } }] }',
+    liveVerification: 'plugin snapshot command and bridge tests; live Takaro proof pending',
+    reason: 'The TShock plugin reads all active players through one snapshot command.',
+  },
   log: {
     status: 'live-supported',
     payloadShape: '{ message: string, level?: string, timestamp?: string }',

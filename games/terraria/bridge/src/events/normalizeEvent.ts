@@ -13,6 +13,7 @@ export function normalizeGameEvent(type: GameEventType, rawData: unknown): GameE
           player: playerDto(data.player),
           channel: stringValue(data.channel) || 'global',
           msg: stringValue(data.msg) || stringValue(data.message) || '',
+          position: positionDto(data.position),
         }),
       };
     case 'player-connected':

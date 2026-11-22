@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import EventEmitter from 'node:events';
 import WebSocket from 'ws';
+import { POSITION_INTERVAL_SECONDS } from './capabilities.js';
 import { CONNECTOR_IDENTITY } from './gameProfile.js';
 import type { GameEventType, IdentifyPayload, ProtocolErrorCode, RequestPayload, WsMessage } from './protocol.js';
 import { DEFAULT_RECONNECT_TIMING, reconnectDelay, type ReconnectTiming } from './reconnectPolicy.js';
@@ -43,6 +44,11 @@ export class TakaroWsClient extends EventEmitter {
   // Version 1 delivery: one stream per process, seq strictly increasing across reconnects.
   private readonly streamId = randomUUID();
   private nextSeq = 1;
+  private positionStreamId = randomUUID();
+  private nextPositionSeq = 1;
+  private pendingPosition: number | null = null;
+  private positionAckTimer: NodeJS.Timeout | null = null;
+  private nextPositionAt = 0;
   private readonly buffer: BufferedEvent[] = [];
   private dropped = 0;
 
@@ -94,6 +100,10 @@ export class TakaroWsClient extends EventEmitter {
     // reconfigure() closes later, and its close must not tear down or reschedule the new one.
     ws.on('open', () => {
       if (this.ws !== ws) return;
+      this.positionStreamId = randomUUID();
+      this.nextPositionSeq = 1;
+      this.clearPositionReceipt();
+      this.nextPositionAt = Date.now() + POSITION_INTERVAL_SECONDS * 1000;
       // An open socket is not a success: the failure streak resets only once the session
       // is identified and stable, so a peer that accepts and drops at once still backs off.
       this.watchLiveness(ws);
@@ -225,6 +235,7 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   private clearSessionTimers(): void {
+    this.clearPositionReceipt();
     if (this.stableTimer) clearTimeout(this.stableTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.livenessTimer) clearInterval(this.livenessTimer);
@@ -280,12 +291,49 @@ export class TakaroWsClient extends EventEmitter {
     return true;
   }
 
+  /** Fresh position snapshots belong only to this identified socket. */
+  canSendPositionSnapshot(): boolean {
+    return this.identified() && this.protocolVersion === 1
+      && this.ws?.readyState === WebSocket.OPEN && this.ws.bufferedAmount === 0
+      && this.pendingPosition === null && Date.now() >= this.nextPositionAt;
+  }
+
+  sendPositionSnapshot(data: unknown): boolean {
+    if (!this.canSendPositionSnapshot()) return false;
+    const seq = this.nextPositionSeq++;
+    this.pendingPosition = seq;
+    if (!this.send({ type: 'gameEvent', payload: {
+      type: 'player-positions', data, streamId: this.positionStreamId, seq,
+    } })) {
+      this.clearPositionReceipt();
+      return false;
+    }
+    const ws = this.ws;
+    this.positionAckTimer = setTimeout(() => {
+      if (this.ws === ws && this.pendingPosition === seq) ws?.terminate();
+    }, 30_000);
+    return true;
+  }
+
+  private clearPositionReceipt(): void {
+    if (this.positionAckTimer) clearTimeout(this.positionAckTimer);
+    this.positionAckTimer = null;
+    this.pendingPosition = null;
+  }
+
   private sendBuffered(event: BufferedEvent): boolean {
     return this.send({ type: 'gameEvent', payload: { type: event.type, data: event.data, streamId: this.streamId, seq: event.seq } });
   }
 
   private acknowledge(payload: unknown): void {
     const { streamId, upTo } = (payload ?? {}) as { streamId?: unknown; upTo?: unknown };
+    if (streamId === this.positionStreamId) {
+      if (this.pendingPosition !== null && upTo === this.pendingPosition) {
+        this.clearPositionReceipt();
+        this.nextPositionAt = Date.now() + POSITION_INTERVAL_SECONDS * 1000;
+      }
+      return;
+    }
     if (streamId !== this.streamId || typeof upTo !== 'number') return;
     while (this.buffer.length && this.buffer[0].seq <= upTo) this.buffer.shift();
   }

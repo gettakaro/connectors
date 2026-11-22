@@ -42,6 +42,10 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
         {
             HelpText = "Prints a player's world X/Y coordinates for Takaro."
         });
+        Commands.ChatCommands.Add(new Command(AdminPermission, TakaroPositions, "takaroposall")
+        {
+            HelpText = "Prints online players' world coordinates for Takaro."
+        });
         Commands.ChatCommands.Add(new Command(AdminPermission, TakaroInventory, "takaroinv")
         {
             HelpText = "Prints a player's inventory for Takaro."
@@ -87,6 +91,7 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             ServerApi.Hooks.NpcKilled.Deregister(this, OnNpcKilled);
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarotp"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaropos"));
+            Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroposall"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroinv"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takarogive"));
             Commands.ChatCommands.RemoveAll(command => command.Names.Contains("takaroban"));
@@ -235,6 +240,25 @@ public sealed class TakaroTerrariaEventsPlugin : TerrariaPlugin
             z = 0
         });
         args.Player.SendInfoMessage($"TAKARO_POSITION {json}");
+    }
+
+    private static void TakaroPositions(CommandArgs args)
+    {
+        var positions = TShock.Players
+            .Where(player => player is not null && player.Active)
+            .Take(1000)
+            .Select(player => new
+            {
+                gameId = player!.Name,
+                position = new
+                {
+                    x = player.TPlayer.position.X,
+                    y = player.TPlayer.position.Y,
+                    z = 0
+                }
+            })
+            .ToArray();
+        args.Player.SendInfoMessage($"TAKARO_POSITIONS {JsonSerializer.Serialize(new { positions })}");
     }
 
     // Bans a player on their TShock UUID rather than their display name.

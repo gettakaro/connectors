@@ -122,6 +122,40 @@ test('reads plugin-backed player location from TShock raw command output', async
   assert.deepEqual(tshock.rawCommands, ['/takaropos "Guide"']);
 });
 
+test('reads one complete position snapshot from the TShock plugin', async () => {
+  const tshock = new FakeTShock();
+  tshock.rawCommand = async (command: string) => {
+    tshock.rawCommands.push(command);
+    return {
+      success: true,
+      rawResult: 'TAKARO_POSITIONS {"positions":[{"gameId":"Guide","position":{"x":123.5,"y":456.25,"z":0}}]}',
+    };
+  };
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [], commandAllowlistPrefixes: [], enableShutdown: false,
+  });
+
+  const snapshot = await adapter.getPlayerPositions();
+  assert.deepEqual(tshock.rawCommands, ['/takaroposall']);
+  assert.deepEqual(snapshot.positions, [{ gameId: 'Guide', position: { x: 123.5, y: 456.25, z: 0 } }]);
+  assert.ok(Number.isFinite(Date.parse(snapshot.timestamp)));
+});
+
+test('rejects incomplete, duplicate, or oversized position snapshots', async () => {
+  const tshock = new FakeTShock();
+  const adapter = new TerrariaAdapter(tshock, {
+    commandAllowlistExact: [], commandAllowlistPrefixes: [], enableShutdown: false,
+  });
+  for (const positions of [
+    [{ gameId: 'Guide', position: { x: 1, y: 2 } }],
+    [{ gameId: 'Guide', position: { x: 1, y: 2, z: 0 } }, { gameId: 'Guide', position: { x: 3, y: 4, z: 0 } }],
+    Array.from({ length: 1001 }, (_, index) => ({ gameId: `p${index}`, position: { x: 1, y: 2, z: 0 } })),
+  ]) {
+    tshock.rawCommand = async () => ({ success: true, rawResult: `TAKARO_POSITIONS ${JSON.stringify({ positions })}` });
+    await assert.rejects(adapter.getPlayerPositions());
+  }
+});
+
 test('a player the plugin cannot find has no location', async () => {
   const tshock = new FakeTShock();
   tshock.rawCommand = async (command: string) => {

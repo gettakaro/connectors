@@ -51,6 +51,7 @@ export type GameEventType =
   | 'chat-message'
   | 'player-death'
   | 'entity-killed'
+  | 'player-positions'
   | 'log';
 
 export const ALL_GAME_EVENT_TYPES = [
@@ -59,6 +60,7 @@ export const ALL_GAME_EVENT_TYPES = [
   'chat-message',
   'player-death',
   'entity-killed',
+  'player-positions',
   'log',
 ] as const satisfies readonly GameEventType[];
 

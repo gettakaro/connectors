@@ -42,6 +42,11 @@ test('parses log, chat, connect, and disconnect lines', () => {
   });
 });
 
+test('does not forward position-poll output as ordinary log events', () => {
+  assert.equal(parseLogLine('2026-11-15 20:00:00 - TShock: INFO: TAKARO_POSITIONS {"positions":[]}'), null);
+  assert.equal(parseLogLine('2026-11-15 20:00:00 - Utils: INFO: takaro executed: /takaroposall'), null);
+});
+
 test('strips the TShock timestamp and source prefix from join, leave, and chat lines', () => {
   assert.deepEqual(parseLogLine('2026-09-01 07:10:00 - TShock: INFO: Broadcast: <CodexTest> hello world'), {
     type: 'chat-message',
