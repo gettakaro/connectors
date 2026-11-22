@@ -51,6 +51,8 @@ export interface TakaroSink {
   lastSendId?(): number;
   /** Registers a callback fired when every gameEvent up to `sendId` is proven to have reached Takaro. */
   onConfirmed?(cb: (sendId: number) => void): void;
+  /** False until Takaro has identified the socket; sinks without it are treated as always ready. */
+  identified?(): boolean;
 }
 
 /** Anything that produces events: the presence poller, the chat consumer, the log tail, the plugin event poller. */
@@ -216,8 +218,11 @@ export class Bridge {
     // Events queued while the socket was congested go out first: sending past them would reorder delivery, and a
     // queue that only drained on a reconnect stayed stuck behind an open socket (a shutdown log burst once parked a
     // player-disconnected there indefinitely).
-    if (this.pendingEvents.length && this.takaroDownSince === null) this.drainPending();
-    const sent = !this.pendingEvents.length && this.options.takaro.sendGameEvent(type, data);
+    // Before the first identify (the sidecar waits for the battlegroup) nothing can be written, so the event is
+    // queued without a send attempt and onTakaroUp flushes it; trying every event only repeated a warning.
+    const ready = this.takaroReady();
+    if (ready && this.pendingEvents.length) this.drainPending();
+    const sent = ready && !this.pendingEvents.length && this.options.takaro.sendGameEvent(type, data);
     if (!sent) {
       // `'queued'` — NOT `false` — is the honest answer once the event is safely in the outage queue: it tells the
       // plugin poller to advance its SCAN position (so the same seq is not read and queued again on every tick, which
@@ -225,7 +230,7 @@ export class Bridge {
       // behind the hole, so a sidecar restart replays it rather than losing it. `false` is reserved for "this event
       // was not accepted at all", i.e. the queue was full and this very event is the one that got dropped.
       const accepted = this.queueEvent({ type, data, seq, at: this.now() });
-      if (this.takaroDownSince === null) this.scheduleDrain();
+      if (ready) this.scheduleDrain();
       return accepted ? 'queued' : false;
     }
     this.noteConnectionEvent(type, data);
@@ -389,6 +394,11 @@ export class Bridge {
   }
 
   /** Queues an event. Returns false when the queue was full and THIS event is the one that was dropped. */
+  /** Whether a send can succeed now: Takaro is not known to be down and the socket is identified. */
+  private takaroReady(): boolean {
+    return this.takaroDownSince === null && (this.options.takaro.identified?.() ?? true);
+  }
+
   private queueEvent(event: PendingEvent): boolean {
     this.pendingEvents.push(event);
     if (this.pendingEvents.length === 1) logger.warn('Takaro is not reachable; queueing game events until it is');
@@ -451,7 +461,7 @@ export class Bridge {
     if (this.drainTimer) return;
     this.drainTimer = setTimeout(() => {
       this.drainTimer = null;
-      if (!this.pendingEvents.length || this.takaroDownSince !== null) return;
+      if (!this.pendingEvents.length || !this.takaroReady()) return;
       this.drainPending();
       if (this.pendingEvents.length) this.scheduleDrain();
     }, this.options.drainRetryMs ?? 1000);
