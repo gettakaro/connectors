@@ -30,7 +30,7 @@ revision="${TAKARO_SOURCE_REVISION:-$(git -C "$repo_root" rev-parse HEAD)}"
 # The compiler packages, at exactly these versions from the pinned image's own release.
 LLVM_VERSION="1:19.1.7-3+b1"
 LUA_VERSION="5.4.7-1+b2"
-CA_VERSION="20250419"
+CA_VERSION="20250419+deb13u1"
 # MSVC CRT and Windows SDK versions, read from the catalog coordinate
 # (microsoft:msvc-crt-<crt>+winsdk:<sdk>).
 crt_version="${SCUM_DEP_MSVC_SYSROOT_COORDINATE#microsoft:msvc-crt-}"
