@@ -161,7 +161,13 @@ namespace Takaro.Config
                 }
 
                 _lastReadError = null;
-                if (wrote)
+                if (values.Upgraded)
+                    LogService.Instance.Info(
+                        $"Updated {ConfigPath} to layout {ConfigFiles.Version}: ReportCharacters is "
+                            + (values.ReportCharacters ? "on" : "off")
+                            + ". Set it to false and restart to keep lives out of Takaro."
+                    );
+                else if (wrote)
                     LogService.Instance.Info(
                         existed
                             ? $"Wrote a new identity token into {ConfigPath}"

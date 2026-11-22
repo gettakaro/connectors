@@ -56,9 +56,10 @@ mod creates it on first start; you can also create it yourself:
   for "Server".
 
   ReportCharacters tells Takaro about each life on a Permanent Death server.
-  Turn it on only when your Takaro supports Characters, then restart the server.
+  It is on by default; set it to false to keep lives out of Takaro (for example
+  when your Takaro is older than 2.3), then restart the server.
 -->
-<Takaro>
+<Takaro version="2">
   <WebSocket>
     <Url>wss://connect.takaro.io/</Url>
     <RegistrationToken></RegistrationToken>
@@ -70,7 +71,7 @@ mod creates it on first start; you can also create it yourself:
     <ServerChatName></ServerChatName>
   </Chat>
   <Players>
-    <ReportCharacters>false</ReportCharacters>
+    <ReportCharacters>true</ReportCharacters>
   </Players>
 </Takaro>
 ```
@@ -85,7 +86,7 @@ restart needed.
 | Optional setting | What it does |
 |---|---|
 | `<ServerChatName>` | Sender name on messages from Takaro, used when none is set for the server in Takaro. |
-| `<ReportCharacters>` | `true` reports each life on a Permanent Death server as a Character. Only if your Takaro supports Characters; restart after changing it. |
+| `<ReportCharacters>` | On a Permanent Death server each life is a Character in Takaro (default `true`). `false` turns that off, for example for a Takaro older than 2.3; restart after changing it. A Config.xml from 0.9 to 0.10 is updated to `true` once on the first start; a `false` set after that is kept. |
 | `<ReconnectIntervalSeconds>` | First wait between failed reconnect attempts (default 2, doubling up to 60). An old file with 30 still works. |
 | `EnableMapRendering` in `serverconfig.xml` | Set to `true` and restart to get the world map in Takaro. |
 
@@ -135,6 +136,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 | Modules | ✅ | |
 | Moving from the built-in integration | ⚠️ | Players keep their profile; see [MIGRATION.md](MIGRATION.md). |
 | Player levels and skills | ⚠️ | Level, experience, attributes, perks and crafting skills; marked client-reported. |
+| Characters | ✅ | On a Permanent Death server each life is its own character; death ends it. Other servers have one character per player. |
 | Item icons | ⚠️ | Icons from the game and installed mods, no setup; items the game tints keep Takaro's icon. |
 | PrismaCore commands | ✅ | `resetlevel`, `resetskillpoints` and `isbloodmoon` work like PrismaCore's. |
 
