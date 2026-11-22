@@ -561,7 +561,8 @@ t.test("chat: the RPC hook and the chat log report one message once; # admin com
   local ch = obj({ GetOuter = function() return pc end })
   local function p(v) return { get = function() return v end } end
   hook(p(ch), p("hello"), p(3))
-  t.deep(W.events.got[1], { "chat_message", { player = { steamId = ID1, name = "Alice" }, msg = "hello", channel = "team" } })
+  t.deep(W.events.got[1], { "chat_message", { player = { steamId = ID1, name = "Alice" }, msg = "hello",
+    channel = "team", position = { x = 10, y = 20, z = 30 } } })
   hook(p(ch), p("#SpawnItem Weapon_M9 1"), p(2))
   t.eq(#W.events.got, 1)
   hook(p(ch), p("near me"), p(1))
@@ -578,6 +579,16 @@ t.test("chat: the RPC hook and the chat log report one message once; # admin com
   W.files[f] = W.files[f] .. u16("2026.10.13-21.00.06: '" .. ID1 .. ":Alice(1)' 'Global: only in the log'\r\n")
   W.g:tick(4000)
   t.deep(W.events.got[2][2].msg, "only in the log")
+end)
+
+t.test("current position snapshot reads live prisoners and excludes last-known/offline positions", function()
+  local W = world()
+  local pc = W.add_pc(ID1, "Alice")
+  W.g.lastPos[ID2] = { x = 99, y = 99, z = 99 }
+  t.deep(W.g:current_positions(), { { gameId = ID1,
+    position = { x = 10, y = 20, z = 30, dimension = "the_island" } } })
+  pc.GetPrisoner = function() return nil end
+  t.deep(W.g:current_positions(), {}, "no old location when the prisoner is absent")
 end)
 
 t.test("kill log -> player-death with attacker (players only) and victim position", function()
