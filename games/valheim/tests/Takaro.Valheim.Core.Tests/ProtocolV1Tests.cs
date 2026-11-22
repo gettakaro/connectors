@@ -46,6 +46,9 @@ public sealed class ProtocolV1Tests
         {
             CollectionAssert.Contains(names, "events." + eventName);
         }
+        var pushedPositions = ProtocolHandshake.BuildCapabilityManifest()
+            .Single(c => c!["name"]!.GetValue<string>() == "events.player-positions")!;
+        Assert.AreEqual(PositionSnapshotStream.IntervalSeconds, pushedPositions["parameters"]!["intervalSeconds"]!.GetValue<int>());
 
         CollectionAssert.DoesNotContain(names, "players.get", "getPlayer is unsupported");
         CollectionAssert.Contains(names, "locations.list", "the notable places");

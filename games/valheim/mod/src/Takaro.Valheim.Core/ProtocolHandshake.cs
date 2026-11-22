@@ -21,6 +21,7 @@ public static class GameEventTypes
     public const string ChatMessage = "chat-message";
     public const string PlayerDeath = "player-death";
     public const string EntityKilled = "entity-killed";
+    public const string PlayerPositions = "player-positions";
 
     public static IReadOnlyList<string> All { get; } =
         [Log, PlayerConnected, PlayerDisconnected, ChatMessage, PlayerDeath, EntityKilled];
@@ -88,6 +89,12 @@ public static class ProtocolHandshake
         {
             manifest.Add(new JsonObject { ["name"] = "events." + eventType });
         }
+
+        manifest.Add(new JsonObject
+        {
+            ["name"] = "events." + GameEventTypes.PlayerPositions,
+            ["parameters"] = new JsonObject { ["intervalSeconds"] = PositionSnapshotStream.IntervalSeconds }
+        });
 
         if (profile is not null)
         {

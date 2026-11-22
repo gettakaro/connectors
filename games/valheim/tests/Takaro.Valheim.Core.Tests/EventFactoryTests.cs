@@ -33,6 +33,29 @@ public sealed class EventFactoryTests
         Assert.AreEqual("2026-06-20T19:30:00+00:00", data.GetProperty("timestamp").GetString());
         Assert.AreEqual("Steam_76561198000735875", data.GetProperty("player").GetProperty("gameId").GetString());
         Assert.AreEqual("Odin", data.GetProperty("player").GetProperty("name").GetString());
+        Assert.IsFalse(data.TryGetProperty("position", out _));
+    }
+
+    [TestMethod]
+    public void PlayerPositionsBatchAndChatPositionUseTakaroPayloadShape()
+    {
+        var player = Player("Steam_76561198000735875", "Odin");
+        var where = new TakaroPosition(12, 34, -56, "valheim");
+        var now = new DateTimeOffset(2026, 11, 15, 19, 30, 0, TimeSpan.Zero);
+        using var batch = JsonDocument.Parse(TakaroProtocol.CreateGameEvent(
+            GameEventTypes.PlayerPositions,
+            EventFactory.PlayerPositions(now, [new PlayerPositionSample(player.GameId, where)])));
+        var payload = batch.RootElement.GetProperty("payload");
+        Assert.AreEqual("player-positions", payload.GetProperty("type").GetString());
+        var position = payload.GetProperty("data").GetProperty("positions")[0];
+        Assert.AreEqual(player.GameId, position.GetProperty("gameId").GetString());
+        Assert.AreEqual(-56, position.GetProperty("position").GetProperty("z").GetInt32());
+        Assert.AreEqual("valheim", position.GetProperty("position").GetProperty("dimension").GetString());
+
+        using var chat = JsonDocument.Parse(TakaroProtocol.CreateGameEvent(
+            "chat-message", EventFactory.ChatMessage(player, "global", now, "here", where)));
+        Assert.AreEqual(12, chat.RootElement.GetProperty("payload").GetProperty("data")
+            .GetProperty("position").GetProperty("x").GetInt32());
     }
 
     [TestMethod]

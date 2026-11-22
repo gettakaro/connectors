@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Takaro.Valheim.Plugin;
 
-public sealed class ValheimServerAdapter : IValheimTakaroAdapter
+public sealed class ValheimServerAdapter : IValheimTakaroAdapter, IValheimPositionSnapshotAdapter
 {
     private readonly ManualLogSource logger;
     private readonly ConsoleCommandPolicy commandPolicy;
@@ -91,6 +91,39 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     {
         var playersResult = await GetPlayersAsync(cancellationToken);
         return RuntimePlayerActionPolicy.Find(playersResult, identifier);
+    }
+
+    public IReadOnlyList<PlayerPositionSample>? CaptureOnlinePositions()
+    {
+        var network = ZNet.instance;
+        if (network is null || !network.IsServer())
+        {
+            return null;
+        }
+
+        var players = network.GetPlayerList();
+        if (players.Count > 1000)
+        {
+            return null;
+        }
+
+        var snapshot = new List<PlayerPositionSample>(players.Count);
+        var gameIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var info in players)
+        {
+            var player = playerResolver.ToTakaroPlayer(info);
+            if (!gameIds.Add(player.GameId)
+                || !playerResolver.TryResolvePlayer(player.GameId, out var currentInfo, out var peer, out _)
+                || !TryResolveServerKnownPosition(currentInfo, peer, out var where)
+                || !IsFinite(where.x) || !IsFinite(where.y) || !IsFinite(where.z))
+            {
+                return null;
+            }
+
+            snapshot.Add(new PlayerPositionSample(player.GameId, new TakaroPosition(where.x, where.y, where.z, "valheim")));
+        }
+
+        return snapshot;
     }
 
     public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default)
@@ -625,6 +658,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         position = Vector3.zero;
         return false;
     }
+
+    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
     private static bool TryFindItemDropPrefab(string itemCode, out GameObject prefab, out ItemDrop itemDrop)
     {
