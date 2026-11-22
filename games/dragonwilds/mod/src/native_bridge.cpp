@@ -137,6 +137,15 @@ std::optional<Clock::time_point> unackedSince;
 constexpr auto kAckTimeout = std::chrono::seconds(30);
 uint64_t eventErrorCount = 0;
 bool liveEpoch = false;
+// Takaro can send requests on a new socket before its identifyResponse (its first reachability
+// check after registration does). They are held and handled once identified, so that check and
+// the catalogue sync that follows it are not lost.
+struct EarlyRequest { NativeTransport::Notice notice; Clock::time_point at; };
+std::vector<EarlyRequest> earlyRequests;
+constexpr size_t kMaxEarlyRequests = 32;
+// Set while a held request is handled: it was counted on arrival and its answer deadline
+// runs from then, not from the identifyResponse.
+const Clock::time_point* replayArrival = nullptr;
 std::string lastError;
 struct Published {
     uint64_t epoch = 0, scan = 0, confirmed = 0, losses = 0;
@@ -546,6 +555,14 @@ void HandleFrame(const NativeTransport::Notice& n) {
             ConsoleLine("connected to Takaro as \"%s\"; the server now shows as reachable in the dashboard",
                         serverName.c_str());
         }
+        std::vector<EarlyRequest> held;
+        held.swap(earlyRequests);
+        for (const auto& early : held) {
+            if (early.notice.epoch != n.epoch) continue;
+            replayArrival = &early.at;
+            try { HandleFrame(early.notice); } catch (...) { replayArrival = nullptr; throw; }
+            replayArrival = nullptr;
+        }
     } else if (type == "error") {
         WireLog("RECV", RedactSecrets(n.text));
         ++protocolErrorCount;
@@ -585,12 +602,16 @@ void HandleFrame(const NativeTransport::Notice& n) {
         std::string id = Str(f, "requestId");
         Json p = Record(f.value("payload", Json::object()));
         std::string action = Str(p, "action");
-        ++requestCount;
+        if (!replayArrival) ++requestCount;
         lastRequestAction = action.substr(0, 64);
         if (id.empty()) return;
         if (id.size() > 128) {
             lastError = "requestId exceeds 128 bytes";
             NativeTransport::RequestClose(n.epoch, 1013, "requestId too long");
+            return;
+        }
+        if (!identified && !action.empty() && earlyRequests.size() < kMaxEarlyRequests) {
+            earlyRequests.push_back({n, Clock::now()});
             return;
         }
         if (!identified || action.empty()) { SendError(id, n.epoch, "invalid request"); return; }
@@ -618,7 +639,7 @@ void HandleFrame(const NativeTransport::Notice& n) {
         request.epoch = n.epoch; request.bytes = bytes; request.full = !gateMode;
         request.preparedReady = gateMode;
         if (!gateMode) pendingRequestIds.insert(id);
-        requestArrivals[id] = {n.epoch, Clock::now()};
+        requestArrivals[id] = {n.epoch, replayArrival ? *replayArrival : Clock::now()};
         actions.push_back(std::move(request));
         actionCv.notify_one();
     }
@@ -1111,7 +1132,7 @@ void BridgeLoop() {
             if (n.type == NativeTransport::NoticeType::Open || n.type == NativeTransport::NoticeType::Closed)
                 flushConfirm();
             if (n.type == NativeTransport::NoticeType::Open) {
-                currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0;
+                currentEpoch = n.epoch; identified = false; liveEpoch = true; protocolVersion = 0; ackedThrough = 0; earlyRequests.clear();
                 highestSentSeq = 0; unackedSince.reset();
                 sentEpochByOutboxId.clear();
                 Json p = {{"identityToken", identity}};
@@ -1131,7 +1152,7 @@ void BridgeLoop() {
                                             Json({{"type", "identify"}, {"payload", p}}).dump(), 0, n.epoch))
                     NativeTransport::RequestClose(n.epoch, 1013, "identify queue full");
             } else if (n.type == NativeTransport::NoticeType::Closed && n.epoch == currentEpoch) {
-                identified = false; liveEpoch = false; protocolVersion = 0;
+                identified = false; liveEpoch = false; protocolVersion = 0; earlyRequests.clear();
                 if (gateMode) for (auto& e : outbox) e.sentEpoch = 0;
                 else sentEpochByOutboxId.clear();
             } else if (n.type == NativeTransport::NoticeType::Frame && n.epoch == currentEpoch && liveEpoch) {
