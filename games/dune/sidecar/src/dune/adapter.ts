@@ -27,6 +27,8 @@ export class UnsupportedActionError extends ActionError {}
  * must finish inside `DUNE_EXEC_TIMEOUT_MS` (150 s on the rig), so a misconfigured 10-minute notice cannot wedge it.
  */
 export const MAX_SHUTDOWN_NOTICE_SECONDS = 120;
+/** How long the background entity refresh waits for the plugin's /entities walk. */
+export const ENTITY_REFRESH_TIMEOUT_MS = 60_000;
 
 type Args = Record<string, unknown>;
 
@@ -347,7 +349,9 @@ export class DuneAdapter {
     if (!plugin?.enabled()) return Promise.resolve();
     this.entityFetch ??= (async () => {
       try {
-        const rows = await plugin.getEntities();
+        // Off Takaro's request path, so it may wait: the plugin walks every live actor and takes 10 to 15 s even on a
+        // quiet map, which the default plugin timeout cut off nearly every time.
+        const rows = await plugin.getEntities(ENTITY_REFRESH_TIMEOUT_MS);
         const { mapEntity } = await import('./mapping.js');
         const mapped: TakaroEntity[] = [];
         for (const raw of Array.isArray(rows) ? rows : []) {
