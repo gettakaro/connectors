@@ -3,6 +3,7 @@
 #include "native/game_profile.h"
 #include "native/json_util.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -12,11 +13,11 @@
 
 namespace native {
 
-const char* const kGameServerActions[20] = {
+const char* const kGameServerActions[21] = {
     "getPlayer",    "getPlayers",   "getPlayerLocation", "getPlayerInventory", "giveItem",   "listItems",
     "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "testReachability",
     "kickPlayer",   "banPlayer",    "unbanPlayer",       "listBans",           "shutdown",
-    "getMapInfo",   "getMapTile",   "getGameIcon"};
+    "getMapInfo",   "getMapTile",   "getGameIcon",       "getPlayerProgression"};
 const char* const kGameEventTypes[6] = {"log", "player-connected", "player-disconnected", "chat-message",
                                         "player-death", "entity-killed"};
 
@@ -92,7 +93,47 @@ JsonValue MapPlayer(const JsonValue* raw) {
     if (auto ip = Str(p.get("ip"))) Put(player, "ip", JStr(*ip));
     const JsonValue* ping = p.get("ping");
     if (ping && ping->type == JsonValue::Number && std::isfinite(ping->num)) Put(player, "ping", *ping);
+    const JsonValue& character = AsRecord(p.get("character"));
+    auto characterId = Str(character.get("id")), characterName = Str(character.get("name"));
+    if (characterId && characterName) {
+        JsonValue c = JObj();
+        Put(c, "id", JStr(*characterId));
+        Put(c, "name", JStr(*characterName));
+        Put(player, "character", c);
+    }
     return player;
+}
+
+namespace {
+void DropKey(JsonValue& obj, const char* key) {
+    if (obj.type != JsonValue::Object) return;
+    for (auto it = obj.obj.begin(); it != obj.obj.end(); ++it)
+        if (it->first == key) {
+            obj.obj.erase(it);
+            return;
+        }
+}
+}  // namespace
+
+void StripCharacter(JsonValue& payload) {
+    if (payload.type == JsonValue::Array) {
+        for (auto& p : payload.arr) DropKey(p, "character");
+        return;
+    }
+    DropKey(payload, "character");
+}
+
+std::string EventFrameV0(const std::string& eventFrame) {
+    if (eventFrame.find("\"character\"") == std::string::npos) return eventFrame;
+    JsonValue frame;
+    if (!ParseJson(eventFrame, frame)) return eventFrame;
+    for (auto& top : frame.obj)
+        if (top.first == "payload" && top.second.type == JsonValue::Object)
+            for (auto& section : top.second.obj)
+                if (section.first == "data" && section.second.type == JsonValue::Object)
+                    for (auto& field : section.second.obj)
+                        if (field.first == "player" || field.first == "attacker") DropKey(field.second, "character");
+    return JsonDump(frame);
 }
 
 JsonValue MapPosition(const JsonValue* raw) {
@@ -105,6 +146,27 @@ JsonValue MapPosition(const JsonValue* raw) {
     Put(pos, "z", JNum(*z));
     if (auto d = Str(p.get("dimension"))) Put(pos, "dimension", JStr(*d));
     return pos;
+}
+
+JsonValue MapProgression(const JsonValue* raw) {
+    const JsonValue& p = AsRecord(raw);
+    JsonValue tracks = JArr();
+    auto level = Num(p.get("level"));
+    // Characters start at level 1: anything lower is a component that is not filled in yet, and reporting it would
+    // make the real level look like a level-up.
+    if (!level || *level < 1) return tracks;
+    JsonValue track = JObj();
+    Put(track, "key", JStr("character"));
+    Put(track, "name", JStr("Level"));
+    Put(track, "level", JNum(*level));
+    auto experience = Num(p.get("experience"));
+    auto required = Num(p.get("experienceRequired"));
+    if (experience && *experience >= 0) {
+        Put(track, "experience", JNum(*experience));
+        if (required && *required > 0) Put(track, "progress", JNum(std::min(1.0, *experience / *required)));
+    }
+    tracks.arr.push_back(track);
+    return tracks;
 }
 
 JsonValue MapInventoryItem(const JsonValue* raw) {
@@ -349,15 +411,26 @@ bool ParseLogTailMode(const std::string& text, LogTailMode& out) {
 bool ShouldForwardLog(LogEventsMode mode, const JsonValue& data) {
     if (mode == LogEventsMode::None) return false;
     if (mode == LogEventsMode::All) return true;
-    // Periodic/spammy server lines. Takaro rate-limits `log` per server (sustained 50 per 30 s), and the server
-    // prints a multi-line stats block every 30 s plus bursts like "Could not prune enough replication states".
+    // Periodic/spammy server lines. Takaro rate-limits `log` per server, and the server prints stats blocks and
+    // histograms every 30 s, boot and shutdown step lists, and bursts of per-frame performance warnings.
     static const std::regex kNoisy[] = {
         std::regex("^-{5,}"),
+        std::regex("^={5,}"),
         std::regex("^Machines:$"),
-        std::regex("^\\s+m#\\d+"),
+        std::regex("^\\s*m#\\d+"),
         std::regex("^\\[ecss\\] Stats:"),
         std::regex("^\\[Water\\] "),
         std::regex("^Could not prune enough replication states"),
+        std::regex("^MovingSphere "),
+        std::regex("^\\[server\\] Bad Performance"),
+        std::regex("^\\s*>=\\s"),
+        std::regex("^\\[session\\](\\s{2,}| -{5,}| Total |$)"),
+        std::regex("^\\[task\\]\\s"),
+        std::regex("^\\[app\\] start (creation|destruction) step"),
+        std::regex("^\\[os\\] Started thread"),
+        std::regex("^(ValueCount|ValueSum|AvgValue|MinValue|MaxValue):"),
+        std::regex("^\\s*(\"value\":|\\},?$)"),
+        std::regex("^[\\s.,%|-]*\\d[\\d\\s.,%|-]*$"),
         std::regex("^\\s*$"),
     };
     const JsonValue* m = data.get("msg");

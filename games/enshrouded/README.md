@@ -75,7 +75,7 @@ block of `*` lines says what to fix (missing token, wrong token or a name alread
 
 ## What works, what doesn't
 
-Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on game build 1287369 (Enshrouded 1.0), 2026-11-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -84,6 +84,7 @@ Checked on game build 1287369 (Enshrouded 1.0), 2026-11-04. ✅ works, ⚠️ wo
 | Player location | ✅ | |
 | Teleport | ✅ | To the exact coordinates; pick a spot above ground. |
 | Player inventory | ✅ | |
+| Player levels and skills | ⚠️ | Character level and experience; level changes trigger hooks. Each character keeps its own level, so switching characters is not a level change. Marked client-reported, since characters live on the player's PC. Skills are not reported. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Some creatures get a name built from the internal code. |
 | Locations | ✅ | About 800 named map places. |
