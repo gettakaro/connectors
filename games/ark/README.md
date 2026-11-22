@@ -65,6 +65,7 @@ Checked on server build 21241282 (game version 361.7). ✅ works, ⚠️ works w
 | Connection | ✅ | Connects once the world has loaded. |
 | Player list | ✅ | |
 | Player location | ✅ | |
+| Player position updates | ✅ | Protocol v1 pushes current online pawn positions with a 3-second wait after each acknowledged batch. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
@@ -80,7 +81,7 @@ Checked on server build 21241282 (game version 361.7). ✅ works, ⚠️ works w
 | Shop | ✅ | Use `claim` delivery for listings. |
 | Shut down the server | ✅ | Saves first. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | Global chat. |
+| Chat messages | ✅ | Global chat; includes a position when a fresh pawn sample exists. |
 | Player death | ✅ | |
 | Entity killed | ✅ | |
 | Server log lines | ✅ | Save and startup lines only. |
