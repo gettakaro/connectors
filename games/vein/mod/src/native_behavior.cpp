@@ -745,8 +745,28 @@ std::string CapabilityManifestJson(const std::string& gameVersion){
                           "events.player-death","events.entity-killed","events.log"})
         manifest.push_back(Json{{"name",name}});
     manifest.push_back(Parse(NativeMap::CapabilityJson()));
+    manifest.push_back(Json{{"name","events.player-positions"},{"parameters",{{"intervalSeconds",3}}}});
     manifest.push_back(Parse(GameProfile::CapabilityJson(gameVersion)));
     return manifest.dump();
+}
+std::string PositionBatchFrame(const std::string& positionsJson, const std::string& streamId, uint64_t seq) {
+    Json positions = Json::parse(positionsJson);
+    if (!positions.is_array() || positions.size() > 1000 || !seq || seq > 9007199254740991ULL)
+        throw std::runtime_error("invalid player positions batch");
+    std::set<std::string> ids;
+    for (const auto& row : positions) {
+        auto finite = [](const Json& point, const char* axis) {
+            return point.contains(axis) && point[axis].is_number() && std::isfinite(point[axis].get<double>());
+        };
+        if (!row.is_object() || !row.contains("gameId") || !row["gameId"].is_string() ||
+            row["gameId"].get<std::string>().empty() || row["gameId"].get<std::string>().size() > 255 ||
+            !ids.insert(row["gameId"].get<std::string>()).second || !row.contains("position") ||
+            !row["position"].is_object() || !finite(row["position"], "x") ||
+            !finite(row["position"], "y") || !finite(row["position"], "z"))
+            throw std::runtime_error("invalid player position entry");
+    }
+    return Json{{"type","gameEvent"},{"payload",{{"type","player-positions"},
+        {"data",{{"positions",positions}}},{"streamId",streamId},{"seq",seq}}}}.dump();
 }
 std::string ErrorCode(const std::string& message){
     const std::string m=Lower(message);

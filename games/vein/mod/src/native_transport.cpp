@@ -542,7 +542,7 @@ size_t PruneEventsBefore(uint64_t minOutboxId, uint64_t expectedEpoch) {
     minDeliverableOutboxId = std::max(minDeliverableOutboxId, minOutboxId);
     size_t removed = 0;
     for (auto it = events.begin(); it != events.end();) {
-        if (it->outboxId < minDeliverableOutboxId) {
+        if (it->kind == Kind::Event && it->outboxId < minDeliverableOutboxId) {
             eventBytes -= it->frame->size(); it = events.erase(it); ++removed;
         } else ++it;
     }
@@ -568,6 +568,7 @@ QueueResult Queue(Send send) {
     case Kind::Response: q=&responses; bytes=&responseBytes; maxCount=128; maxBytes=16*1024*1024; break;
     // The bridge's durable outbox owns the same immutable frame reference.
     // This logical byte tally limits staging, but the payload is not copied.
+    case Kind::TransientEvent:
     case Kind::Event: q=&events; bytes=&eventBytes; maxCount=5000; maxBytes=32*1024*1024; break;
     }
     if ((send.kind == Kind::Response && n > 8*1024*1024) || n > maxBytes) {
