@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Takaro.Services
 {
@@ -48,6 +49,10 @@ namespace Takaro.Services
             /// <summary>A `log` game event, written within the log budget.</summary>
             public bool IsLog;
 
+            public bool IsPosition;
+            public long Generation;
+            public long CreatedAtTicks;
+
             /// <summary>Position in the event stream; 0 for frames that are not events and for events not yet picked to be written.</summary>
             public long Seq;
         }
@@ -72,6 +77,10 @@ namespace Takaro.Services
         private readonly Func<long> _utcTicks;
         private readonly Queue<long> _logConfirmedAt = new Queue<long>();
         private int _logsInFlight;
+        private bool _positionInFlight;
+        private long _positionSentAtTicks;
+        private long _nextPositionAtTicks;
+        private static readonly long PositionIntervalTicks = TimeSpan.FromSeconds(3).Ticks;
 
         public OutboundLedger(
             int maxPending,
@@ -87,8 +96,22 @@ namespace Takaro.Services
             StreamId = streamId ?? Guid.NewGuid().ToString("N");
             _logBudget = logBudget;
             _logWindowTicks = (logWindow ?? DefaultLogWindow).Ticks;
-            _utcTicks = utcTicks ?? (() => DateTime.UtcNow.Ticks);
+            _utcTicks =
+                utcTicks
+                ?? (
+                    () =>
+                        (long)(
+                            Stopwatch.GetTimestamp()
+                            * (TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency)
+                        )
+                );
         }
+
+        public long CurrentTicks => _utcTicks();
+
+        public bool PositionReceiptOverdue =>
+            _positionInFlight
+            && _utcTicks() - _positionSentAtTicks >= TimeSpan.FromSeconds(30).Ticks;
 
         /// <summary>Identifies the numbering of this ledger's events; new for every process.</summary>
         public string StreamId { get; }
@@ -116,10 +139,21 @@ namespace Takaro.Services
             ConfirmsByPong && _inFlight.Count > 0 && _lastPingMark < _writeSequence;
 
         /// <summary>Appends a frame; returns how many oldest frames were dropped to stay under the cap.</summary>
-        public int Enqueue(string json, bool replayable, bool isPing, bool isLog = false)
+        public int Enqueue(
+            string json,
+            bool replayable,
+            bool isPing,
+            bool isLog = false,
+            bool isPosition = false,
+            long generation = 0,
+            long createdAtTicks = 0
+        )
         {
             if (string.IsNullOrEmpty(json))
                 return 0;
+
+            if (isPosition)
+                DropPendingPositions();
 
             _pending.AddLast(
                 new Entry
@@ -128,6 +162,9 @@ namespace Takaro.Services
                     Replayable = replayable,
                     IsPing = isPing,
                     IsLog = replayable && isLog,
+                    IsPosition = isPosition,
+                    Generation = generation,
+                    CreatedAtTicks = createdAtTicks,
                 }
             );
             return TrimPending();
@@ -136,6 +173,7 @@ namespace Takaro.Services
         /// <summary>The oldest frame, numbered if it is an event, whatever the log budget.</summary>
         public Entry PeekHead()
         {
+            DropExpiredPositions();
             return Number(_pending.First?.Value);
         }
 
@@ -145,6 +183,7 @@ namespace Takaro.Services
         /// </summary>
         public Entry NextToSend()
         {
+            DropExpiredPositions();
             bool logsOpen = LogBudgetLeft();
             bool eventsHeld = false;
             for (LinkedListNode<Entry> node = _pending.First; node != null; node = node.Next)
@@ -159,6 +198,8 @@ namespace Takaro.Services
                         eventsHeld = true;
                     continue;
                 }
+                if (entry.IsPosition && (_positionInFlight || _utcTicks() < _nextPositionAtTicks))
+                    continue;
                 if (!eventsHeld)
                     return Number(entry);
             }
@@ -212,6 +253,11 @@ namespace Takaro.Services
 
             if (head.IsLog)
                 _logsInFlight++;
+            if (head.IsPosition)
+            {
+                _positionInFlight = true;
+                _positionSentAtTicks = _utcTicks();
+            }
 
             if (head.Replayable)
             {
@@ -237,6 +283,16 @@ namespace Takaro.Services
         {
             if (entry != null)
                 _pending.Remove(entry);
+        }
+
+        public void DropFailedPosition(Entry entry)
+        {
+            if (entry == null || !entry.IsPosition || !_pending.Remove(entry))
+                return;
+            _nextPositionAtTicks = Math.Max(
+                _nextPositionAtTicks,
+                _utcTicks() + PositionIntervalTicks
+            );
         }
 
         /// <summary>
@@ -299,6 +355,25 @@ namespace Takaro.Services
             return confirmed;
         }
 
+        public bool RejectPosition(string streamId, long seq)
+        {
+            if (streamId != StreamId)
+                return false;
+            for (
+                LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.First;
+                node != null;
+                node = node.Next
+            )
+            {
+                if (!node.Value.Value.IsPosition || node.Value.Value.Seq != seq)
+                    continue;
+                Confirmed(node.Value.Value);
+                _inFlight.Remove(node);
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// The socket the in-flight events were written on is gone: put them back
         /// at the front of the backlog, oldest first, and start a new generation
@@ -308,15 +383,34 @@ namespace Takaro.Services
         public int RequeueInFlight(long newGeneration, bool confirmsByPong = true)
         {
             ConfirmsByPong = confirmsByPong;
-            int requeued = _inFlight.Count;
+            int requeued = 0;
+            if (_positionInFlight)
+                _nextPositionAtTicks = Math.Max(
+                    _nextPositionAtTicks,
+                    _utcTicks() + PositionIntervalTicks
+                );
             for (
                 LinkedListNode<KeyValuePair<long, Entry>> node = _inFlight.Last;
                 node != null;
                 node = node.Previous
             )
+            {
+                if (node.Value.Value.IsPosition)
+                    continue;
                 _pending.AddFirst(node.Value.Value);
+                requeued++;
+            }
+
+            for (LinkedListNode<Entry> node = _pending.First; node != null; )
+            {
+                LinkedListNode<Entry> next = node.Next;
+                if (node.Value.IsPosition && node.Value.Generation != newGeneration)
+                    _pending.Remove(node);
+                node = next;
+            }
 
             _inFlight.Clear();
+            _positionInFlight = false;
             _logsInFlight = 0;
             _pingMarks.Clear();
             _lastPingMark = _writeSequence;
@@ -332,6 +426,32 @@ namespace Takaro.Services
             return entry;
         }
 
+        private void DropPendingPositions()
+        {
+            for (LinkedListNode<Entry> node = _pending.First; node != null; )
+            {
+                LinkedListNode<Entry> next = node.Next;
+                if (node.Value.IsPosition)
+                    _pending.Remove(node);
+                node = next;
+            }
+        }
+
+        private void DropExpiredPositions()
+        {
+            long now = _utcTicks();
+            for (LinkedListNode<Entry> node = _pending.First; node != null; )
+            {
+                LinkedListNode<Entry> next = node.Next;
+                if (
+                    node.Value.IsPosition
+                    && now - node.Value.CreatedAtTicks >= TimeSpan.FromSeconds(5).Ticks
+                )
+                    _pending.Remove(node);
+                node = next;
+            }
+        }
+
         private bool LogBudgetLeft()
         {
             long now = _utcTicks();
@@ -342,6 +462,14 @@ namespace Takaro.Services
 
         private void Confirmed(Entry entry)
         {
+            if (entry.IsPosition)
+            {
+                _positionInFlight = false;
+                _nextPositionAtTicks = Math.Max(
+                    _nextPositionAtTicks,
+                    _utcTicks() + PositionIntervalTicks
+                );
+            }
             if (!entry.IsLog)
                 return;
             _logsInFlight--;

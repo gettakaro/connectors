@@ -111,7 +111,7 @@ Checked on V 3.4.0 b10 (Steam build 26310339), 2026-11-02. ✅ works, ⚠️ wor
 |---|---|---|
 | Connection | ✅ | Reconnects within about a second when a connection drops, within a minute after a longer outage, also when Takaro accepts the connection but never answers; missed events are sent afterwards. |
 | Player list | ✅ | Steam or Xbox id, IP and ping. The Epic id is sent only for players who join through the Epic store. |
-| Player location | ✅ | Updated about every 30 seconds. |
+| Player location | ✅ | The mod samples every 3 seconds. Protocol v1 pushes complete snapshots at least 3 seconds after the previous receipt acknowledgment; actual cadence includes receipt and sampling delays. Movement, current chat position and outage recovery were verified on Linux V 3.4.0 b10 with an unmodified Windows client. |
 | Teleport | ⚠️ | Lands on the ground, not at the exact height. |
 | Player inventory | ✅ | |
 | Item list | ✅ | |

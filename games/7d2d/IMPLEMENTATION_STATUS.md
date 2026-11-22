@@ -136,6 +136,18 @@ All published via `mod/src/WebSocket/GameEventPublisher.cs` (non-blocking outbou
   post-disconnect location enrichment, exact single Takaro event, and zero
   online-player readback; shutdown disconnects remain excluded
 - **`chat-message`** — Live-supported; unique vanilla-client message is correlated through native and Takaro event timestamps
+- **`player-positions`** — verified live on Linux V 3.4.0 b10 with an unmodified
+  Windows client. The main-thread sampler captures the full online-player snapshot
+  every 3 seconds. Pending snapshots
+  replace older ones, expire after 5 seconds, and are discarded on reconnect rather
+  than replayed. The sender keeps one batch in flight and waits at least 3 seconds
+  after Takaro's acknowledgement before sending another; gameplay events can pass a
+  parked batch. Actual send cadence includes receipt and sampling delays. Missing
+  receipts reconnect after 30 seconds; that deadline applies only to the current
+  identified socket generation. Elapsed-time checks use a monotonic clock. Live
+  verification covered movement, no periodic location polling, a chat command
+  saving the current position and fresh snapshots after an outage. Other game
+  builds are outside this live qualification.
 - **`entity-killed`** — Live-supported; real vanilla-client non-player kill with
   player attribution and non-empty held weapon
 - **`player-death`** — Live-supported; real vanilla-client fall death with

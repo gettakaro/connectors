@@ -69,7 +69,8 @@ namespace Takaro.WebSocket
             EChatType type,
             int _senderId,
             string msg,
-            List<int> recipientEntityIds
+            List<int> recipientEntityIds,
+            Vector3? senderPosition = null
         )
         {
             // Defence in depth against server-message echo: a chat-message event
@@ -79,14 +80,50 @@ namespace Takaro.WebSocket
             if (cInfo == null || _senderId < 0)
                 return;
 
-            SendGameEvent(
-                GameEventTypes.ChatMessage,
-                new Dictionary<string, object>
+            var data = new Dictionary<string, object>
+            {
+                { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
+                { "msg", msg },
+                { "channel", ChatChannelFor(type) },
+            };
+            if (senderPosition.HasValue && WebSocketTransport.Instance.ProtocolVersion == 1)
+            {
+                Vector3i position = new Vector3i(senderPosition.Value);
+                data["position"] = new TakaroPosition
                 {
-                    { "player", Shared.TransformClientInfoToTakaroPlayer(cInfo) },
-                    { "msg", msg },
-                    { "channel", ChatChannelFor(type) },
-                }
+                    X = position.x,
+                    Y = position.y,
+                    Z = position.z,
+                };
+            }
+            SendGameEvent(GameEventTypes.ChatMessage, data);
+        }
+
+        public static void SendPlayerPositions(List<PlayerPositionEntry> positions)
+        {
+            if (
+                !WebSocketTransport.Instance.CanPushPositions
+                || positions == null
+                || positions.Count > 1000
+            )
+                return;
+
+            WebSocketTransport.Instance.SendPosition(
+                WebSocketMessage.Create(
+                    WebSocketMessage.MessageTypes.GameEvent,
+                    new Dictionary<string, object>
+                    {
+                        { "type", "player-positions" },
+                        {
+                            "data",
+                            new Dictionary<string, object>
+                            {
+                                { "timestamp", System.DateTime.UtcNow.ToString("o") },
+                                { "positions", positions },
+                            }
+                        },
+                    }
+                )
             );
         }
 

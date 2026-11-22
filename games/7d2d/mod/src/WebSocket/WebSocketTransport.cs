@@ -226,8 +226,27 @@ namespace Takaro.WebSocket
             );
         }
 
+        public void SendPosition(WebSocketMessage message)
+        {
+            if (!CanPushPositions || _outbound == null || _outbound.IsAddingCompleted)
+                return;
+
+            _outbound.Add(
+                new OutboundLedger.Entry
+                {
+                    Json = Newtonsoft.Json.JsonConvert.SerializeObject(message),
+                    Replayable = true,
+                    IsPosition = true,
+                    Generation = _session.Generation,
+                    CreatedAtTicks = _ledger.CurrentTicks,
+                }
+            );
+        }
+
         /// <summary>The protocol version Takaro selected; 0 before identify.</summary>
         public int ProtocolVersion => Math.Max(0, _session.ProtocolVersion);
+
+        public bool CanPushPositions => _session.IsConfirmed && _session.ProtocolVersion == 1;
 
         public void SendErrorResponse(
             string requestId,
@@ -275,8 +294,8 @@ namespace Takaro.WebSocket
 
                 // Checked every poll, not only on the heartbeat tick, so a dead
                 // link is noticed within a second of the timeout.
-                CheckInboundLiveness();
                 _session.ApplyAcknowledgements();
+                CheckInboundLiveness(_session.PositionReceiptOverdue);
                 ResetBackoffIfStable();
                 FlushPending();
             }
@@ -287,7 +306,27 @@ namespace Takaro.WebSocket
             if (entry == null)
                 return;
 
-            if (_ledger.Enqueue(entry.Json, entry.Replayable, entry.IsPing, entry.IsLog) > 0)
+            if (
+                entry.IsPosition
+                && (
+                    !CanPushPositions
+                    || entry.Generation != _session.Generation
+                    || _ledger.CurrentTicks - entry.CreatedAtTicks >= TimeSpan.FromSeconds(5).Ticks
+                )
+            )
+                return;
+
+            if (
+                _ledger.Enqueue(
+                    entry.Json,
+                    entry.Replayable,
+                    entry.IsPing,
+                    entry.IsLog,
+                    entry.IsPosition,
+                    entry.Generation,
+                    entry.CreatedAtTicks
+                ) > 0
+            )
             {
                 _headFailureCount = 0;
                 if (!_pendingOverflowLogged)
@@ -398,7 +437,10 @@ namespace Takaro.WebSocket
                     {
                         if (!ReferenceEquals(socket, _webSocket) || !_session.IsConnected)
                             return;
-                        socket.Send(_session.WireFrame(head));
+                        string frame = _session.WireFrame(head);
+                        socket.Send(frame);
+                        if (head.IsPosition)
+                            LogService.Instance.Debug("Position batch sent: " + frame);
                     }
                 }
                 catch (Exception ex)
@@ -408,6 +450,12 @@ namespace Takaro.WebSocket
                         $"Error sending WebSocket message (attempt {_headFailureCount}): "
                             + $"{ex.GetType().FullName}: {ex.Message}"
                     );
+                    if (head.IsPosition)
+                    {
+                        _ledger.DropFailedPosition(head);
+                        _headFailureCount = 0;
+                        return;
+                    }
                     if (IsInboundStale() || !IsSendable(socket))
                     {
                         // The link is suspect or the socket is already
@@ -923,6 +971,9 @@ namespace Takaro.WebSocket
                 case InboundKind.EventError:
                     LogEventError(e.Data);
                     break;
+                case InboundKind.EventAck:
+                    LogService.Instance.Debug("Event receipt: " + e.Data);
+                    break;
                 case InboundKind.Request:
                     RequestRouter.Route(e.Data);
                     break;
@@ -1055,13 +1106,13 @@ namespace Takaro.WebSocket
         /// so the normal reconnect path runs and events go to the backlog
         /// instead of the void.
         /// </summary>
-        private void CheckInboundLiveness()
+        private void CheckInboundLiveness(bool positionReceiptOverdue = false)
         {
             if (
                 _shuttingDown
                 || !_session.IsConnected
                 || _session.DeadSocketClosing
-                || !IsInboundStale()
+                || (!positionReceiptOverdue && !IsInboundStale())
             )
                 return;
 
@@ -1073,15 +1124,23 @@ namespace Takaro.WebSocket
             _session.DeadSocketClosing = true;
 
             LogService.Instance.Info(
-                $"No inbound traffic for {_session.SecondsSinceInbound()}s - treating socket as dead; "
-                    + $"closing it ({_ledger.PendingCount} message(s) buffered)"
+                (
+                    positionReceiptOverdue
+                        ? "No position acknowledgement for 30s - treating socket as dead; "
+                        : $"No inbound traffic for {_session.SecondsSinceInbound()}s - treating socket as dead; "
+                ) + $"closing it ({_ledger.PendingCount} message(s) buffered)"
             );
 
             try
             {
                 // Async: a close handshake on a blackholed link would block this
                 // timer thread until the TCP send buffer drains.
-                socket.CloseAsync(CloseStatusCode.Away, "No inbound traffic");
+                socket.CloseAsync(
+                    CloseStatusCode.Away,
+                    positionReceiptOverdue
+                        ? "Position acknowledgement timeout"
+                        : "No inbound traffic"
+                );
             }
             catch (Exception ex)
             {
