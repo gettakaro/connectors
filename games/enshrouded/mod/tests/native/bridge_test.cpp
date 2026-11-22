@@ -9,6 +9,7 @@
 #include "native/mapping.h"
 #include "testlib.h"
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <regex>
@@ -937,21 +938,24 @@ void ProtocolV1Identify() {
     const JsonValue& p = AsRecord(id.get("payload"));
     CHECK_EQ(JsonDump(*p.get("protocolVersions")), std::string("[0,1]"));
     const JsonValue* caps = p.get("capabilities");
-    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 24);
+    CHECK(caps && caps->type == JsonValue::Array && caps->arr.size() == 25);
     std::set<std::string> names;
     const JsonValue* map = nullptr;
     const JsonValue* profile = nullptr;
+    const JsonValue* positionBatch = nullptr;
     for (auto& c : caps->arr) {
         std::string n = c.get("name")->str;
         CHECK_MSG(std::regex_match(n, std::regex("^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9-]*)*$")), n);
         CHECK_MSG(names.insert(n).second, "duplicate " + n);
         if (n == "map") map = &c;
         if (n == "game.profile") profile = &c;
+        if (n == "events.player-positions") positionBatch = &c;
     }
     for (const char* need : {"players.list", "players.location", "items.give", "moderation.listBans", "server.shutdown",
                              "locations.list", "events.chat-message", "events.entity-killed"})
         CHECK_MSG(names.count(need), need);
     CHECK(!names.count("testReachability"));
+    CHECK(positionBatch && Num(AsRecord(positionBatch->get("parameters")).get("intervalSeconds")) == 3);
     CHECK(map != nullptr);
     if (map) {
         CHECK(t::JsonTextEq(JsonDump(*map->get("parameters")),
@@ -1282,6 +1286,158 @@ void ProtocolV1Fallbacks() {
     }
 }
 
+void ProtocolV1PositionBatch() {
+    t::Group("bridge-v1-position-batch");
+    std::atomic<int64_t> steady{100000};
+    Rig r("v1-position-batch");
+    r.fake.delays["GET /players/:id/location"] = 100;
+    r.o.steadyMs = [&] { return steady.load(); };
+    r.Start();
+    OpenForIdentify(r);
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1","protocolVersion":1}})");
+    CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == r.tr.Epoch(); }));
+    steady += 500;
+    CHECK(t::WaitFor([&] { return r.HealthNum(nullptr, "protocol") == 1; }));
+    steady += 5000;
+    CHECK(t::WaitFor([&] {
+        r.tr.Drain();
+        return !r.Events("player-positions").empty();
+    }, 7000));
+    auto events = r.Events("player-positions");
+    CHECK_EQ(events.size(), size_t(1));
+    if (!events.empty()) {
+        const JsonValue& payload = AsRecord(events[0].get("payload"));
+        const JsonValue& data = AsRecord(payload.get("data"));
+        const JsonValue* positions = data.get("positions");
+        CHECK(positions && positions->type == JsonValue::Array && positions->arr.size() == 2);
+        if (positions && positions->arr.size() == 2) {
+            CHECK_EQ(Str(positions->arr[0].get("gameId")).value_or(""), std::string(LIMON));
+            CHECK_EQ(Num(AsRecord(positions->arr[0].get("position")).get("x")).value_or(0), 10.5);
+            CHECK_EQ(Str(positions->arr[1].get("gameId")).value_or(""), std::string(GUEST));
+        }
+        CHECK(ValidStreamId(PayloadStream(events[0])));
+        CHECK_EQ(PayloadSeq(events[0]), 1.0);
+    }
+    CHECK(r.fake.CallCount("GET /players/:id/location") >= 2);
+    CHECK(r.tr.WireFrames("response").empty());
+    CHECK_EQ(r.HealthNum("requests", "timeouts"), 0.0);
+    CHECK_EQ(r.HealthNum("requests", "errors"), 0.0);
+    steady += 10000;
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("player-positions").size(), size_t(1));
+    r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":\"wrong-stream\",\"upTo\":1}}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("player-positions").size(), size_t(1));
+    r.tr.Inject("{\"type\":\"eventAck\",\"payload\":{\"streamId\":" + JsonStr(PayloadStream(events[0])) + ",\"upTo\":1}}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    steady += 2999;
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    r.tr.Drain();
+    CHECK_EQ(r.Events("player-positions").size(), size_t(1));
+    steady += 1;
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return r.Events("player-positions").size() == 2; }));
+    r.tr.Close("reconnect");
+    r.tr.wire.clear();
+    OpenForIdentify(r);
+    IdentifyV1(r);
+    r.tr.Drain();
+    CHECK(r.Events("player-positions").empty());
+    steady += 3000;
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return !r.Events("player-positions").empty(); }));
+    auto reconnected = r.Events("player-positions");
+    if (!reconnected.empty()) {
+        CHECK(PayloadStream(reconnected[0]) != PayloadStream(events[0]));
+        CHECK_EQ(PayloadSeq(reconnected[0]), 1.0);
+    }
+
+    Rig missing("v1-position-batch-missing");
+    missing.fake.locations.obj.erase(
+        std::remove_if(missing.fake.locations.obj.begin(), missing.fake.locations.obj.end(),
+                       [](const std::pair<std::string, JsonValue>& item) { return item.first == GUEST; }),
+        missing.fake.locations.obj.end());
+    missing.Start();
+    OpenForIdentify(missing);
+    IdentifyV1(missing);
+    CHECK(t::WaitFor([&] { return missing.fake.CallCount("GET /players/:id/location") >= 2; }, 7000));
+    missing.tr.Drain();
+    CHECK(missing.Events("player-positions").empty());
+}
+
+
+void PositionBatchReadDeadline() {
+    t::Group("bridge-position-read-deadline");
+    std::atomic<int64_t> steady{100000};
+    Rig r("position-read-deadline");
+    r.o.steadyMs = [&] { return steady.load(); };
+    auto identify = [&] {
+        r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1","protocolVersion":1}})");
+        CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == r.tr.Epoch(); }));
+        steady += 500;
+        CHECK(t::WaitFor([&] { return r.HealthNum(nullptr, "protocol") == 1; }));
+    };
+    r.Start();
+    OpenForIdentify(r);
+    identify();
+    r.fake.Gate("GET /players/:id/location");
+    steady += 5000;
+    CHECK(t::WaitFor([&] { return r.fake.Waiting() > 0; }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    r.tr.Drain();
+    CHECK(r.tr.WireFrames("response").empty());
+    CHECK(r.tr.CloseRequests().empty());
+    steady += 5001;
+    CHECK(t::WaitFor([&] { return !r.tr.CloseRequests().empty(); }));
+    CHECK_EQ(r.tr.CloseRequests().size(), size_t(1));
+    r.fake.Release("GET /players/:id/location");
+    CHECK(t::WaitFor([&] { return r.fake.Waiting() == 0; }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    r.tr.Drain();
+    CHECK(r.Events("player-positions").empty());
+    CHECK(r.tr.WireFrames("response").empty());
+    CHECK_EQ(r.HealthNum("requests", "timeouts"), 0.0);
+    CHECK_EQ(r.HealthNum("requests", "errors"), 0.0);
+    CHECK_EQ(r.HealthNum("positions", "readTimeouts"), 1.0);
+    r.tr.Close("read deadline");
+    r.tr.wire.clear();
+    OpenForIdentify(r);
+    identify();
+    steady += 3000;
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return !r.Events("player-positions").empty(); }));
+    CHECK_EQ(PayloadSeq(r.Events("player-positions")[0]), 1.0);
+}
+
+void QueuedPositionBatchDeadline() {
+    t::Group("bridge-position-queued-deadline");
+    std::atomic<int64_t> steady{100000};
+    Rig r("position-queued-deadline");
+    r.o.steadyMs = [&] { return steady.load(); };
+    r.o.config.actionTimeoutMs = 30000;
+    r.Start();
+    OpenForIdentify(r);
+    r.tr.Inject(R"({"type":"identifyResponse","payload":{"gameServerId":"gs-1","protocolVersion":1}})");
+    CHECK(t::WaitFor([&] { return r.tr.identifiedEpoch == r.tr.Epoch(); }));
+    steady += 500;
+    CHECK(t::WaitFor([&] { return r.HealthNum(nullptr, "protocol") == 1; }));
+    r.fake.Gate("POST /message");
+    for (int i = 0; i < 4; ++i) r.Send("sendMessage", R"({"message":"hold"})");
+    CHECK(t::WaitFor([&] { return r.fake.Waiting() == 4; }));
+    steady += 3000;
+    CHECK(t::WaitFor([&] { return AsRecord(r.Health().get("positions")).get("readInFlight") && AsRecord(r.Health().get("positions")).get("readInFlight")->b; }));
+    steady += 5001;
+    CHECK(t::WaitFor([&] { return r.HealthNum("positions", "readTimeouts") == 1; }));
+    r.tr.Drain();
+    CHECK(r.tr.WireFrames("response").empty());
+    CHECK(r.tr.CloseRequests().empty());
+    CHECK_EQ(r.HealthNum("requests", "timeouts"), 0.0);
+    r.fake.Release("POST /message");
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return r.tr.WireFrames("response").size() == 4; }));
+    steady += 3000;
+    CHECK(t::WaitFor([&] { r.tr.Drain(); return !r.Events("player-positions").empty(); }));
+    CHECK_EQ(PayloadSeq(r.Events("player-positions")[0]), 1.0);
+}
+
 void RunBridgeTests() {
     IdentifyAndHeartbeat();
     IdentifyError();
@@ -1316,4 +1472,7 @@ void RunBridgeTests() {
     ServerChatName();
     ProtocolV1Events();
     ProtocolV1Fallbacks();
+    ProtocolV1PositionBatch();
+    PositionBatchReadDeadline();
+    QueuedPositionBatchDeadline();
 }

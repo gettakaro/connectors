@@ -4,7 +4,7 @@
   "architecture": "in-process native plugin (dbghelp.dll proxy loaded by enshrouded_server.exe under Wine/Proton) that hooks the game and holds the Takaro Generic Connector WebSocket itself (WinHTTP, TLS); loopback HTTP 127.0.0.1:18890 serves diagnostics only",
   "runtime": "enshrouded_server.exe game build 1287369 (Enshrouded 1.0, Steam build 26430253), 1285601 (Steam build 26404334) and 1283531 (Steam build 26319703) under GE-Proton11-9 (1273043 and 1267041 without the item catalogue and giveItem) and game build 1267041 (hotfix 1.0.0.1, Steam build 25967645) natively on Windows Server, via mod/gamedata/enshrouded-gamedata.json; build 1024233 under GE-Proton10-30 via the built-in heuristics",
   "takaroConnection": "outbound_websocket",
-  "updated": "2026-10-19",
+  "updated": "2026-11-17",
   "oracle": "Takaro MCP (takaro-mcp 127.0.0.1:3000/mcp)",
   "statusDefinitions": {
     "proven": "observed end-to-end via MCP plus game-side check",
@@ -106,6 +106,10 @@
     },
     "chat-message": {
       "status": "proven"
+    },
+    "player-positions": {
+      "status": "proven",
+      "note": "Live verified on game build 1287369 over Generic protocol v1: three-second acknowledged interval, current online-player positions, location polling cessation, real chat teleport freshness and transient reconnect stream. Other supported builds await live verification."
     },
     "player-death": {
       "status": "proven",
