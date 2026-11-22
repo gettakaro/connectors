@@ -170,6 +170,10 @@ public static partial class ContractHarness
             True(wrote && up.Upgraded, "a file from an older release is upgraded once");
             True(up.ReportCharacters, "the old written default false turns characters on");
             string text = File.ReadAllText(path);
+            True(
+                File.ReadAllBytes(path)[0] == (byte)'<',
+                "the rewritten file gets no byte order mark"
+            );
             True(text.Contains("<Takaro version=\"2\">"), "the upgrade stamps the layout version");
             True(
                 text.Contains("<ReportCharacters>true</ReportCharacters>"),

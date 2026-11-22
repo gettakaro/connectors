@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Text;
 using System.Xml;
 
 namespace Takaro.Config
@@ -238,7 +239,16 @@ namespace Takaro.Config
                         comment.Value = comment.Value.Replace(OldCharactersHint, CharactersHint);
                 }
             }
-            WriteAtomically(path, doc.Save);
+            // No byte order mark: the file is rewritten in place and should
+            // differ from the admin's copy only in what changed.
+            WriteAtomically(
+                path,
+                tmp =>
+                {
+                    using (var writer = new StreamWriter(tmp, false, new UTF8Encoding(false)))
+                        doc.Save(writer);
+                }
+            );
         }
 
         private static void SetChild(
