@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/gettakaro/connectors/compare/rust-v0.6.0...rust-v0.6.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **rust:** target the Rust update build 26778019 with Carbon 2.0.266 ([#964](https://github.com/gettakaro/connectors/issues/964)) ([b0cd4df](https://github.com/gettakaro/connectors/commit/b0cd4df75bdca77ed326cc90976ab4b8cbefaf5e))
+
 ## [0.6.0](https://github.com/gettakaro/connectors/compare/rust-v0.5.0...rust-v0.6.0) (2026-11-12)
 
 
