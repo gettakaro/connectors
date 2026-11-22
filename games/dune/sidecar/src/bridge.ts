@@ -5,6 +5,7 @@ import { switchedCharacter } from './dune/identity.js';
 import { DEFAULT_DIMENSION } from './dune/mapDimensions.js';
 import type { OnlineStore } from './dune/onlineStore.js';
 import type { Position, TakaroPlayer } from './dune/types.js';
+import { LOG_BUDGET } from './dune/logTail.js';
 import { logger } from './logger.js';
 import { sanitizeGameEvent } from './takaro/eventWhitelist.js';
 import { gameIconPayload } from './takaro/gameProfile.js';
@@ -126,6 +127,8 @@ export class Bridge {
   private droppedEvents = 0;
   /** Chat lines dropped at reconnect because they were older than `outageChatMaxAgeMs`. */
   private droppedStaleChat = 0;
+  /** Queued `log` lines dropped at reconnect beyond the log budget (Takaro keeps no logs and rate-limits a burst). */
+  private droppedQueuedLogs = 0;
   /** Queued connect/disconnect events collapsed into one reconciliation at reconnect. */
   private collapsedPresence = 0;
   /** Presence events emitted BY the reconciliation (so an operator can tell them from live ones). */
@@ -186,6 +189,7 @@ export class Bridge {
       maxPendingEvents: MAX_PENDING_EVENTS,
       droppedEvents: this.droppedEvents,
       droppedStaleChat: this.droppedStaleChat,
+      droppedQueuedLogs: this.droppedQueuedLogs,
       collapsedPresence: this.collapsedPresence,
       reconciled: { ...this.reconciled },
       chatMaxAgeMs: this.options.outageChatMaxAgeMs ?? DEFAULT_OUTAGE_CHAT_MAX_AGE_MS,
@@ -576,6 +580,7 @@ export class Bridge {
     this.takaroDownSince = null;
     const collapsed = this.takeQueuedPresence();
     const staleChat = this.dropStaleChat();
+    this.trimQueuedLogs();
     const flushed = this.flushPending();
     const reconciled = this.options.currentOnline ? await this.reconcilePresence(this.options.currentOnline()) : 0;
     if (collapsed || staleChat || flushed || reconciled) {
@@ -605,6 +610,30 @@ export class Bridge {
       removed += 1;
     }
     this.collapsedPresence += removed;
+    return removed;
+  }
+
+  /**
+   * An outage queues the map log at the live budget, so a few minutes of it is hundreds of lines. Takaro drops a burst
+   * of that size as `event-rate-limited` (seen live: 179 of 279 after a battlegroup restart), and it keeps no logs, so
+   * only the newest budget's worth is replayed and the rest is counted.
+   */
+  private trimQueuedLogs(): number {
+    let keep = LOG_BUDGET.lines;
+    let removed = 0;
+    for (let i = this.pendingEvents.length - 1; i >= 0; i -= 1) {
+      const event = this.pendingEvents[i];
+      if (event.type !== 'log') continue;
+      if (keep > 0) {
+        keep -= 1;
+        continue;
+      }
+      this.pendingEvents.splice(i, 1);
+      this.releaseCursor(event);
+      removed += 1;
+    }
+    this.droppedQueuedLogs += removed;
+    if (removed) logger.info(`Dropped ${removed} queued log line(s) over the ${LOG_BUDGET.lines}-line log budget rather than replaying them`);
     return removed;
   }
 
