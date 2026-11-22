@@ -69,6 +69,12 @@ public static class PlayerMapper
     public static int? ToPing(int milliseconds) => milliseconds is > 0 and < 60_000 ? milliseconds : null;
 
     /// <summary>
+    /// A ping Steam reported for a live connection. Steam only answers with a real reading, so 0 ms
+    /// (a fast LAN) is kept; negative values mean Steam has no estimate yet.
+    /// </summary>
+    public static int? ToSteamPing(int milliseconds) => milliseconds is >= 0 and < 60_000 ? milliseconds : null;
+
+    /// <summary>
     /// The character behind a player ZDO, or null until the ZDO has reached the server. The game
     /// writes the id and name onto the ZDO when it spawns the character, for vanilla clients too.
     /// </summary>

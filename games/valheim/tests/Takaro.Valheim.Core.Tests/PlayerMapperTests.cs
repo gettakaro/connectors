@@ -19,6 +19,16 @@ public sealed class PlayerMapperTests
         Assert.AreEqual(expected, player.Ping);
     }
 
+    [DataTestMethod]
+    [DataRow(12, 12)]
+    [DataRow(0, 0)]
+    [DataRow(-1, null)]
+    [DataRow(60_000, null)]
+    public void SteamPingKeepsAFastLanReading(int milliseconds, int? expected)
+    {
+        Assert.AreEqual(expected, PlayerMapper.ToSteamPing(milliseconds));
+    }
+
     [TestMethod]
     public void ToTakaroPlayerUsesPlatformIdAsStableGameId()
     {

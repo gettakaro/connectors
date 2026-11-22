@@ -67,8 +67,8 @@ public sealed class ValheimPlayerResolver
     }
 
     /// <summary>
-    /// The round-trip time the game's own transport measures for this peer, in milliseconds;
-    /// null when the socket has no measurement yet.
+    /// The round-trip time the transport measures for this peer, in milliseconds;
+    /// null when the socket has no measurement.
     /// </summary>
     private static int? ReadPing(ZNetPeer? peer)
     {
@@ -77,6 +77,11 @@ public sealed class ValheimPlayerResolver
             if (peer?.m_socket is not { } socket)
             {
                 return null;
+            }
+
+            if (socket is ZSteamSocket)
+            {
+                return SteamServerPing.TryRead(socket);
             }
 
             socket.GetConnectionQuality(out _, out _, out var ping, out _, out _);
