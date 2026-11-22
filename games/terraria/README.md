@@ -137,6 +137,7 @@ Checked on TShock 6.2.1 (Terraria 1.4.5.8), 2026-10-22. ✅ works, ⚠️ works 
 | Player location | ✅ | In world pixels (16 per tile). |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ❌ | Terraria has no character levels, experience or skills. |
 | Item list | ⚠️ | Some names read wrong (`Bandof Regeneration`). |
 | Entity list | ❌ | Terraria has no creature list. |
 | Locations | ❌ | Terraria has no named locations. |
