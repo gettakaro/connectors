@@ -101,7 +101,7 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Kick | ✅ | |
 | Ban and unban | ✅ | Timed and permanent. |
 | Ban list | ✅ | |
-| Give an item | ⚠️ | Always in default condition. |
+| Give an item | ⚠️ | Always in default condition. What does not fit lands at the player's feet. |
 | Shop | ✅ | |
 | Shut down the server | ✅ | Saves and stops; your host restarts it. |
 | Player joined / left | ✅ | |

@@ -180,6 +180,13 @@ public class NeoForgeGameAdapter implements GameAdapter {
         if (item == Items.AIR) throw new IllegalArgumentException("unknown item: " + itemCode);
         ItemStack stack = new ItemStack(item, amount);
         player.getInventory().add(stack);
+        // Like vanilla /give: what does not fit lands at the player's feet instead of being lost.
+        while (!stack.isEmpty()) {
+            var dropped = new net.minecraft.world.entity.item.ItemEntity(player.level(),
+                    player.getX(), player.getY(), player.getZ(), stack.split(stack.getMaxStackSize()));
+            dropped.setNoPickUpDelay();
+            player.level().addFreshEntity(dropped);
+        }
     }
 
     @Override

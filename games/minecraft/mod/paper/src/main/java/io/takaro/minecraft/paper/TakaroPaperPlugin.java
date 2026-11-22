@@ -18,6 +18,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.ban.ProfileBanList;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -227,7 +228,17 @@ public class TakaroPaperPlugin extends JavaPlugin implements GameAdapter {
         if (player == null) throw new PlayerNotOnlineException(gameId);
         Material mat = Material.matchMaterial(itemCode);
         if (mat == null || !mat.isItem()) throw new IllegalArgumentException("unknown item: " + itemCode);
-        player.getInventory().addItem(new ItemStack(mat, amount));
+        // Like vanilla /give: what does not fit lands at the player's feet instead of being lost.
+        for (ItemStack left : player.getInventory().addItem(new ItemStack(mat, amount)).values()) {
+            int count = left.getAmount();
+            while (count > 0) {
+                int part = Math.min(count, mat.getMaxStackSize());
+                Item dropped = player.getWorld().dropItem(player.getLocation(), new ItemStack(mat, part));
+                dropped.setPickupDelay(0);
+                dropped.setOwner(player.getUniqueId());
+                count -= part;
+            }
+        }
     }
 
     @Override
