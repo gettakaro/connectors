@@ -33,7 +33,7 @@ import json
 import re
 import tempfile
 import xml.etree.ElementTree as ET
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -229,6 +229,33 @@ def _row_from(platform: str, observation: Any, *, ready: bool) -> Row:
     )
 
 
+def serves(observation: Any) -> str:
+    """The game branch an observation answers for.
+
+    Normally its own branch: Fabric's ``release`` channel serves Mojang's ``release``. A
+    channel that carries no game version declares ``gameBranch`` instead — Carbon's
+    ``production`` build names no Rust build at all and simply tracks Steam's ``public``
+    branch — and then that is the branch it serves.
+    """
+    return str(observation.facts.get("gameBranch") or observation.branch)
+
+
+def matches(observation: Any, game_version: str, branch: str) -> bool:
+    """Whether a framework observation is about this game version.
+
+    By ``gameVersion`` when the framework publishes one. A framework that publishes none but
+    declares the game branch it tracks answers for whatever that branch's issue is about: its
+    current release is the one a build for that game version is made against, and the verify
+    step, not this table, is what proves the two work together.
+    """
+    if observation.kind != "framework":
+        return False
+    declared = observation.facts.get("gameVersion")
+    if declared:
+        return str(declared) == game_version
+    return bool(observation.facts.get("gameBranch")) and serves(observation) == branch
+
+
 def row_from(platform: str, observation: Any, *, branch: str) -> Row:
     """One observation as a row on a game issue of ``branch``.
 
@@ -237,7 +264,7 @@ def row_from(platform: str, observation: Any, *, branch: str) -> Row:
     never counts as ready. A preview branch is only ever observed when the catalog enables
     that channel, so an unwatched channel cannot produce a row at all.
     """
-    if observation.branch != branch:
+    if serves(observation) != branch:
         return _row_from(platform, observation, ready=False)
     if not (observation.facts.get("artifact") or {}).get("name"):
         return Row(platform=platform, status=MISSING)
@@ -249,9 +276,9 @@ def row_for(platform: str, result: Any, game_version: str, *, branch: str) -> Ro
     on_branch: Any = None
     preview: Any = None
     for observation in getattr(result, "observations", []):
-        if observation.kind != "framework" or str(observation.facts.get("gameVersion")) != game_version:
+        if not matches(observation, game_version, branch):
             continue
-        if observation.branch == branch:
+        if serves(observation) == branch:
             on_branch = observation
         elif preview is None:
             preview = observation
@@ -323,6 +350,19 @@ def merge(existing: dict[str, Row] | None, fresh: dict[str, Row]) -> dict[str, R
     merged = dict(existing or {})
     merged.update(fresh)
     return merged
+
+
+def unchanged_since(fresh: Row, previous: Row | None) -> Row:
+    """``fresh``, carrying ``previous``'s observation time when nothing else differs.
+
+    A framework head that names no game version is reconciled on every run; re-stamping
+    the same release with each run's clock would rewrite the issue every time for nothing.
+    """
+    if previous is None or previous.observed_at is None:
+        return fresh
+    if replace(fresh, observed_at=None) != replace(previous, observed_at=None):
+        return fresh
+    return replace(fresh, observed_at=previous.observed_at)
 
 
 def _cell(value: str | None) -> str:
@@ -427,6 +467,26 @@ def _game_marker(observation: Any, targets: Any, branch: str) -> dict[str, str]:
     }
 
 
+def _open_issues_on(client: GitHub, observation: Any, targets: Any, branch: str, cache: Any) -> list[dict[str, Any]]:
+    """Every open support issue of this game on ``branch``, whatever version it is about.
+
+    How a framework that publishes no game version finds the issues it answers for. They
+    are listed rather than looked up by marker because there is no version to build the
+    marker from; the listing is the one the per-run cache already holds.
+    """
+    from .tracker import identity, issues
+
+    wanted = _game_marker(observation, targets, branch)
+    found = []
+    for issue in issues.issue_index(client, cache).values():
+        fields = identity.parse_marker(str(issue.get("body") or "")) or {}
+        if str(issue.get("state") or "open") != "open":
+            continue
+        if all(fields.get(key) == wanted[key] for key in ("kind", "provider", "component", "branch")):
+            found.append(issue)
+    return sorted(found, key=lambda issue: int(issue["number"]))
+
+
 def _closed_result(issue: dict[str, Any]) -> Any:
     number = int(issue["number"])
     reason = str(issue.get("state_reason") or "completed")
@@ -450,25 +510,33 @@ def reconcile_framework(
     Never creates an issue: a framework release nobody is waiting for is not work. The
     game version is joined on the support marker of the game provider named by the watch
     block, on both game branches, so a preview issue gets its row as well as the release.
+    A framework that publishes no game version but declares the game branch it tracks
+    (``gameBranch``) is joined to every open support issue on that branch instead.
     """
-    from .tracker import issues
+    from .tracker import identity, issues
 
     game_version = str(observation.facts.get("gameVersion") or "")
-    if not game_version:
+    tracked = str(observation.facts.get("gameBranch") or "")
+    if not game_version and not tracked:
         return _result("noop", None, False, "no-game-version")
     recorded = registry().results.get(observation.component)
 
-    found: list[tuple[str, dict[str, Any]]] = []
-    for branch in ("release", "snapshot"):
-        marker = _game_marker(observation, targets, branch)
-        issue = issues.find(client, marker, cache)
-        if issue is not None:
-            found.append((branch, issue))
+    found: list[tuple[str, dict[str, Any], str]] = []
+    if game_version:
+        for branch in ("release", "snapshot"):
+            marker = _game_marker(observation, targets, branch)
+            issue = issues.find(client, marker, cache)
+            if issue is not None:
+                found.append((branch, issue, game_version))
+    else:
+        for issue in _open_issues_on(client, observation, targets, tracked, cache):
+            rev = (identity.parse_marker(str(issue.get("body") or "")) or {}).get("rev", "")
+            found.append((tracked, issue, rev))
     if not found:
         return _result("noop", None, False, "no-support-issue")
 
     outcome = _result("noop", int(found[0][1]["number"]), False, "readiness-current")
-    for branch, issue in found:
+    for branch, issue, game_version in found:
         if str(issue.get("state") or "open") == "closed":
             outcome = _closed_result(issue)
             continue
@@ -492,7 +560,9 @@ def reconcile_framework(
             row = row_for(observation.component, recorded[1], game_version, branch=branch)
         else:
             row = row_from(observation.component, observation, branch=branch)
-        rows = merge(parse_rows(body), {observation.component: row})
+        existing = parse_rows(body)
+        row = unchanged_since(row, (existing or {}).get(observation.component))
+        rows = merge(existing, {observation.component: row})
         new_body = replace_section(
             body,
             render_rows(rows, targets.platforms),

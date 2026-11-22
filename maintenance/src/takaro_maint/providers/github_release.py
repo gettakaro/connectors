@@ -229,6 +229,10 @@ class GitHubReleaseProvider(Provider):
                 }
                 if channel.get("mutable"):
                     facts["observationLimit"] = OBSERVATION_LIMIT
+                if channel.get("gameBranch"):
+                    # The release names no game version; the channel says which game branch
+                    # it tracks, and readiness joins on that (see ``readiness.matches``).
+                    facts["gameBranch"] = str(channel["gameBranch"])
                 seen.append(
                     Observation(
                         provider=self.id,
