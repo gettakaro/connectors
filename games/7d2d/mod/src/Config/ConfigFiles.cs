@@ -55,10 +55,11 @@ namespace Takaro.Config
         /// </summary>
         public const int Version = 2;
 
-        // The line older releases wrote; Upgrade swaps it for the current one.
+        // The line older releases wrote; Update swaps it for the current one,
+        // which is the end of Header.
         private const string OldCharactersHint =
             "  Turn it on only when your Takaro supports Characters, then restart the server.\n";
-        private const string CharactersHint =
+        public const string CharactersHint =
             "  It is on by default; set it to false to keep lives out of Takaro (for example\n"
             + "  when your Takaro is older than 2.3), then restart the server.\n";
 
@@ -78,7 +79,8 @@ namespace Takaro.Config
             + "  for \"Server\".\n"
             + "\n"
             + "  ReportCharacters tells Takaro about each life on a Permanent Death server.\n"
-            + CharactersHint;
+            + "  It is on by default; set it to false to keep lives out of Takaro (for example\n"
+            + "  when your Takaro is older than 2.3), then restart the server.\n";
 
         /// <summary>
         /// Reads the config, creating it when it is missing, writing a new
@@ -184,7 +186,9 @@ namespace Takaro.Config
                 + "<!--"
                 + Header
                 + "-->\n"
-                + "<Takaro version=\"" + Version + "\">\n"
+                + "<Takaro version=\""
+                + Version
+                + "\">\n"
                 + "  <WebSocket>\n"
                 + Element("Url", values.Url)
                 + Element("RegistrationToken", values.RegistrationToken)

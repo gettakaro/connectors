@@ -160,7 +160,12 @@ public static partial class ContractHarness
         try
         {
             File.WriteAllText(path, OldReleaseConfig.Replace("{IDENTITY}", "id-1"));
-            ConfigValues up = ConfigFiles.Load(path, () => "unused", out bool wrote, out Exception err);
+            ConfigValues up = ConfigFiles.Load(
+                path,
+                () => "unused",
+                out bool wrote,
+                out Exception err
+            );
             True(err == null, "the upgrade writes the file");
             True(wrote && up.Upgraded, "a file from an older release is upgraded once");
             True(up.ReportCharacters, "the old written default false turns characters on");
@@ -172,11 +177,18 @@ public static partial class ContractHarness
             );
             True(!text.Contains("Turn it on only when"), "the old hint is replaced");
             True(text.Contains("set it to false to keep lives out"), "the new hint is written");
+            True(
+                ConfigFiles.Header.EndsWith(ConfigFiles.CharactersHint),
+                "the upgrade writes the same hint a new file gets"
+            );
             Equal("id-1", up.IdentityToken, "the identity is kept");
             Equal("reg", up.RegistrationToken, "the registration token is kept");
             Equal("Bot", up.ServerChatName, "the chat name is kept");
             Equal(30, up.ReconnectIntervalSeconds, "the reconnect interval is kept");
-            True(text.Contains("<ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>"), "other settings stay as written");
+            True(
+                text.Contains("<ReconnectIntervalSeconds>30</ReconnectIntervalSeconds>"),
+                "other settings stay as written"
+            );
 
             ConfigValues again = ConfigFiles.Load(path, () => "unused", out bool wroteAgain, out _);
             True(!wroteAgain && !again.Upgraded, "an upgraded file is not written again");
@@ -189,8 +201,16 @@ public static partial class ContractHarness
                     "<ReportCharacters>false</ReportCharacters>"
                 )
             );
-            ConfigValues chosen = ConfigFiles.Load(path, () => "unused", out bool wroteChosen, out _);
-            True(!chosen.ReportCharacters && !wroteChosen, "a false set after the upgrade is honoured");
+            ConfigValues chosen = ConfigFiles.Load(
+                path,
+                () => "unused",
+                out bool wroteChosen,
+                out _
+            );
+            True(
+                !chosen.ReportCharacters && !wroteChosen,
+                "a false set after the upgrade is honoured"
+            );
 
             // An old file the admin had turned on stays on.
             File.WriteAllText(
@@ -208,8 +228,15 @@ public static partial class ContractHarness
             // An old file without an identity gets both in one write.
             File.WriteAllText(path, OldReleaseConfig.Replace("{IDENTITY}", ""));
             ConfigValues both = ConfigFiles.Load(path, () => "new-id", out _, out _);
-            Equal("new-id", both.IdentityToken, "a missing identity is generated during the upgrade");
-            True(File.ReadAllText(path).Contains("<IdentityToken>new-id</IdentityToken>"), "and written");
+            Equal(
+                "new-id",
+                both.IdentityToken,
+                "a missing identity is generated during the upgrade"
+            );
+            True(
+                File.ReadAllText(path).Contains("<IdentityToken>new-id</IdentityToken>"),
+                "and written"
+            );
             True(both.ReportCharacters, "and characters are on");
 
             // A file from before 0.9 has no Players section: it gets one.
