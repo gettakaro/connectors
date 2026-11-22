@@ -124,9 +124,9 @@ item (code = item definition index) to `takaro_tf2_item_catalog.inc`.
 - `listLocations` reads the running map (intelligence, team spawns, control points); `getMapInfo`
   answers a disabled map and `getMapTile` a transparent placeholder.
 - `entity-killed` covers TF2's `object_destroyed` (Engineer buildings), not every entity removal. `entity` is the
-  display name ("Sentry Gun") and `entityCode` the classname that `listEntities` uses as code. `weapon` is a
-  display name: a stock kill icon's name, else the attacker's active weapon from the item catalog, else a readable
-  form of the icon; the raw kill icon goes in `weaponCode`.
+  display name ("Sentry Gun"); `weapon` is a display name too: a stock kill icon's name, else the attacker's active
+  weapon from the item catalog, else a readable form of the icon. Takaro refuses events with fields it does not
+  know, so the classname (the `listEntities` code) and the raw kill icon are only in `msg`.
 
 ## Release
 

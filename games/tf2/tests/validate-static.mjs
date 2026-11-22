@@ -167,8 +167,11 @@ assert(plugin.includes('item.SetString("code", code)') && plugin.includes('item.
   assert(plugin.includes('#include "takaro_tf2_entity_names.inc"'), "plugin must use the shared entity names");
   assert(names.includes('"obj_sentrygun"') && names.includes('"Sentry Gun"') && names.includes('"Rocket Launcher"'), "entity and kill-icon tables must carry display names");
   const killed = plugin.slice(plugin.indexOf("void Event_ObjectDestroyed("), plugin.indexOf("Action Command_Reconnect("));
-  assert(killed.includes("GetTf2EntityName(entityCode, entity") && killed.includes('data.SetString("entityCode", entityCode)'), "entity-killed must send the display name as entity and the classname as entityCode");
-  assert(killed.includes("ResolveTf2WeaponName(weaponCode") && killed.includes('data.SetString("weaponCode", weaponCode)'), "entity-killed must send a weapon display name and the kill icon as weaponCode");
+  assert(killed.includes("GetTf2EntityName(entityCode, entity") && killed.includes('data.SetString("entity", entity)'), "entity-killed must send the display name as entity");
+  assert(killed.includes("ResolveTf2WeaponName(weaponCode") && killed.includes('data.SetString("weapon", weapon)'), "entity-killed must send a weapon display name");
+  // Takaro validates events with forbidNonWhitelisted: any field beyond player/entity/weapon/position/msg drops the event.
+  const keys = [...killed.matchAll(/data\.Set(?:String|Int|Float|Bool)?\("([^"]+)"/g)].map((m) => m[1]);
+  assert(keys.every((k) => ["player", "entity", "weapon", "position", "msg"].includes(k)), `entity-killed must only send fields Takaro accepts, got ${keys.join(",")}`);
   assert(readFileSync(packagePath, "utf8").includes("takaro_tf2_entity_names_test"), "the entity names unit-test plugin must be built");
 }
 assert(plugin.includes('"m_iItemDefinitionIndex"') && plugin.includes("g_ItemNames.GetString"), "getPlayerInventory must use listItems codes (item definition index) and catalog display names");

@@ -405,21 +405,23 @@ void Event_ObjectDestroyed(Event event, const char[] name, bool dontBroadcast)
   data.Set("player", player);
   delete player;
 
+  // Takaro refuses unknown event fields, so the classname and kill icon travel only in msg.
   data.SetString("entity", entity);
-  data.SetString("entityCode", entityCode);
   data.SetString("weapon", weapon);
-  if (weaponCode[0] != '\0') {
-    data.SetString("weaponCode", weaponCode);
-  }
 
-  char msg[256];
+  char ownerPart[MAX_NAME_LENGTH + 16];
   if (IsTakaroClient(owner)) {
-    char ownerName[MAX_NAME_LENGTH];
-    GetClientName(owner, ownerName, sizeof(ownerName));
-    Format(msg, sizeof(msg), "Destroyed %s entity %d owned by %s", entity, entityIndex, ownerName);
-  } else {
-    Format(msg, sizeof(msg), "Destroyed %s entity %d", entity, entityIndex);
+    GetClientName(owner, ownerPart, sizeof(ownerPart));
+    Format(ownerPart, sizeof(ownerPart), " owned by %s", ownerPart);
   }
+  char weaponPart[300];
+  if (weaponCode[0] != '\0') {
+    Format(weaponPart, sizeof(weaponPart), " with %s (%s)", weapon, weaponCode);
+  } else {
+    Format(weaponPart, sizeof(weaponPart), " with %s", weapon);
+  }
+  char msg[512];
+  Format(msg, sizeof(msg), "Destroyed %s (%s) entity %d%s%s", entity, entityCode, entityIndex, ownerPart, weaponPart);
   data.SetString("msg", msg);
 
   EmitGameEvent("entity-killed", data);
@@ -1056,7 +1058,7 @@ JSONArray HandleListItems()
   return items;
 }
 
-// The entities entity-killed can report (takaro_tf2_entity_names.inc); the code is what it sends as entityCode.
+// The entities entity-killed can report (takaro_tf2_entity_names.inc); entity-killed sends the name.
 JSONArray HandleListEntities()
 {
   JSONArray entities = new JSONArray();
