@@ -30,7 +30,9 @@ internal static class ValheimLocalizer
         {
             // Some prefabs carry their bare code as the name (TrainingDummy); that is no
             // translation either.
-            return string.Equals(key, fallback, StringComparison.Ordinal) ? ValheimDisplayName.FromCode(key) : key;
+            return string.Equals(key, fallback, StringComparison.Ordinal)
+                ? ValheimDisplayName.FromCode(key)
+                : ValheimDisplayName.StripRichText(key, ValheimDisplayName.FromCode(fallback));
         }
 
         lock (SyncRoot)
@@ -44,7 +46,7 @@ internal static class ValheimLocalizer
         var value = TryLocalize(key);
         var result = value is null || string.IsNullOrWhiteSpace(value) || value.Contains('$') || value.Contains("MISSING") || value.StartsWith("[", StringComparison.Ordinal)
             ? ValheimDisplayName.FromToken(key, ValheimDisplayName.FromCode(fallback))
-            : value!.Trim();
+            : ValheimDisplayName.StripRichText(value, ValheimDisplayName.FromCode(fallback));
 
         lock (SyncRoot)
         {
