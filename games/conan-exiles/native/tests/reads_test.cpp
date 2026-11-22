@@ -635,8 +635,9 @@ public:
 
 static std::string Dump(const takaro::ActionResult& r) { return r.ok ? takaro::JsonDump(r.payload) : "ERROR " + r.error; }
 
-static ReadService* NewService(Server& s, HostAndImage& mem) {
+static ReadService* NewService(Server& s, HostAndImage& mem, int characterWaitMs = 0) {
     ReadOptions o;
+    o.characterWaitMs = characterWaitMs;
     o.mem = &mem;
     o.objObjects = s.w.objObjects;
     o.nameBlocks = s.w.nameBlocks;
@@ -915,6 +916,42 @@ static void TestSelfCheckFallbacks() {
           "%s", h.c_str());
 }
 
+// A join whose character is not readable yet stays off getPlayers (Takaro would keep a stray
+// character for it); once read, the session keeps the character while the pawn is gone.
+static void TestCharacterWait() {
+    Server s;
+    std::string err = s.Build();
+    if (!err.empty()) return;
+    HostAndImage mem(s.w.mem);
+    std::unique_ptr<ReadService> rs(NewService(s, mem, 60000));
+    std::string status;
+    CHECK(rs->WarmupStep(status), "%s", status.c_str());
+    auto r = rs->Execute("getPlayers", J("{}"));
+    std::string d = Dump(r);
+    CHECK(d.find("\"character\":{\"id\":\"154\"") != std::string::npos && d.find("76561198000000002") == std::string::npos,
+          "a joining player without a character is held back: %s", d.c_str());
+    const uintptr_t stable = s.pawn1 + Off(s.w, "ConanCharacter", "CharacterStableId");
+    s.w.W<int64_t>(stable, 0);  // the pawn reads no character (dead, between pawns)
+    r = rs->Execute("getPlayers", J("{}"));
+    d = Dump(r);
+    CHECK(d.find("\"character\":{\"id\":\"154\",\"name\":\"werwerwer\"}") != std::string::npos,
+          "the session keeps the character: %s", d.c_str());
+    s.w.W<int64_t>(stable, 155);  // Recreate Character: a new id replaces it
+    r = rs->Execute("getPlayers", J("{}"));
+    CHECK(Dump(r).find("\"id\":\"155\"") != std::string::npos, "a new character replaces it: %s", Dump(r).c_str());
+    const uintptr_t stable2 = s.pawn2 + Off(s.w, "ConanCharacter", "CharacterStableId");
+    s.w.W<int64_t>(stable2, 777);
+    r = rs->Execute("getPlayers", J("{}"));
+    CHECK(Dump(r).find("\"character\":{\"id\":\"777\",\"name\":\"rider\"}") != std::string::npos,
+          "listed once its character is read: %s", Dump(r).c_str());
+    std::unique_ptr<ReadService> zero(NewService(s, mem, 0));
+    CHECK(zero->WarmupStep(status), "%s", status.c_str());
+    s.w.W<int64_t>(stable2, 0);
+    r = zero->Execute("getPlayers", J("{}"));
+    CHECK(Dump(r).find("76561198000000002") != std::string::npos, "after the wait it is listed without one: %s",
+          Dump(r).c_str());
+}
+
 static void TestMarkersWithoutPlayer() {
     // Nobody has joined: the game has not loaded MapMarkers_ConanSandbox, so the warm-up loads it
     // through KismetSystemLibrary and listLocations answers without a player.
@@ -1048,6 +1085,7 @@ int main() {
     TestHelpers();
     TestReads();
     TestSelfCheckFallbacks();
+    TestCharacterWait();
     TestMarkersWithoutPlayer();
     TestNotLoaded();
     printf("reads tests: %d/%d checks passed\n", g_ran - g_failed, g_ran);

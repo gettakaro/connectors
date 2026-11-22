@@ -43,6 +43,9 @@ struct ReadOptions {
     int warmupRetryMs = 3000;
     int listWaitMs = 8000;  // a list action waits this long for a catalogue still building
     int refreshAfterJoinMs = 60000;  // after our own marker table load: rebuild this long after the first join
+    // A joining player whose character is not readable yet is left out of getPlayers for this long,
+    // so Takaro never records the player without the character (it would keep a stray one).
+    int characterWaitMs = 15000;
 };
 
 enum class Check { Pending, Passed, Failed };
@@ -144,6 +147,14 @@ private:
         std::string progression;  // the last track array answered
     };
     std::map<std::string, Known> known_;  // Steam64 -> last seen
+    struct SessionCharacter {
+        int64_t id = 0;  // 0: none read yet this session
+        std::string name;
+        uint64_t sinceMs = 0;  // first snapshot of this session
+    };
+    std::map<std::string, SessionCharacter> session_;  // Steam64 -> online players of the last snapshot
+    // Fills a missing character from the session, or reports a join still waiting for its character.
+    bool ResolveCharacter(PlayerRecord& p, uint64_t now);
     std::atomic<uint64_t> calls_{0}, errors_{0};
     uint64_t gameThreadJobs_ = 0, gameThreadNs_ = 0, lastSnapshotNs_ = 0;
     uint64_t snapshotReads_ = 0;

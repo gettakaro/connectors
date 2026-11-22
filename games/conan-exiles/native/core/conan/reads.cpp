@@ -680,6 +680,19 @@ bool ReadService::Snapshot(std::vector<PlayerRecord>& out, std::string& error) {
     return true;
 }
 
+bool ReadService::ResolveCharacter(PlayerRecord& p, uint64_t now) {
+    if (p.characterId > 0) return true;
+    auto it = session_.find(p.steam64);
+    if (it != session_.end() && it->second.id > 0) {
+        // Dead or between pawns: still the same character until the game reports another one.
+        p.characterId = it->second.id;
+        if (p.characterName.empty()) p.characterName = it->second.name;
+        return true;
+    }
+    const uint64_t since = it != session_.end() ? it->second.sinceMs : now;
+    return now - since >= (uint64_t)o_.characterWaitMs;
+}
+
 std::string ReadService::PlayerJson(const PlayerRecord& p) {
     ObjBuilder b;
     std::string name = !p.name.empty() ? p.name : !p.characterName.empty() ? p.characterName : p.steam64;
@@ -773,11 +786,34 @@ ActionResult ReadService::ExecuteImpl(const std::string& action, const JsonValue
             return Fail(action + ": " + error);
         }
     }
-    for (auto& p : players) known_[p.steam64].json = PlayerJson(p);
+    const uint64_t now = NowMs();
+    std::map<std::string, SessionCharacter> seen;
+    std::vector<bool> waiting(players.size(), false);
+    for (size_t i = 0; i < players.size(); i++) {
+        auto& p = players[i];
+        auto it = session_.find(p.steam64);
+        if (it != session_.end()) seen[p.steam64] = it->second;
+        else seen[p.steam64].sinceMs = now;
+        waiting[i] = !ResolveCharacter(p, now);
+        if (p.characterId > 0) {
+            seen[p.steam64].id = p.characterId;
+            seen[p.steam64].name = p.characterName;
+        }
+    }
+    if (action == "getPlayers") session_.swap(seen);  // a player missing from a full snapshot has left
+    else
+        for (auto& kv : seen) session_[kv.first] = kv.second;
+    for (size_t i = 0; i < players.size(); i++)
+        if (!waiting[i]) known_[players[i].steam64].json = PlayerJson(players[i]);
 
     if (action == "getPlayers") {
         std::string o = "[";
-        for (size_t i = 0; i < players.size(); i++) o += (i ? "," : "") + PlayerJson(players[i]);
+        bool first = true;
+        for (size_t i = 0; i < players.size(); i++) {
+            if (waiting[i]) continue;  // listed once its character is read, or after characterWaitMs
+            o += (first ? "" : ",") + PlayerJson(players[i]);
+            first = false;
+        }
         return Raw(o + "]");
     }
 
