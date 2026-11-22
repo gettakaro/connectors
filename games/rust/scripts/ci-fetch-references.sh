@@ -42,11 +42,12 @@ changed_paths() {
     fi
 }
 
+# A Rust file is one only Rust reads: its sources, its catalog, its adapter and its workflow.
 # A pull request whose changes cannot be read counts as changing Rust: the safe answer is to fail.
 touches_rust() {
     local changed
     changed="$(changed_paths)" || return 0
-    grep -qE '^(games/rust|catalog/rust)/' <<<"${changed}"
+    grep -qE '^(games/rust/|catalog/rust/|maintenance/src/takaro_maint/games/rust/|\.github/workflows/rust\.yml$)' <<<"${changed}"
 }
 
 # Empty when the lookup fails. The build id is only ever used to name the newer build and to

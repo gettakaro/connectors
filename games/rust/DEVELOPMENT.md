@@ -80,8 +80,8 @@ that means for a pull request:
 | Reference cache | Pull request | Result |
 |---|---|---|
 | Hit | Any | Every check runs against the cached assemblies, exactly as before. Steam is never asked. |
-| Miss, pin no longer served | Changes neither `games/rust/**` nor `catalog/rust/**` | A warning names the stale target and the newer public build. The steps that need the assemblies (compile, config, map, protocol) are skipped, the name catalogue still runs, and the job passes. |
-| Miss, pin no longer served | Changes `games/rust/**` or `catalog/rust/**` | Fails, so a real Rust change is never merged untested. |
+| Miss, pin no longer served | Changes no Rust file (`games/rust/**`, `catalog/rust/**`, `maintenance/src/takaro_maint/games/rust/**`, `.github/workflows/rust.yml`) | A warning names the stale target and the newer public build. The steps that need the assemblies (compile, config, map, protocol) are skipped, the name catalogue still runs, and the job passes. |
+| Miss, pin no longer served | Changes any of those Rust files | Fails, so a real Rust change is never merged untested. |
 | Miss, any other download failure | Any | Fails. Only the 401 / no-manifest-request-code answer is tolerated. |
 
 A push to `main`, a release and a manual run never reach this logic and fail as they always did, so
