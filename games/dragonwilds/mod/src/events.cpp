@@ -875,6 +875,7 @@ void ProbeLogChatLayout(void* func) {
 }
 
 // Returns true when the original Server_SendChatMessage must not run (research probe only).
+bool ActorPosition(void* obj, double& x, double& y, double& z);
 bool HandleChat(void* self, void* func, void* params) {
     if (g_msgBodyOff < 0 || !params) return false;
     if (CommandProbe::Enabled()) ProbeLogChatLayout(func);
@@ -887,14 +888,20 @@ bool HandleChat(void* self, void* func, void* params) {
     void* st = PlayerStateOf(self);
     Ident id;
     if (st) IdentFromPlayerState(st, id);
+    void* pawn = nullptr;
+    if (st) ReadAt(st, PropOffOf(st, "PawnPrivate"), pawn);
+    double x = 0, y = 0, z = 0;
+    const bool havePosition = pawn && ActorPosition(pawn, x, y, z);
     if (CommandProbe::Enabled()) {
         PluginLog("probe: Server_SendChatMessage fired, sender %s (from the component owner): %s",
                   id.gameId.c_str(), msg.c_str());
         if (CommandProbe::OnServerChat(msg, id.gameId)) return true;  // private: no chat-message either
     }
-    PluginState::Get().EmitEventDeferred("chat-message", [msg, id] {
+    PluginState::Get().EmitEventDeferred("chat-message", [msg, id, x, y, z, havePosition] {
         std::string o = "{\"msg\":" + JsonStr(msg) + ",\"channel\":\"global\"";
         if (id.valid()) o += ",\"player\":" + PlayerJson(id);
+        if (havePosition) o += ",\"position\":{\"x\":" + JsonNum(x) + ",\"y\":" +
+                               JsonNum(y) + ",\"z\":" + JsonNum(z) + "}";
         return o + "}";
     });
     g_chat.emitted++;

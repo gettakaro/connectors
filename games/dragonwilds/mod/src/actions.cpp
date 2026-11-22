@@ -1198,6 +1198,23 @@ Actions::Result Actions::PlayerLocation(const std::string& gameId) {
     });
 }
 
+Actions::Result Actions::PlayerPositions() {
+    return OnGameThread("player positions snapshot", []() -> JobOut {
+        std::string rows = "[";
+        std::set<std::string> seen;
+        for (const auto& p : ReadPlayers()) {
+            if (p.gameId.empty() || !p.pawn || !seen.insert(p.gameId).second) continue;
+            double loc[3] = {0, 0, 0}, rot[3] = {0, 0, 0};
+            if (!PawnLocation(p.pawn, loc, rot)) continue;
+            if (rows.size() > 1) rows += ',';
+            rows += "{\"gameId\":" + JsonStr(p.gameId) + ",\"position\":{\"x\":" +
+                    JsonNum(loc[0]) + ",\"y\":" + JsonNum(loc[1]) + ",\"z\":" +
+                    JsonNum(loc[2]) + ",\"dimension\":\"overworld\"}}";
+        }
+        return {200, rows + "]"};
+    });
+}
+
 Actions::Result Actions::PlayerInventory(const std::string& gameId) {
     return OnGameThread("GET /players/{id}/inventory", [gameId]() -> JobOut {
         PlayerInfo p;
