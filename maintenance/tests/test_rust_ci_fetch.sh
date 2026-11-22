@@ -61,6 +61,10 @@ expect "the warning names the newer public build" \
   not-served 0 true true "newer public build is 200" scripts/lib/target.sh
 expect "not served, a games/rust change fails" not-served 4 "" "" - games/rust/README.md
 expect "not served, a catalog/rust change fails" not-served 4 "" "" - catalog/rust/targets/carbon-100.json
+expect "not served, a Rust adapter change fails" not-served 4 "" "" - maintenance/src/takaro_maint/games/rust/__init__.py
+expect "not served, a Rust workflow change fails" not-served 4 "" "" - .github/workflows/rust.yml
+expect "not served, the shared release workflow alone skips" not-served 0 true true - .github/workflows/connector-release.yml
+expect "not served, another game's adapter skips" not-served 0 true true - maintenance/src/takaro_maint/games/valheim/__init__.py
 expect "not served, one Rust path among many still fails" \
   not-served 4 "" "" - maintenance/README.md games/rust/README.md
 expect "another upstream failure is not tolerated" other-upstream 4 "" "" - maintenance/README.md
