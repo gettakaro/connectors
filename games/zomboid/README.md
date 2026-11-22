@@ -73,6 +73,8 @@ Checked on Project Zomboid 42.22.2 (3d39148846), 2026-11-11. ✅ works, ⚠️ w
 | Player location | ✅ | |
 | Teleport | ⚠️ | The new position can take about 15 seconds to show in Takaro. |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | Every skill as its own track with level, experience and progress. Project Zomboid has no overall character level. |
+| Characters | ✅ | Each survivor is its own character. A death ends it; the next survivor starts fresh. |
 | Item list | ✅ | |
 | Entity list | ✅ | Zombies and vehicles. |
 | Locations | ⚠️ | Only player-claimed safehouses. |

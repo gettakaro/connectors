@@ -235,7 +235,9 @@ public final class Pz {
 
     private static String survivorName(IsoPlayer p, String username) {
         String name = p.getDescriptor() != null ? p.getDescriptor().getFullname() : null;
-        return name == null || name.isBlank() ? username : name.trim();
+        String chosen = name == null || name.isBlank() ? username : name.trim();
+        // Takaro accepts character names of at most 255 characters.
+        return chosen.length() > 255 ? chosen.substring(0, 255) : chosen;
     }
 
     /** Where {@link Characters} keeps its file: the current world's save folder. */
