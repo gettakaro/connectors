@@ -154,7 +154,7 @@ update step then runs the stub, prints one line and exits 0. Because the install
 no longer reverted, the agent lives in it (`Takaro/TakaroConnector.jar`) rather than in the
 cache directory.
 
-Migrating the live rig on neo is not done by this change. When you want to:
+To migrate an existing development server installation:
 
 ```sh
 dev-servers/scripts/stop.sh zomboid \
@@ -255,7 +255,7 @@ server-side way to prove the catalogue when no Takaro REST driver is available.
 ## Protocol v1 and the map
 
 `identify` offers `protocolVersions: [0, 1]` with a Capability Manifest (`core/Capabilities`:
-the 16 action capabilities, `server.shutdown`, the six `events.*`, `game.profile`, and `map`
+the 16 action capabilities, `server.shutdown`, seven `events.*`, `game.profile`, and `map`
 once ready). The version Takaro returns in `identifyResponse` holds for that connection; a
 missing value is 0.
 
@@ -278,6 +278,15 @@ missing value is 0.
   resends the rest in order, so events produced during an outage are no longer lost. Nothing
   is sent before `identifyResponse`; if Takaro picks protocol 0 the buffer is flushed in the
   old shape.
+- **Player positions:** protocol 1 declares `events.player-positions` with a 3-second receipt-paced interval.
+  The game-thread bridge reads every connected player's current `IsoPlayer` location and emits
+  one timestamped batch. If a connected player has no live character while loading or dead,
+  it withdraws the push capability so Takaro can poll, and retries a complete roster every
+  three seconds. It restores push when all players are readable and never substitutes cached
+  coordinates or sends a partial roster. The ACK watchdog closes once per connection, outside
+  the position lock, avoiding inversion with Java-WebSocket teardown. Chat events carry the
+  author's live position when available. Position snapshots are discarded on disconnect
+  and kept outside the gameplay outbox. A new snapshot is captured only after the matching receipt ACK plus the interval; reconnect starts a fresh stream and rejects captures from the old connection.
 - **Map:** `agent/MapService` reads the server's `Map=` option, finds
   `<install>/media/maps/<map>/pyramid.zip` (the world-map raster the in-game map draws: 256 px
   PNG tiles per level plus `pyramid.txt` with the world bounds), and on a low-priority thread
@@ -295,12 +304,12 @@ missing value is 0.
 
 ## Takaro coverage
 
-**22 of 23** capabilities (17 actions + 6 events) are `live-supported`, verified end to end
+**22 of 24** capabilities (17 actions + 7 events) have prior live support, verified end to end
 through the Takaro API against a real dedicated server with a live client (game build
-42.20.4 b0bbce05d5). `listLocations` is `partial`: Build 42 exposes no named-location registry,
+42.20.4 b0bbce05d5). The new `events.player-positions` is unit-tested but awaits a live
+check. `listLocations` is `partial`: Build 42 exposes no named-location registry,
 so the connector reads `SafeHouse.safehouseList` reflectively and returns `[]` until players
-claim safehouses. Full per-capability evidence lives in the campaign docs under
-`context/games/project-zomboid/` of the gamingconnectors workspace.
+claim safehouses. The capability registry records the supported protocol surface.
 
 ## Chat sender name
 

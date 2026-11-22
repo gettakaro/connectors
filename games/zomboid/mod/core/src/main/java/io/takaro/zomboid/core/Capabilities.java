@@ -14,6 +14,8 @@ import java.util.List;
  */
 public final class Capabilities {
 
+    public static final int POSITION_INTERVAL_SECONDS = 3;
+
     /** Action capabilities, in the protocol's order. testReachability is not a capability. */
     static final List<String> ACTIONS = List.of(
             "players.list",
@@ -38,6 +40,7 @@ public final class Capabilities {
             "events.player-connected",
             "events.player-disconnected",
             "events.chat-message",
+            "events.player-positions",
             "events.player-death",
             "events.entity-killed",
             "events.log");
@@ -52,12 +55,23 @@ public final class Capabilities {
     }
 
     public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion) {
+        return manifest(dimensions, gameVersion, true);
+    }
+
+    public static JsonArray manifest(List<MapDimension> dimensions, String gameVersion, boolean positionsAvailable) {
         JsonArray out = new JsonArray();
         for (String name : ACTIONS) {
             out.add(named(name));
         }
         for (String name : EVENTS) {
-            out.add(named(name));
+            if (name.equals("events.player-positions") && !positionsAvailable) continue;
+            JsonObject event = named(name);
+            if (name.equals("events.player-positions")) {
+                JsonObject parameters = new JsonObject();
+                parameters.addProperty("intervalSeconds", POSITION_INTERVAL_SECONDS);
+                event.add("parameters", parameters);
+            }
+            out.add(event);
         }
         JsonObject profile = named(GAME_PROFILE);
         profile.add("parameters", GameProfile.parameters(gameVersion));
