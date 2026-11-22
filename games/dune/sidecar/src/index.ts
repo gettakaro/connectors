@@ -36,6 +36,9 @@ import { GameBuild } from './takaro/gameProfile.js';
 import { parseTakaroProtocol, resolveConfigFile, TakaroSettingsSource } from './takaro/settings.js';
 import type { WsMessage } from './takaro/protocol.js';
 
+/** Longest the first identify waits for the plugin's entity walk. */
+const ENTITY_HEAD_START_MS = 45_000;
+
 /** amqplib is loaded lazily so the unit tests (which inject a fake connector) never need the native-ish dependency. */
 const amqpConnect: AmqpConnector = async (url, options) => {
   const amqplib = await import('amqplib');
@@ -430,6 +433,19 @@ async function main(): Promise<void> {
     },
     { maxWaitMs: config.identifyWaitMs },
   );
+  // Takaro syncs entities right after the first identify. The plugin's walk takes 10 to 15 s, so give it a bounded
+  // head start (a walk during map load may come back empty; then one more try) instead of answering with one row.
+  if (plugin.enabled()) {
+    const headStart = new Promise<void>((resolve) => setTimeout(resolve, ENTITY_HEAD_START_MS).unref?.());
+    await Promise.race([
+      (async () => {
+        await adapter.refreshEntities();
+        if (!adapter.hasPluginEntities()) await adapter.refreshEntities();
+      })(),
+      headStart,
+    ]);
+    logger.info(`Entity catalogue before identify: ${adapter.hasPluginEntities() ? 'plugin rows cached' : 'catalogue file only'}`);
+  }
   // Settings saved during the wait apply to the first identify.
   const changed = settings.poll();
   if (changed) {

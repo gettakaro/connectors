@@ -343,6 +343,11 @@ export class DuneAdapter {
     return [...merged.values()];
   }
 
+  /** Whether the plugin's live entity rows are cached (false until a walk has returned rows). */
+  hasPluginEntities(): boolean {
+    return this.pluginEntities.length > 0;
+  }
+
   /** Fetches the plugin's live entity rows into the cache; concurrent calls share one request. */
   refreshEntities(): Promise<void> {
     const plugin = this.options.plugin;
