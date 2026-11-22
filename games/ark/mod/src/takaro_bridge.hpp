@@ -277,6 +277,8 @@ class Bridge {
   ws::Connection conn_;
   std::atomic<uint64_t> epoch_{0};
   std::atomic<bool> identified_{false};
+  // Identified before the game was ready (the wait timed out on a slow world load).
+  bool identified_not_ready_ = false;
   std::atomic<int> protocol_version_{0};
   std::atomic<uint64_t> connections_{0};
   ReconnectPolicy policy_{ReconnectPolicy::Settings{config_.reconnect_fast, config_.reconnect_fast_jitter,
@@ -494,6 +496,14 @@ class Bridge {
       return false;
     }
     if (!conn_.is_open()) { disconnect("closed"); return false; }
+    // Takaro syncs the item and entity catalogues once, right after identify, and skips them
+    // while testReachability says "starting". Identify again once the game is ready.
+    if (identified_not_ready_ && identified_.load() && gate_.health().ready) {
+      identified_not_ready_ = false;
+      log("takaro-game-ready-after-identify identifying again");
+      disconnect("identify again: game ready");
+      return false;
+    }
     const auto now = std::chrono::steady_clock::now();
     if (identified_.load() && now >= next_pump_) {
       next_pump_ = now + config_.pump_interval;
@@ -624,6 +634,7 @@ class Bridge {
       adapter_.set_protocol_version(version);
       policy_.identified(std::chrono::steady_clock::now());
       identified_ = true;
+      identified_not_ready_ = !gate_.health().ready;
       if (!before_identify_.empty()) {
         log("takaro-requests-before-identify " + std::to_string(before_identify_.size()) + " now handled");
         {

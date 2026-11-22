@@ -957,9 +957,29 @@ void test_identify_waits_for_game() {
   gate::Server never_ready("boot-stuck");
   auto config = config_for(stuck, temp_dir());
   config.identify_ready_wait = 300ms;
-  takaro::Bridge bounded(config, never_ready, [](const std::string&) {});
+  std::mutex lines_mutex;
+  std::vector<std::string> lines;
+  takaro::Bridge bounded(config, never_ready, [&](const std::string& line) {
+    std::lock_guard<std::mutex> lock(lines_mutex);
+    lines.push_back(line);
+  });
   bounded.start();
   CHECK(eventually([&] { return bounded.identified(); }));
+  CHECK(identifies(stuck) == 1);
+  std::this_thread::sleep_for(300ms);
+  CHECK(identifies(stuck) == 1 && stuck.connections.load() == 1);
+
+  // The game finishes loading after the wait ran out: identify once more, so Takaro's
+  // identify-time catalogue sync runs against a ready game. Only once.
+  never_ready.set_game_ready();
+  CHECK(eventually([&] { return identifies(stuck) == 2 && bounded.identified(); }, 4000ms));
+  CHECK(stuck.connections.load() == 2);
+  {
+    std::lock_guard<std::mutex> lock(lines_mutex);
+    CHECK(std::count(lines.begin(), lines.end(), std::string("takaro-game-ready-after-identify identifying again")) == 1);
+  }
+  std::this_thread::sleep_for(500ms);
+  CHECK(identifies(stuck) == 2 && stuck.connections.load() == 2);
   bounded.stop();
 }
 
