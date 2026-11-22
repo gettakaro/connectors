@@ -10,6 +10,8 @@ int64_t inventory_quantity = 2;
 int grant_increment = 3;
 bool grant_result = true;
 bool teleport_result = true;
+// The engine refuses a standing survivor below this height.
+float teleport_floor = -std::numeric_limits<float>::infinity();
 FVector position{};
 FRotator orientation{12.0f, 34.0f, 56.0f};
 int grant_calls = 0;
@@ -26,8 +28,9 @@ bool teleport(void*, bool flag, FVector target, FRotator rotation) {
   ++teleport_calls;
   assert(!flag && rotation.pitch == orientation.pitch && rotation.yaw == orientation.yaw &&
          rotation.roll == orientation.roll);
-  if (teleport_result) position = target;
-  return teleport_result;
+  const bool placed = teleport_result && target.z >= teleport_floor;
+  if (placed) position = target;
+  return placed;
 }
 FVector location(void*) { return position; }
 FRotator rotation(void*) { return orientation; }
@@ -61,8 +64,21 @@ int main() {
   assert(teleport_player(controller, pawn, destination, api) == Result::verified);
   assert(teleport_calls == 1);
   teleport_result = false;
+  teleport_calls = 0;
   assert(teleport_player(controller, pawn, destination, api) == Result::rejected);
+  assert(teleport_calls == 4);
   teleport_result = true;
+  // A point saved below standing height: refused at 240 and 265, placed 50 higher.
+  teleport_floor = 280;
+  teleport_calls = 0;
+  assert(teleport_player(controller, pawn, destination, api) == Result::verified);
+  assert(teleport_calls == 3 && position.z == 290 && position.x == destination.x);
+  // Never more than 100 higher.
+  teleport_floor = 341;
+  teleport_calls = 0;
+  assert(teleport_player(controller, pawn, destination, api) == Result::rejected);
+  assert(teleport_calls == 4);
+  teleport_floor = -std::numeric_limits<float>::infinity();
   position = FVector{0, 0, 0};
   Api no_readback = api; no_readback.location = [](void*) { return FVector{0, 0, 0}; };
   assert(teleport_player(controller, pawn, destination, no_readback) == Result::unverified);
