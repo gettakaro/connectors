@@ -11,9 +11,9 @@
     "evidence": [
       "games/ark-ascended/README.md (What works, what doesn't)",
       "games/ark-ascended/capabilities.json (status and game API per action and event, kept equal to native/src/plugin.cpp by tests/check_capabilities.py)",
-      "AsaApi offsets for this exe (sha256 6434fe81...) are published on the community CDNs; diffed against 26564816: 64 names dropped, none used by the plugin or by the AsaApi 2.11 code it links, and the bitfields it reads are unchanged"
+      "live-checked 2026-11-22 on build 26749470 (game 98.9) with AsaApi 2.11 and a real 98.15 client: offsets load (the 64 names dropped since 26564816 are unused); join, chat, commands and modules, message, give with inventory read-back, teleport, kills and deaths, level and Character, kick, ban and unban, shop delivery, Discord both ways, plugin reload, and shutdown with a restart all work"
     ],
-    "notes": "ARK: Survival Ascended dedicated server, Steam build 26749470 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
+    "notes": "ARK: Survival Ascended dedicated server, game 98.9, Steam build 26749470 on the public branch. The connector is the AsaApi plugin TakaroAsa.dll inside ArkAscendedServer.exe, which holds the Takaro WebSocket (WinHTTP). AsaApi's offsets for this exe come from its community CDNs, keyed on the exe's sha256 pinned here; the server ships no PDB to build them locally."
   },
   "inputs": {
     "server": {

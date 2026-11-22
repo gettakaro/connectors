@@ -104,7 +104,7 @@ After an ARK update, read Known issues first.
 
 ## What works, what doesn't
 
-Game actions, events, levels and Characters checked on game 97.17 (Steam build 26515168), 2026-11-09; a core pass with levels, shop, modules and the Discord bridge rechecked on game 97.21 (Steam build 26564816), 2026-11-11. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Game actions, events, levels and Characters checked on game 97.17 (Steam build 26515168), 2026-11-09; a core pass with levels, shop, modules and the Discord bridge rechecked on game 97.21 (Steam build 26564816), 2026-11-11; the full checklist rechecked on game 98.9 (Steam build 26749470), 2026-11-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
