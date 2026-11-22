@@ -13,7 +13,8 @@ const char* const kActions[kActionCount] = {
     "teleportPlayer", "testReachability", "kickPlayer",   "banPlayer",          "unbanPlayer",
     "listBans",      "shutdown",     "getMapInfo",        "getMapTile"};
 const char* const kEventTypes[kEventTypeCount] = {"log",          "player-connected", "player-disconnected",
-                                                  "chat-message", "player-death",     "entity-killed"};
+                                                  "chat-message", "player-death",     "entity-killed",
+                                                  "player-positions"};
 
 bool IsAction(const std::string& action) {
     for (auto* a : kActions)

@@ -5,7 +5,7 @@ Linux, a `winmm.dll` on Windows. No RCON and no mod. Players do not install anyt
 
 ## Install
 
-You need: a Conan Exiles dedicated server on build **26552396**, 25792439, 25738716 or 25639945 (on Linux,
+You need: a Conan Exiles dedicated server on build **26672347**, 26552396, 25792439, 25738716 or 25639945 (on Linux,
 control of its start command), and a Takaro game server of type **Generic** with its registration
 token.
 
@@ -72,13 +72,14 @@ in Takaro. If it is not connected, the console shows a `****` block naming the p
 
 ## What works, what doesn't
 
-Checked on server build 26552396 (Linux and Windows), 2026-11-12. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on server build 26672347 (Linux and Windows), 2026-11-15. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | Reconnects within about a second when a connection drops, then retries for up to 60 s apart while Takaro is down; events from an outage are delivered afterwards. |
 | Player list | ✅ | Steam64 id, IP and ping. |
 | Player location | ✅ | |
+| Position updates | ✅ | Protocol v1 publishes complete fresh online-player snapshots with a three-second minimum after receipt acknowledgment. |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
 | Item list | ✅ | |
@@ -94,7 +95,7 @@ Checked on server build 26552396 (Linux and Windows), 2026-11-12. ✅ works, ⚠
 | Shop | ⚠️ | `@claim` in game is not checked. |
 | Shut down the server | ✅ | Countdown in chat, then a clean exit. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | |
+| Chat messages | ✅ | The event includes the sender's position when the game exposes their pawn at the chat hook. |
 | Player death | ⚠️ | A PvP killer is not checked. |
 | Entity killed | ✅ | |
 | Server log lines | ✅ | |
@@ -103,7 +104,7 @@ Checked on server build 26552396 (Linux and Windows), 2026-11-12. ✅ works, ⚠
 
 ## Known issues
 
-- Only server builds 26552396, 25792439, 25738716 and 25639945 work; on other builds the connector stays
+- Only server builds 26672347, 26552396, 25792439, 25738716 and 25639945 work; on other builds the connector stays
   connected but refuses every action until a new release.
 - Linux needs control of the start command for `LD_PRELOAD`; some rented hosts do not allow it.
 

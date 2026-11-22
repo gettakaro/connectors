@@ -21,6 +21,7 @@
 #include "takaro/outbox.h"
 #include "takaro/protocol.h"
 #include "takaro/transport.h"
+#include "takaro/position_pacer.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -82,7 +83,7 @@ static void TestProtocol() {
     EQ(CreateErrorResponse("r2", "bad \"x\""), "{\"type\":\"response\",\"requestId\":\"r2\",\"error\":\"bad \\\"x\\\"\"}");
     EQ(CreateGameEvent("log", J("{\"msg\":\"m\"}")), "{\"type\":\"gameEvent\",\"payload\":{\"type\":\"log\",\"data\":{\"msg\":\"m\"}}}");
     CHECK(IsAction("getMapTile") && IsAction("shutdown") && !IsAction("rcon"), "actions");
-    CHECK(IsEventType("entity-killed") && !IsEventType("player-joined"), "events");
+    CHECK(IsEventType("entity-killed") && IsEventType("player-positions") && !IsEventType("player-joined"), "events");
 
     int64_t ms = 0;
     CHECK(ParseIsoMs("2026-10-03T10:00:00.250Z", ms) && ms == 1791021600250LL, "iso %lld", (long long)ms);
@@ -362,6 +363,19 @@ static void TestOutbox() {
         for (auto& e : s.Outbox().pending) logLeft = logLeft || e.type == "log";
         CHECK(!logLeft, "the log event is dropped first");
     }
+    {
+        Store s(dir + "/positions");
+        s.Load();
+        s.Admit("chat-message", "chat");
+        s.Admit("player-positions", "old positions");
+        s.Admit("player-death", "death");
+        CHECK(s.DiscardType("player-positions") == 1, "stale position batch discarded");
+        CHECK(s.Outbox().pending.size() == 2 && s.Outbox().pendingBytes == 9,
+              "other events and byte count are preserved");
+        CHECK(s.DiscardType("player-positions") == 0, "discard is idempotent");
+        s.Admit("player-positions", "new positions");
+        CHECK(s.Outbox().pending.back().seq == 4, "a fresh batch has a new stream sequence");
+    }
     std::string text = OutboxJson(OutboxState());
     OutboxState o;
     std::string err;
@@ -383,13 +397,17 @@ static void TestQueuesAndHeartbeat() {
         return o;
     };
     q.Push(f(FrameKind::Event, "e"));
+    q.Push(f(FrameKind::Position, "p"));
     q.Push(f(FrameKind::Response, "r"));
     q.Push(f(FrameKind::Control, "c"));
     q.Push(f(FrameKind::CriticalResponse, "x"));
     std::string order;
     OutFrame out;
     while (q.Pop(out)) order += *out.text;
-    EQ(order, "cxre");
+    EQ(order, "cxrpe");
+    CHECK(q.Push(f(FrameKind::Position, "p")) == QueueStatus::Accepted, "position queue admits one frame");
+    CHECK(q.Push(f(FrameKind::Position, "p")) == QueueStatus::Full, "position queue is bounded to one frame");
+    q.Clear();
     CHECK(q.Push(f(FrameKind::Response, std::string(kMaxOutboundFrame + 1, 'a'))) == QueueStatus::TooLarge, "too large");
     for (int i = 0; i < 64; i++) q.Push(f(FrameKind::Control, "c"));
     CHECK(q.Push(f(FrameKind::Control, "c")) == QueueStatus::Full, "control bound");
@@ -415,6 +433,24 @@ static void TestQueuesAndHeartbeat() {
     CHECK(h.OnPongId(4) == 9 && h.Confirmed() == 9, "pong 4 confirms through 9");
     h.OnInbound(4000);
     CHECK(!h.Dead(4000 + p.idleMs) && h.Dead(4001 + p.idleMs), "idle watchdog");
+}
+
+static void TestPositionPacer() {
+    takaro::PositionPacer p;
+    p.Reset("positions-one", 100);
+    CHECK(p.CanSend(100) && p.NextSeq() == 1, "a new position stream starts immediately at sequence one");
+    p.Sent(100);
+    CHECK(!p.CanSend(20000), "a delayed transport cannot queue a second position before receipt acknowledgement");
+    CHECK(!p.Acknowledge("other-stream", 1, 20000), "another stream cannot release a position");
+    CHECK(!p.Acknowledge("positions-one", 2, 20000), "a future sequence cannot release a position");
+    CHECK(p.Acknowledge("positions-one", 1, 20000), "matching receipt acknowledgement releases position");
+    CHECK(!p.CanSend(22999) && p.CanSend(23000), "interval starts at receipt acknowledgement, not the delayed write");
+    CHECK(!p.Acknowledge("positions-one", 1, 23000) && p.CanSend(23000), "duplicate acknowledgement cannot postpone publication");
+    p.Sent(23000);
+    CHECK(!p.TimedOut(52999) && p.TimedOut(53000), "missing receipt acknowledgement has a bounded timeout");
+    p.Reset("positions-two", 54000);
+    CHECK(p.CanSend(54000) && p.NextSeq() == 1 && !p.TimedOut(90000), "reconnect clears pending receipt and resets sequence");
+    CHECK(!p.Acknowledge("positions-one", 2, 54000), "late old-connection acknowledgement cannot affect new stream");
 }
 
 static void TestPins() {
@@ -590,7 +626,8 @@ static void TestCoverage() {
     for (int i = 0; i < takaro::kActionCount; i++)
         CHECK(ActionCoverage(takaro::kActions[i]) != nullptr, "action %s covered", takaro::kActions[i]);
     for (int i = 0; i < takaro::kEventTypeCount; i++)
-        CHECK(EventCoverage(takaro::kEventTypes[i]) != nullptr, "event %s covered", takaro::kEventTypes[i]);
+        if (std::string(takaro::kEventTypes[i]) != "player-positions")
+            CHECK(EventCoverage(takaro::kEventTypes[i]) != nullptr, "event %s covered", takaro::kEventTypes[i]);
     CHECK(std::string(ActionCoverage("sendMessage")->implementation) == "native", "chat native");
     CHECK(std::string(ActionCoverage("getMapInfo")->status) == "schema-fallback", "map fallback");
     CHECK(std::string(ActionCoverage("getMapTile")->status) == "unsupported", "tile unsupported");
@@ -868,6 +905,7 @@ static void TestProtocolV1() {
     AdapterOptions opts;
     opts.ready = true;
     opts.region = [&] { return region; };
+    opts.positions = [](JsonValue& out) { out = takaro::JArr(); return true; };
     opts.reads = [](const std::string& action, const JsonValue& args, ActionResult& out) {
         if (action != "getPlayerLocation") return false;
         if (Str(args.get("gameId")).value_or("") == "1") {
@@ -890,7 +928,9 @@ static void TestProtocolV1() {
        "game.profile players.get players.list players.location players.inventory items.give items.list entities.list "
        "locations.list console.execute chat.send players.teleport moderation.kick moderation.ban moderation.unban "
        "moderation.listBans server.shutdown events.player-connected events.player-disconnected events.chat-message "
-       "events.player-death events.entity-killed events.log ");
+       "events.player-death events.entity-killed events.log events.player-positions ");
+    CHECK(m.find("{\"name\":\"events.player-positions\",\"parameters\":{\"intervalSeconds\":3}}") != std::string::npos,
+          "position interval declared: %s", m.c_str());
     region = "ExiledLands";
     m = ad.CapabilityManifest();
     CHECK(m.find("{\"name\":\"map\",\"parameters\":{\"dimensions\":[{\"id\":\"exiled_lands\"") != std::string::npos,
@@ -1208,6 +1248,7 @@ int main() {
     TestConfigWatcher();
     TestOutbox();
     TestQueuesAndHeartbeat();
+    TestPositionPacer();
     TestReconnectPolicy();
     TestPins();
     TestMaps();

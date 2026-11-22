@@ -533,6 +533,10 @@ bool OnChat(const Call& c, void*) {
     e.a = id;
     e.s1 = UER::ReadFString((uintptr_t)data + ChatRpc::kChannel, 64);
     e.s2 = UER::ReadFString((uintptr_t)data + ChatRpc::kMessage, 4096);
+    GT& g = G();
+    int32_t pawnOffset = g.offControllerPawn.Get(c.obj, N_Pawn);
+    uintptr_t pawn = pawnOffset >= 0 ? rd<uintptr_t>(c.obj + (uintptr_t)pawnOffset) : 0;
+    e.pos = LocationOf(pawn);
     Push(std::move(e));
     return true;
 }
@@ -667,7 +671,7 @@ void Deliver(const Captured& c) {
             NativeLog("events: player-disconnected %s (%s)", c.a.steam64.c_str(), c.a.name.c_str());
             break;
         case Kind::Chat:
-            Emit("chat-message", events::ChatPayload(c.a, c.s1, c.s2), st.chat);
+            Emit("chat-message", events::ChatPayload(c.a, c.s1, c.s2, c.pos), st.chat);
             NativeLog("events: chat-message %s channel=%s (%zu chars)", c.a.steam64.c_str(), c.s1.c_str(), c.s2.size());
             break;
         case Kind::Death:

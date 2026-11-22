@@ -160,9 +160,9 @@
     "chat-message": {
       "status": "live-supported",
       "implementation": "native",
-      "payloadShape": "{ player, msg, channel }",
-      "verification": "Live 2026-10-03: client Global and Local chat -> MCP eventSearch chat-message e1e3860d, c12f842b, e515a7db with the exact client text; chatBridgeNoEcho GameToDiscord posted to #discordtest (HTTP 200) (El-Limon evidence native-stage2/L2c)",
-      "reason": "ConanPlayerController.ServerSendChatMessage through the hook dispatch: Steam64 from the called controller's PlayerState.UniqueID, text and channel from ChatRpcData (Global and Local -> global, Clan -> team)."
+      "payloadShape": "{ player, msg, channel, position? }",
+      "verification": "Global and Local chat and Discord bridging have been live verified; position enrichment is pending live verification.",
+      "reason": "ConanPlayerController.ServerSendChatMessage through the hook dispatch: Steam64 from the called controller's PlayerState.UniqueID, text and channel from ChatRpcData (Global and Local -> global, Clan -> team), and optional position from the controller's pawn."
     },
     "player-death": {
       "status": "live-supported",
