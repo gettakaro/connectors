@@ -91,31 +91,31 @@ Checked on Fabric 26.2, Paper 1.21.11 and NeoForge 1.21.11, 2026-10-22, and Fabr
 | Player location | ✅ | |
 | Teleport | ✅ | To the exact coordinates; pick a Y on solid ground. |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | The XP level as the `character` track, with the XP bar as progress. Dying resets it, as in game. |
 | Item list | ✅ | |
 | Entity list | ✅ | |
 | Locations | ❌ | Minecraft has no named locations. |
 | World map | ⚠️ | Off by default (`map` setting). Checked on Fabric only. |
 | Send a message | ✅ | Broadcasts and whispers. |
-| Console commands | ⚠️ | Runs, but the output is not returned. |
+| Console commands | ✅ | The output comes back. On Paper, a plugin command that only accepts the real console can refuse. |
 | Kick | ✅ | |
 | Ban and unban | ✅ | Timed and permanent. |
 | Ban list | ✅ | |
-| Give an item | ⚠️ | Always in default condition. |
-| Shop | ✅ | Checked on Fabric. |
+| Give an item | ⚠️ | Always in default condition. What does not fit lands at the player's feet. |
+| Shop | ✅ | |
 | Shut down the server | ✅ | Saves and stops; your host restarts it. |
 | Player joined / left | ✅ | |
-| Chat messages | ✅ | |
+| Chat messages | ✅ | Player chat, and `/say` from the console or RCON. |
 | Player death | ✅ | |
 | Entity killed | ✅ | As game ids, for example `minecraft:husk`. |
-| Server log lines | ❌ | Not sent. |
-| Discord chat bridge | ✅ | Use `chatBridgeNoEcho`. Checked on Fabric. |
-| Modules | ✅ | Checked on Fabric. |
+| Server log lines | ✅ | Up to 40 lines per 30 s; the connector's own lines are left out. |
+| Discord chat bridge | ✅ | Use `chatBridgeNoEcho`. Discord to game checked on Fabric. |
+| Modules | ✅ | |
 | Game name, version and icon | ✅ | |
 | Item icons | ⚠️ | Modded items on Fabric and NeoForge show their own picture from the mod jar; vanilla items use Takaro's Minecraft icons; not on Paper. |
 
 ## Known issues
 
 - Items given by Takaro or the shop always arrive in default condition.
-- Console command output is not returned; check the effect in game.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).

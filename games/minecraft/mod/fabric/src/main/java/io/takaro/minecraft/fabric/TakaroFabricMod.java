@@ -40,23 +40,28 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
+            if (adapter != null && ++ticks % 20 == 0) {
+                adapter.liftExpiredBans();
+                adapter.recordProgression();
+            }
         });
 
         // Register game event callbacks
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             if (adapter == null) return;
+            ServerPlayer player = handler.getPlayer();
+            adapter.recordProgression(player);
             EventEmitter emitter = adapter.getEventEmitter();
             if (emitter == null) return;
-            ServerPlayer player = handler.getPlayer();
             emitter.emitPlayerConnected(adapter.toPlayerInfo(player));
         });
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             if (adapter == null) return;
+            ServerPlayer player = handler.getPlayer();
+            adapter.recordProgression(player);
             EventEmitter emitter = adapter.getEventEmitter();
             if (emitter == null) return;
-            ServerPlayer player = handler.getPlayer();
             String gameId = player.getUUID().toString();
             adapter.getPlayerLocation(gameId); // warm cache before player is removed from list
             emitter.emitPlayerDisconnected(gameId, player.getGameProfile().name());
@@ -72,6 +77,15 @@ public class TakaroFabricMod implements DedicatedServerModInitializer {
                     "global",
                     message.signedContent()
             );
+        });
+
+        ServerMessageEvents.COMMAND_MESSAGE.register((message, source, params) -> {
+            if (adapter == null) return;
+            EventEmitter emitter = adapter.getEventEmitter();
+            if (emitter == null) return;
+            // A player's /say already arrives through CHAT_MESSAGE.
+            if (source.getPlayer() != null) return;
+            emitter.emitChatMessage(null, null, "global", message.signedContent());
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {

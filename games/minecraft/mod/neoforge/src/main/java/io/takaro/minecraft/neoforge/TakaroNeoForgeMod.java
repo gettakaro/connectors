@@ -1,5 +1,6 @@
 package io.takaro.minecraft.neoforge;
 
+import io.takaro.minecraft.core.ConsoleChat;
 import io.takaro.minecraft.core.EventEmitter;
 import io.takaro.minecraft.core.config.ConfigFile;
 import io.takaro.minecraft.core.config.PropertiesConfigFormat;
@@ -9,9 +10,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -90,19 +93,20 @@ public class TakaroNeoForgeMod {
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (adapter == null) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        adapter.recordProgression(player);
         EventEmitter emitter = adapter.getEventEmitter();
         if (emitter == null) return;
-        if (event.getEntity() instanceof ServerPlayer player) {
-            emitter.emitPlayerConnected(adapter.toPlayerInfo(player));
-        }
+        emitter.emitPlayerConnected(adapter.toPlayerInfo(player));
     }
 
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (adapter == null) return;
+        ServerPlayer player = (ServerPlayer) event.getEntity();
+        adapter.recordProgression(player);
         EventEmitter emitter = adapter.getEventEmitter();
         if (emitter == null) return;
-        ServerPlayer player = (ServerPlayer) event.getEntity();
         String gameId = player.getUUID().toString();
         adapter.getPlayerLocation(gameId); // warm cache before player is removed from list
         emitter.emitPlayerDisconnected(gameId, player.getName().getString());
@@ -120,6 +124,17 @@ public class TakaroNeoForgeMod {
                 "global",
                 event.getRawText()
         );
+    }
+
+    /** Runs last, so a command another mod cancels is not reported. */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onCommand(CommandEvent event) {
+        if (adapter == null || event.isCanceled()) return;
+        if (event.getParseResults().getContext().getSource().getPlayer() != null) return;
+        EventEmitter emitter = adapter.getEventEmitter();
+        String text = ConsoleChat.sayText(event.getParseResults().getReader().getString());
+        if (emitter == null || text == null) return;
+        emitter.emitChatMessage(null, null, "global", text);
     }
 
     @SubscribeEvent
@@ -164,6 +179,9 @@ public class TakaroNeoForgeMod {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
-        if (adapter != null && ++ticks % 20 == 0) adapter.liftExpiredBans();
+        if (adapter != null && ++ticks % 20 == 0) {
+            adapter.liftExpiredBans();
+            adapter.recordProgression();
+        }
     }
 }
