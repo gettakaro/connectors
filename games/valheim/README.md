@@ -91,7 +91,7 @@ a token, a banner names the file to fix; a wrong token shows `Takaro rejected th
 
 ## What works, what doesn't
 
-Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Valheim 1.0.21 (Steam build 26266951), 2026-11-23. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
