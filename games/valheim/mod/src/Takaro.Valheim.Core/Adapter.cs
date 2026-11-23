@@ -21,7 +21,7 @@ public interface IValheimTakaroAdapter
     Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
-    Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default);
+    Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, DateTimeOffset? expiresAt, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ListBansAsync(CancellationToken cancellationToken = default);
     Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default);
@@ -180,7 +180,7 @@ public sealed class TakaroRequestDispatcher
             TakaroActionNames.ListLocations => adapter.ListLocationsAsync(cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.TeleportPlayer => adapter.TeleportPlayerAsync(RequiredIdentifier(request.Args), RequiredPosition(request.Args), cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.KickPlayer => NullPayloadOnSuccess(adapter.KickPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken).GetAwaiter().GetResult()),
-            TakaroActionNames.BanPlayer => NullPayloadOnSuccess(adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), cancellationToken).GetAwaiter().GetResult()),
+            TakaroActionNames.BanPlayer => NullPayloadOnSuccess(adapter.BanPlayerAsync(RequiredIdentifier(request.Args), OptionalString(request.Args, "reason"), OptionalTimestamp(request.Args, "expiresAt"), cancellationToken).GetAwaiter().GetResult()),
             TakaroActionNames.UnbanPlayer => NullPayloadOnSuccess(adapter.UnbanPlayerAsync(RequiredIdentifier(request.Args), cancellationToken).GetAwaiter().GetResult()),
             TakaroActionNames.ListBans => adapter.ListBansAsync(cancellationToken).GetAwaiter().GetResult(),
             TakaroActionNames.Shutdown => NullPayloadOnSuccess(adapter.ShutdownAsync(cancellationToken).GetAwaiter().GetResult()),
@@ -288,6 +288,13 @@ public sealed class TakaroRequestDispatcher
             RequiredNumber(source, "z"),
             OptionalString(source, "dimension"));
     }
+
+    /// <summary>An ISO 8601 timestamp, or null when absent, null or unreadable (a permanent ban).</summary>
+    private static DateTimeOffset? OptionalTimestamp(JsonElement args, string property) =>
+        OptionalString(args, property) is { } text
+        && DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var value)
+            ? value.ToUniversalTime()
+            : null;
 
     private static string? OptionalString(JsonElement args, string property)
     {

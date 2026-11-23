@@ -28,6 +28,9 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
     private CompanionProgressionCache? companionProgression;
     private ValheimWorldMap? worldMap;
     private QueuedMainThreadActionScheduler? mainThreadActions;
+    private ValheimServerAdapter? adapter;
+    private float nextBanExpiryCheck;
+    private const float BanExpiryCheckSeconds = 5f;
     private Harmony? harmony;
     private bool shutdownRequested;
     private float shutdownRequestedAt;
@@ -67,12 +70,22 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
             Logger.LogWarning($"Takaro Valheim could not read known player names: {exception.Message}");
         }
 
+        var banTerms = new BanTerms(Path.Combine(Paths.ConfigPath, "com.takaro.valheim.ban-terms.json"));
+        try
+        {
+            banTerms.Load();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning($"Takaro Valheim could not read stored ban terms: {exception.Message}");
+        }
+
         var playerResolver = new ValheimPlayerResolver(Logger, knownPlayerNames);
         companionInventory = new CompanionInventoryCache();
         companionProgression = new CompanionProgressionCache();
         var worldMapService = new WorldMapService();
         worldMap = new ValheimWorldMap(worldMapService, Paths.CachePath, message => Logger.LogInfo(message));
-        var adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver, companionInventory, companionProgression, worldMapService);
+        adapter = new ValheimServerAdapter(Logger, config, RequestShutdown, playerResolver, companionInventory, companionProgression, worldMapService, banTerms);
         runner = new TakaroWebSocketRunner(
             config,
             adapter,
@@ -104,6 +117,12 @@ public sealed class ValheimTakaroPlugin : BaseUnityPlugin
         worldMap?.Update();
         ValheimServerEventBridge.Update();
         inventoryCompanion?.Update();
+
+        if (adapter is not null && Time.realtimeSinceStartup >= nextBanExpiryCheck)
+        {
+            nextBanExpiryCheck = Time.realtimeSinceStartup + BanExpiryCheckSeconds;
+            adapter.LiftExpiredBans(DateTimeOffset.UtcNow);
+        }
 
         if (shutdownRequested && Time.realtimeSinceStartup >= shutdownRequestedAt)
         {

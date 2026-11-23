@@ -284,6 +284,29 @@ public sealed class PluginScaffoldContractTests
     }
 
     [TestMethod]
+    public void PluginLiftsExpiredBansFromTheMainThread()
+    {
+        var plugin = ReadPluginSource("ValheimTakaroPlugin.cs");
+        var update = SliceMethod(plugin, "private void Update()", "private void OnDestroy()");
+        StringAssert.Contains(update, "adapter.LiftExpiredBans(DateTimeOffset.UtcNow);");
+
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+        var ban = SliceMethod(adapter, "public Task<TakaroActionResult> BanPlayerAsync", "public Task<TakaroActionResult> UnbanPlayerAsync");
+        StringAssert.Contains(ban, "RecordBanTerms(primaryIdentifier, reason, expiresAt);");
+        var sweep = SliceMethod(adapter, "public void LiftExpiredBans", "private void RecordBanTerms");
+        StringAssert.Contains(sweep, "znet.Unban(ban);");
+    }
+
+    [TestMethod]
+    public void ItemListLeavesOutCreatureOnlyGear()
+    {
+        var adapter = ReadPluginSource("ValheimServerAdapter.cs");
+        var listItems = SliceMethod(adapter, "public Task<TakaroActionResult> ListItemsAsync", "private static bool IsPlayerItem");
+        StringAssert.Contains(listItems, "IsPlayerItem(entry.ItemDrop)");
+        StringAssert.Contains(adapter, "m_shared?.m_icons is { Length: > 0 } icons");
+    }
+
+    [TestMethod]
     public void RealPluginAdapterTakesResolverAndChatSenderNameFromConfig()
     {
         var source = ReadPluginSource("ValheimServerAdapter.cs");
@@ -292,7 +315,8 @@ public sealed class PluginScaffoldContractTests
         StringAssert.Contains(realAdapter, "private readonly ValheimPlayerResolver playerResolver;");
         StringAssert.Contains(realAdapter, "ValheimPlayerResolver playerResolver,");
         StringAssert.Contains(realAdapter, "CompanionInventoryCache companionInventory,");
-        StringAssert.Contains(realAdapter, "WorldMapService worldMap)");
+        StringAssert.Contains(realAdapter, "WorldMapService worldMap,");
+        StringAssert.Contains(realAdapter, "BanTerms banTerms)");
         StringAssert.Contains(realAdapter, "this.playerResolver = playerResolver");
         StringAssert.Contains(realAdapter, "chatSenderName = config.ChatSenderName;");
         Assert.IsFalse(realAdapter.Contains("CompanionServerBridge", StringComparison.Ordinal));

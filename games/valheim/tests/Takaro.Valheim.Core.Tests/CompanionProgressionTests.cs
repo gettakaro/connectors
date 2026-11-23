@@ -411,7 +411,7 @@ public sealed class CompanionProgressionTests
         public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, DateTimeOffset? expiresAt, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TakaroActionResult> ListBansAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
