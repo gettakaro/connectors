@@ -13,6 +13,9 @@
 #include "conan/text.h"
 #include "elfscan.h"
 #include "pins/pins.h"
+#include "takaro/bridge.h"
+#include <algorithm>
+#include <mutex>
 #include "takaro/config.h"
 #include "takaro/reconnect.h"
 #include "takaro/config_watch.h"
@@ -136,6 +139,8 @@ static void TestConfig() {
     c = resolve("{\"identityToken\": oops", true);
     CHECK(c.hold == Hold::FileError && c.fileError.find("not valid JSON") != std::string::npos, "%s",
           c.fileError.c_str());
+    c = resolve("\xEF\xBB\xBF{\"registrationToken\":\"reg-5678\",\"identityToken\":\"id-1\"}", true);
+    CHECK(c.enabled && c.fileError.empty(), "a UTF-8 byte order mark is accepted: %s", c.fileError.c_str());
     c = resolve("[1]", true);
     CHECK(c.hold == Hold::FileError, "non-object file holds");
     c = resolve("{\"registrationToken\":5}", true);
@@ -195,6 +200,7 @@ static void TestSetJsonString() {
     EQ(set("{\"name\": 5}", "name", "n"), "<none>");
     EQ(set("{\"name\": ", "name", "n"), "<none>");
     EQ(set("[]", "name", "n"), "<none>");
+    EQ(set("\xEF\xBB\xBF{\"a\": \"1\"}", "a", "2"), "\xEF\xBB\xBF{\"a\": \"2\"}");
 }
 
 static void TestConfigWatcher() {
@@ -1199,6 +1205,86 @@ static void TestReconnectPolicy() {
     }
 }
 
+// A log backlog (boot or outage) goes out at most logBudget per logWindowMs, in order.
+struct PaceGame : takaro::Game {
+    takaro::ActionResult Execute(const std::string&, const JsonValue&) override { return {}; }
+    void DrainEvents(std::vector<takaro::GameEvent>&) override {}
+    std::string HealthJson() override { return "{}"; }
+};
+struct PaceTransport : takaro::ITransport {
+    std::mutex mu;
+    takaro::NoticeSink sink;
+    std::vector<std::string> events;  // event types in queue order
+    bool Start(takaro::NoticeSink s) override {
+        sink = std::move(s);
+        return true;
+    }
+    void Stop() override {}
+    takaro::QueueStatus Queue(takaro::OutFrame f) override {
+        if (f.kind == takaro::FrameKind::Event) {
+            std::lock_guard<std::mutex> g(mu);
+            events.push_back(f.text->find("\"type\":\"log\"") != std::string::npos ? "log" : "other");
+        }
+        return takaro::QueueStatus::Accepted;
+    }
+    void RequestClose(uint64_t, const std::string&) override {}
+    void MarkIdentified(uint64_t) override {}
+    void Retarget(const std::string&, bool) override {}
+    std::string StatsJson() override { return "{}"; }
+    size_t Count(const char* type) {
+        std::lock_guard<std::mutex> g(mu);
+        return (size_t)std::count(events.begin(), events.end(), std::string(type));
+    }
+};
+static bool WaitCount(PaceTransport& t, const char* type, size_t n) {
+    for (int i = 0; i < 300 && t.Count(type) < n; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));  // and no more than that
+    return t.Count(type) == n;
+}
+static void TestLogPacing() {
+    char dir[] = "/tmp/pace-test-XXXXXX";
+    CHECK(mkdtemp(dir) != nullptr, "mkdtemp");
+    std::atomic<int64_t> clock{1000};
+    PaceGame game;
+    PaceTransport transport;
+    takaro::Store store(dir, "pace");
+    store.Admit("chat-message", takaro::CreateGameEvent("chat-message", J("{\"msg\":\"first\"}")));
+    for (int i = 0; i < 200; i++)
+        store.Admit("log", takaro::CreateGameEvent("log", J("{\"msg\":\"boot " + std::to_string(i) + "\"}")));
+    store.Admit("player-death", takaro::CreateGameEvent("player-death", J("{}")));
+    takaro::BridgeOptions bo;
+    bo.config.enabled = true;
+    bo.game = &game;
+    bo.transport = &transport;
+    bo.store = &store;
+    bo.steadyMs = [&] { return clock.load(); };
+    takaro::Bridge bridge(bo);
+    bridge.Start();
+    takaro::Notice open;
+    open.type = takaro::NoticeType::Open;
+    open.epoch = 1;
+    transport.sink(std::move(open));
+    takaro::Notice id;
+    id.type = takaro::NoticeType::Frame;
+    id.epoch = 1;
+    id.text = "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs\"}}";
+    transport.sink(std::move(id));
+    CHECK(WaitCount(transport, "log", 80), "first window: 80 log events, got %zu", transport.Count("log"));
+    CHECK(transport.Count("other") == 1, "the event ahead of the backlog went out, the one behind waits");
+    clock += 4999;
+    CHECK(WaitCount(transport, "log", 80), "no more inside the window: %zu", transport.Count("log"));
+    clock += 1;
+    CHECK(WaitCount(transport, "log", 160), "next window: 160, got %zu", transport.Count("log"));
+    clock += 5000;
+    CHECK(WaitCount(transport, "log", 200), "rest of the backlog: %zu", transport.Count("log"));
+    CHECK(WaitCount(transport, "other", 2), "the event behind the backlog follows it in order");
+    {
+        std::lock_guard<std::mutex> g(transport.mu);
+        CHECK(!transport.events.empty() && transport.events.back() == "other", "order kept");
+    }
+    bridge.Stop();
+}
+
 int main() {
     TestProtocol();
     TestProtocolV1();
@@ -1212,6 +1298,7 @@ int main() {
     TestPins();
     TestMaps();
     TestAdapter();
+    TestLogPacing();
     TestServerChatName();
     TestCoverage();
     TestRecipient();

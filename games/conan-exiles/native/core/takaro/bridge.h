@@ -44,6 +44,10 @@ struct BridgeOptions {
     std::string healthFile;  // when set, the health snapshot is also written here every few seconds
     // When set, takaro.json is re-read while running (bridge thread) and the console banners shown.
     ConfigWatcher* watcher = nullptr;
+    // Takaro drops `log` events above 100 per 5 s and 600 per 30 s per server. At most this many go
+    // out in any logWindowMs; the rest wait in order (a backlog after a boot or an outage).
+    size_t logBudget = 80;
+    int64_t logWindowMs = 5000;
 };
 
 class Bridge {
@@ -117,6 +121,8 @@ private:
     int64_t nextManifestCheck_ = 0;
     std::string gameServerId_;
     uint64_t lastQueuedId_ = 0;
+    std::deque<int64_t> logSentAt_;  // when each log event of the last logWindowMs went out
+    uint64_t logWaits_ = 0;          // delivery passes that stopped at the log budget
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
     std::set<std::string> pendingIds_;
     std::deque<std::string> recentIds_;
