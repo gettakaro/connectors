@@ -57,11 +57,14 @@ namespace TakaroEmpyrion.Game
             _banReasons = banReasons; _onShutdown = onShutdown; _map = map;
         }
 
+        /// <summary>Set once at start-up; serves getGameIcon.</summary>
+        public GameProfile Profile;
+
         public static readonly string[] Supported =
         {
-            "testReachability", "getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "giveItem", "listItems",
+            "testReachability", "getPlayers", "getPlayer", "getPlayerLocation", "getPlayerInventory", "getPlayerProgression", "giveItem", "listItems",
             "listEntities", "listLocations", "executeConsoleCommand", "sendMessage", "teleportPlayer", "kickPlayer", "banPlayer",
-            "unbanPlayer", "listBans", "shutdown", "getMapTile",
+            "unbanPlayer", "listBans", "shutdown", "getMapTile", "getGameIcon",
         };
 
         /// <summary>
@@ -92,6 +95,7 @@ namespace TakaroEmpyrion.Game
                 case "getPlayer": return await GetPlayer(a.RequirePlayerGameId());
                 case "getPlayerLocation": return await GetPlayerLocation(a.RequirePlayerGameId());
                 case "getPlayerInventory": return await GetPlayerInventory(a.RequirePlayerGameId());
+                case "getPlayerProgression": return GetPlayerProgression(a.RequirePlayerGameId());
                 case "giveItem": return await GiveItem(a);
                 case "listItems": await EnsureCatalogFresh(); return _catalog.ItemsJson();
                 case "listEntities": await EnsureCatalogFresh(); return _catalog.EntitiesJson();
@@ -105,6 +109,7 @@ namespace TakaroEmpyrion.Game
                 case "listBans": return await ListBans();
                 case "shutdown": return await Shutdown();
                 case "getMapTile": return await Task.Run(() => GetMapTile(a));
+                case "getGameIcon": return Profile?.IconAnswer() ?? throw new UnknownActionException(action);
                 default: throw new UnknownActionException(action);
             }
         }
@@ -195,6 +200,8 @@ namespace TakaroEmpyrion.Game
             PlayerRecord r = _players.Upsert(info.steamId, info.entityId, info.playerName);
             if (r == null) throw new ActionFailure("player " + entityId + " has no SteamID");
             r.Ping = info.ping;
+            r.Experience = info.exp;
+            r.HasExperience = true;
             _players.SetPosition(r, info.playfield, info.pos.x, info.pos.y, info.pos.z);
             return r;
         }
@@ -336,6 +343,16 @@ namespace TakaroEmpyrion.Game
             return map;
         }
 
+        /// <summary>
+        /// Answers from the last reading and never touches the game thread: Takaro asks on every player sync, right
+        /// after getPlayers and getPlayerLocation have refreshed the player. null for a player the server never saw.
+        /// </summary>
+        JToken GetPlayerProgression(string gameId)
+        {
+            PlayerRecord r = _players.Resolve(gameId);
+            return r == null ? JValue.CreateNull() : (JToken)Progression.Tracks(r);
+        }
+
         async Task<JToken> GetPlayers()
         {
             var arr = new JArray();
@@ -439,6 +456,11 @@ namespace TakaroEmpyrion.Game
             _catalogFromEcf = false;
         }
 
+        /// <summary>The client stores each stack count twice, once as ((count + 1471) * 53) ^ key in an int, and bans the player
+        /// for a year (ClientCheat 'Item-Count') when the copies disagree, which happens once that product overflows at 40517089.
+        /// A grant merges into an existing stack, so the cap leaves a wide margin.</summary>
+        public const int MaxGiveAmount = 1000000;
+
         async Task<JToken> GiveItem(Args a)
         {
             string gameId = a.RequirePlayerGameId();
@@ -446,6 +468,7 @@ namespace TakaroEmpyrion.Game
             if (string.IsNullOrEmpty(item)) throw new ArgsException("missing item");
             int amount = (int)Math.Round(a.Num("amount") ?? 1);
             if (amount < 1) throw new ActionFailure("amount must be at least 1");
+            if (amount > MaxGiveAmount) throw new ActionFailure("amount " + amount + " is above " + MaxGiveAmount + ": the Empyrion client bans a player whose stack goes past 40517088");
             await EnsureCatalogFresh();
             if (!_catalog.TryId(item, out int id, out string code)) throw new ActionFailure("unknown item '" + item + "'");
             PlayerRecord r = await OnlineByGameId(gameId) ?? throw new ActionFailure("player " + gameId + " is not online");

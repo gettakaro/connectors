@@ -43,7 +43,7 @@ facade="${EMPYRION_DEP_NETSTANDARD_DLL_COORDINATE#image-file:*:}"
 stage="$project_root/_data/build/stage-${EMPYRION_FP16}"
 rm -rf "$stage"
 mkdir -p "$stage/out"
-cp -r "$project_root/mod" "$project_root/tests" "$project_root/capabilities.json" \
+cp -r "$project_root/mod" "$project_root/assets" "$project_root/tests" "$project_root/capabilities.json" \
     "$project_root/TakaroConfig.txt.example" "$stage/"
 
 # Stamp the release version into the stage copy; the tracked files carry release-please markers.
@@ -77,10 +77,10 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e SOURCE_DATE_EPOCH="$epoch
     mapfile -t sources < <(find mod/src -name "*.cs" | LC_ALL=C sort)
     mapfile -t tests < <(find tests -name "*.cs" | LC_ALL=C sort)
     csc -nologo -langversion:7.3 -optimize+ -deterministic -debug- -pathmap:/stage=/takaro -target:library \
-      -out:out/TakaroEmpyrion.dll "${refs[@]}" "${sources[@]}"
+      -out:out/TakaroEmpyrion.dll "${refs[@]}" -resource:assets/icon-256.png,TakaroEmpyrion.icon-256.png "${sources[@]}"
     mkdir -p out/tests
     cp /refs/Mif.dll /refs/ModApi.dll /refs/Newtonsoft.Json.dll out/tests/
-    csc -nologo -langversion:7.3 -target:exe -out:out/tests/contract-tests.exe "${refs[@]}" "${sources[@]}" "${tests[@]}"
+    csc -nologo -langversion:7.3 -target:exe -out:out/tests/contract-tests.exe "${refs[@]}" -resource:assets/icon-256.png,TakaroEmpyrion.icon-256.png "${sources[@]}" "${tests[@]}"
     mono out/tests/contract-tests.exe capabilities.json
   '
 
