@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.11.1...enshrouded-v0.12.0) (2026-11-23)
+
+
+### Features
+
+* **enshrouded:** report character level as player progression ([#840](https://github.com/gettakaro/connectors/issues/840)) ([a976c96](https://github.com/gettakaro/connectors/commit/a976c96c3a246064a2e5d6fdaa588140c553a726))
+
 ## [0.11.1](https://github.com/gettakaro/connectors/compare/enshrouded-v0.11.0...enshrouded-v0.11.1) (2026-11-13)
 
 
