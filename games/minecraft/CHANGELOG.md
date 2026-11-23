@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.8.0...minecraft-v0.9.0) (2026-11-23)
+
+
+### Features
+
+* **minecraft:** report the XP level as player progression ([#803](https://github.com/gettakaro/connectors/issues/803)) ([203587e](https://github.com/gettakaro/connectors/commit/203587edfcb2616ac642d25d315330ba6cf8d190))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/minecraft-v0.7.0...minecraft-v0.8.0) (2026-11-12)
 
 
