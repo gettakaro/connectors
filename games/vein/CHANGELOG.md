@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/gettakaro/connectors/compare/vein-v0.10.0...vein-v0.11.0) (2026-11-23)
+
+
+### Features
+
+* **vein:** report player skills as progression ([#807](https://github.com/gettakaro/connectors/issues/807)) ([9efd937](https://github.com/gettakaro/connectors/commit/9efd9378b9edc3b8e745f289b91da1af75365c41))
+
 ## [0.10.0](https://github.com/gettakaro/connectors/compare/vein-v0.9.0...vein-v0.10.0) (2026-11-12)
 
 
