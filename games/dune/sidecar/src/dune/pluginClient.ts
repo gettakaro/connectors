@@ -78,17 +78,17 @@ export class DunePluginClient {
    * The live bestiary. The plugin answers an OBJECT (`{liveActors, entitiesReturned, entities:[…]}`), not a bare
    * array — returning it unwrapped made every caller's `Array.isArray` check fail and silently drop all 90 rows.
    */
-  async getEntities(): Promise<unknown[]> {
-    const body = await this.request<unknown>('GET', '/entities');
+  async getEntities(timeoutMs?: number): Promise<unknown[]> {
+    const body = await this.request<unknown>('GET', '/entities', undefined, timeoutMs);
     if (Array.isArray(body)) return body;
     const rows = (body as { entities?: unknown })?.entities;
     return Array.isArray(rows) ? rows : [];
   }
 
-  private async request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: 'GET' | 'POST', path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<T> {
     if (!this.baseUrl) throw new PluginUnreachableError('No Dune plugin configured (DUNE_PLUGIN_URL is empty)');
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -101,7 +101,7 @@ export class DunePluginClient {
         signal: controller.signal,
       });
     } catch (err) {
-      const reason = controller.signal.aborted ? `timed out after ${this.timeoutMs}ms` : (err as Error).message;
+      const reason = controller.signal.aborted ? `timed out after ${timeoutMs}ms` : (err as Error).message;
       throw new PluginUnreachableError(`Dune plugin unreachable at ${this.baseUrl}${path}: ${reason}`);
     } finally {
       clearTimeout(timer);

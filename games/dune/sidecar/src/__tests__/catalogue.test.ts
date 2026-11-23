@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { Catalogue } from '../dune/catalogue.js';
 // The generator is plain ESM with no dependencies, so the test suite imports its real predicates rather than
 // re-implementing them — the rule that decides what ships is the rule that is tested.
-import { buildEntities, buildItems, cleanText, isDevName, validate } from '../../scripts/gen-catalogue.mjs';
+import { buildEntities, buildItems, cleanText, fixMojibake, isDevName, validate } from '../../scripts/gen-catalogue.mjs';
 import { FIXTURE_ENTITIES, FIXTURE_ITEMS, harness } from './helpers.js';
 import type { TakaroItem } from '../dune/types.js';
 
@@ -151,5 +151,17 @@ describe.runIf(generated)('the generated catalogue on this machine', () => {
 
   it('contains no dev-style name and no duplicate code', () => {
     expect(validate(parsed.rows, 'items')).toEqual([]);
+  });
+});
+
+describe('fixMojibake', () => {
+  it('repairs UTF-8 read back as Windows-1252, as one wiki item name was', () => {
+    expect(fixMojibake('Cultivating Hufuf Vines in Artificial Environments \u00e2\u20ac\u201d E. Goetha')).toBe(
+      'Cultivating Hufuf Vines in Artificial Environments \u2014 E. Goetha',
+    );
+    expect(fixMojibake('Caf\u00c3\u00a9')).toBe('Caf\u00e9');
+  });
+  it('leaves correct text alone', () => {
+    for (const ok of ['A Dart for Every Man', 'Fila\u2019s Regret', 'Faufreluches \u2014 a dart', 'Caf\u00e9 \u00c2ge']) expect(fixMojibake(ok)).toBe(ok);
   });
 });

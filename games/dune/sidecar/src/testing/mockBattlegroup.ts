@@ -3,7 +3,7 @@ import type { Queryable } from '../dune/pg.js';
 import { OPTIONAL_COLUMNS } from '../dune/pg.js';
 import type { AmqpChannel, AmqpConnection, AmqpMessage } from '../dune/rmq.js';
 import type { ExecRunner, PublishChannel } from '../dune/gm.js';
-import type { DuneInventoryRow, DunePlayerRow } from '../dune/types.js';
+import type { DuneInventoryRow, DunePlayerRow, DuneProgressionRows } from '../dune/types.js';
 
 /**
  * An in-memory stand-in for a Dune battlegroup: the Postgres reads, the game RabbitMQ, and the broker-exec channel.
@@ -17,6 +17,8 @@ export interface MockPlayer extends DunePlayerRow {
   inventory?: DuneInventoryRow[];
   /** `inventories.max_item_count` of the backpack; absent = no row, as on a schema without the column. */
   backpackSlots?: number;
+  /** The character's saved level component and specialization rows; absent = no rows at all. */
+  progression?: DuneProgressionRows;
 }
 
 export interface RecordedPublish {
@@ -93,6 +95,24 @@ export class MockBattlegroup {
       }
       return out;
     }
+    // The character lookup answers the account id as both actor ids, so the two reads below can find the player again.
+    if (sql.includes('AS controller_id')) {
+      const id = String(params[0]);
+      return [{ pawn_id: id, controller_id: id }];
+    }
+    if (sql.includes('FLevelComponent')) {
+      const level = this.players.find((p) => p.accountId === Number(params[0]))?.progression?.character;
+      if (!level) return [];
+      return [{
+        total_xp_earned: level.totalXpEarned,
+        total_skill_points: level.totalSkillPoints,
+        keystone_bonus_skill_points: level.keystoneBonusSkillPoints,
+      }];
+    }
+    if (sql.includes('"specialization_tracks"')) {
+      const rows = this.players.find((p) => p.accountId === Number(params[0]))?.progression?.specializations ?? [];
+      return rows.map((r) => ({ track_type: r.track, level: r.level, xp_amount: r.xp }));
+    }
     if (sql.includes('ready_alive')) {
       return [{ expected: this.partitions.expected, ready_alive: this.partitions.readyAlive }];
     }
@@ -115,10 +135,13 @@ export class MockBattlegroup {
       const player = this.players.find((p) => p.accountId === Number(params[0]));
       return player?.backpackSlots === undefined ? [] : [{ max_item_count: player.backpackSlots }];
     }
-    if (sql.includes('FROM "dune"."world_partition" wp')) {
-      return [{ partition_id: 1, name: 'Hagga Basin', map: 'survival_1' }];
+    if (sql.includes('"markers"')) {
+      return [
+        { id: -187194160, type: 'Cave', position: '(56481,318080,2260)', display: 'LOCTABLE("/Game/Dune/Localization/ST_Localization_NPCs_World.ST_Localization_NPCs_World", "NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_HaggaBasinSouth_Cave9")', radius: 1500 },
+        { id: -1334271672, type: 'EnemyCamp', position: '(86480,308661,2489)', display: 'LOCTABLE("/Game/Dune/Localization/ST_Localization_UI.ST_Localization_UI", "UI/EnemyCampDisplayName/ScavengerCamp")', radius: null },
+        { id: 1, type: 'Broken', position: 'not a vector', display: 'LOCTABLE("x", "UI/Thing")', radius: null },
+      ];
     }
-    if (sql.includes('"markers"')) return [];
     if (sql.includes('"player_state" ps')) {
       const onlineOnly = sql.includes("online_status::text = 'Online'");
       const needle = typeof params[0] === 'string' ? params[0].toLowerCase() : null;
@@ -336,6 +359,7 @@ function toRow(p: MockPlayer, actorColumns: Set<string>, playerStateColumns: Set
     platform_id: p.platformId ?? '',
     platform_name: p.platformName ?? '',
     account_id: p.accountId ?? null,
+    character_id: p.characterId ?? null,
     character_name: p.characterName ?? '',
     online_status: p.onlineStatus ?? '',
     server_id: p.serverId ?? '',

@@ -519,3 +519,35 @@ describe('every outgoing gameEvent stays inside Takaro’s DTO whitelist', () =>
     expect(Object.keys(r.wire[0][1] as object).sort()).toEqual(['entity', 'player', 'weapon']);
   });
 });
+
+describe('a character switch during a Takaro outage', () => {
+  const on = (id: string): TakaroPlayer => ({ gameId: 'P1', name: 'Paul', character: { id, name: 'Paul' } });
+
+  it('is replayed as one relog when Takaro comes back', async () => {
+    let current = [on('10')];
+    const r = await rig({ currentOnline: () => current });
+    r.bridge.emit('player-connected', { player: on('10') });
+    r.setUp(false);
+    r.bridge.onTakaroDown();
+    current = [on('11')];
+    r.bridge.emit('player-disconnected', { player: on('10') });
+    r.bridge.emit('player-connected', { player: on('11') });
+    r.setUp(true);
+    await r.bridge.onTakaroUp();
+    const presence = r.wire.map(([type, data]) => [type, (data as { player: TakaroPlayer }).player.character?.id]);
+    expect(presence).toEqual([
+      ['player-connected', '10'],
+      ['player-disconnected', '10'],
+      ['player-connected', '11'],
+    ]);
+  });
+
+  it('stays silent for the same character', async () => {
+    const r = await rig({ currentOnline: () => [on('10')] });
+    r.bridge.emit('player-connected', { player: on('10') });
+    r.setUp(false);
+    r.bridge.onTakaroDown();
+    r.setUp(true);
+    expect((await r.bridge.onTakaroUp()).reconciled).toBe(0);
+  });
+});

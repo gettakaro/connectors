@@ -378,3 +378,60 @@ describe('teleport read-back tells the truth about WHY it could not verify', () 
     expect(String(out.reason)).toMatch(/never answered a live pawn position/);
   });
 });
+
+describe('listEntities answers inside Takaro\'s request window', () => {
+  it('answers from the file at once when the plugin is slow, then serves the plugin rows from the cache', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const plugin = new DunePluginClient({
+      baseUrl: 'http://plugin',
+      token: 't',
+      fetchImpl: (async () => {
+        await gate;
+        return new Response(JSON.stringify({ entities: [{ code: 'Atreides Hoplite', name: 'Atreides Hoplite', nameIsClassName: false }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as unknown as typeof fetch,
+    });
+    const { adapter } = await harness({ plugin, entityWaitMs: 20 });
+    const started = Date.now();
+    const first = await adapter.listEntities();
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(first.map((e) => e.code)).not.toContain('Atreides Hoplite');
+    release();
+    await adapter.refreshEntities();
+    expect((await adapter.listEntities()).map((e) => e.code)).toContain('Atreides Hoplite');
+  });
+});
+
+
+describe('the background entity refresh outlasts a slow plugin walk', () => {
+  it('fills the cache when /entities answers after the default plugin timeout', async () => {
+    // MEASURED on the rig: /entities took 10.4 s and 15.1 s on a quiet map, so the default 10 s timeout cut the
+    // background refresh off nearly every time and a fresh server stayed at one entity for over an hour.
+    const plugin = new DunePluginClient({
+      baseUrl: 'http://plugin',
+      token: 't',
+      timeoutMs: 20,
+      fetchImpl: (async (_url: string, init?: { signal?: AbortSignal }) => {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 60);
+          init?.signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new Error('aborted'));
+          });
+        });
+        return new Response(JSON.stringify({ entities: [{ code: 'Kirab Marauder', name: 'Kirab Marauder', nameIsClassName: false }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as unknown as typeof fetch,
+    });
+    await expect(plugin.getEntities()).rejects.toThrow(/timed out after 20ms/);
+
+    const { adapter } = await harness({ plugin, entityWaitMs: 5 });
+    await adapter.refreshEntities();
+    expect((await adapter.listEntities()).map((e) => e.code)).toContain('Kirab Marauder');
+  });
+});

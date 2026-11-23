@@ -30,6 +30,7 @@ export interface DroppedCounts {
 export function isDevName(name: unknown, code?: string): boolean;
 
 /** Flattens MediaWiki markup and collapses whitespace; returns undefined for nothing useful. */
+export function fixMojibake<T>(value: T): T;
 export function cleanText(value: unknown): string | undefined;
 
 export function buildItems(raw: unknown[]): {

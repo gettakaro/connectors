@@ -1,6 +1,6 @@
 import { logger } from '../logger.js';
 import type { GameEventType } from '../takaro/protocol.js';
-import { mapPlayer } from './identity.js';
+import { mapPlayer, switchedCharacter } from './identity.js';
 import { dimensionForMap } from './mapDimensions.js';
 import { withDeathMessage } from './mapping.js';
 import { isDead, isLeaving, isOnline } from './pg.js';
@@ -145,6 +145,18 @@ export class PresencePoller {
     // --- arrivals -----------------------------------------------------------
     for (const [gameId, tracked] of seen) {
       const pending = this.leaving.get(gameId);
+      const previous = pending ?? this.online.get(gameId);
+      if (previous && switchedCharacter(previous.player, tracked.player)) {
+        // Takaro reads a character switch as a relog: gone as the old character, back as the new one. Neither the
+        // transfer grace nor the row refresh below may swallow it, however quickly the player came back.
+        this.leaving.delete(gameId);
+        this.lifeStates.delete(gameId);
+        this.emitDisconnect(previous.player);
+        this.online.set(gameId, tracked);
+        this.options.emit('player-connected', { player: tracked.player });
+        logger.info(`player-connected ${tracked.player.name} (${gameId}) on another character`);
+        continue;
+      }
       if (pending) {
         // They came back inside the grace window: this was a map transfer, not a disconnect. Nothing is emitted, on
         // purpose — Takaro was never told they left.

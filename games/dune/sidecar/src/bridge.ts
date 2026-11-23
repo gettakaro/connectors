@@ -1,9 +1,11 @@
 import { DuneAdapter, playerId, UnsupportedActionError } from './dune/adapter.js';
 import type { CursorStore } from './dune/cursorStore.js';
 import { EventPoller } from './dune/eventPoller.js';
+import { switchedCharacter } from './dune/identity.js';
 import { DEFAULT_DIMENSION } from './dune/mapDimensions.js';
 import type { OnlineStore } from './dune/onlineStore.js';
 import type { Position, TakaroPlayer } from './dune/types.js';
+import { LOG_BUDGET } from './dune/logTail.js';
 import { logger } from './logger.js';
 import { sanitizeGameEvent } from './takaro/eventWhitelist.js';
 import { gameIconPayload } from './takaro/gameProfile.js';
@@ -50,6 +52,8 @@ export interface TakaroSink {
   lastSendId?(): number;
   /** Registers a callback fired when every gameEvent up to `sendId` is proven to have reached Takaro. */
   onConfirmed?(cb: (sendId: number) => void): void;
+  /** False until Takaro has identified the socket; sinks without it are treated as always ready. */
+  identified?(): boolean;
 }
 
 /** Anything that produces events: the presence poller, the chat consumer, the log tail, the plugin event poller. */
@@ -123,6 +127,8 @@ export class Bridge {
   private droppedEvents = 0;
   /** Chat lines dropped at reconnect because they were older than `outageChatMaxAgeMs`. */
   private droppedStaleChat = 0;
+  /** Queued `log` lines dropped at reconnect beyond the log budget (Takaro keeps no logs and rate-limits a burst). */
+  private droppedQueuedLogs = 0;
   /** Queued connect/disconnect events collapsed into one reconciliation at reconnect. */
   private collapsedPresence = 0;
   /** Presence events emitted BY the reconciliation (so an operator can tell them from live ones). */
@@ -183,6 +189,7 @@ export class Bridge {
       maxPendingEvents: MAX_PENDING_EVENTS,
       droppedEvents: this.droppedEvents,
       droppedStaleChat: this.droppedStaleChat,
+      droppedQueuedLogs: this.droppedQueuedLogs,
       collapsedPresence: this.collapsedPresence,
       reconciled: { ...this.reconciled },
       chatMaxAgeMs: this.options.outageChatMaxAgeMs ?? DEFAULT_OUTAGE_CHAT_MAX_AGE_MS,
@@ -215,8 +222,11 @@ export class Bridge {
     // Events queued while the socket was congested go out first: sending past them would reorder delivery, and a
     // queue that only drained on a reconnect stayed stuck behind an open socket (a shutdown log burst once parked a
     // player-disconnected there indefinitely).
-    if (this.pendingEvents.length && this.takaroDownSince === null) this.drainPending();
-    const sent = !this.pendingEvents.length && this.options.takaro.sendGameEvent(type, data);
+    // Before the first identify (the sidecar waits for the battlegroup) nothing can be written, so the event is
+    // queued without a send attempt and onTakaroUp flushes it; trying every event only repeated a warning.
+    const ready = this.takaroReady();
+    if (ready && this.pendingEvents.length) this.drainPending();
+    const sent = ready && !this.pendingEvents.length && this.options.takaro.sendGameEvent(type, data);
     if (!sent) {
       // `'queued'` — NOT `false` — is the honest answer once the event is safely in the outage queue: it tells the
       // plugin poller to advance its SCAN position (so the same seq is not read and queued again on every tick, which
@@ -224,7 +234,7 @@ export class Bridge {
       // behind the hole, so a sidecar restart replays it rather than losing it. `false` is reserved for "this event
       // was not accepted at all", i.e. the queue was full and this very event is the one that got dropped.
       const accepted = this.queueEvent({ type, data, seq, at: this.now() });
-      if (this.takaroDownSince === null) this.scheduleDrain();
+      if (ready) this.scheduleDrain();
       return accepted ? 'queued' : false;
     }
     this.noteConnectionEvent(type, data);
@@ -388,6 +398,11 @@ export class Bridge {
   }
 
   /** Queues an event. Returns false when the queue was full and THIS event is the one that was dropped. */
+  /** Whether a send can succeed now: Takaro is not known to be down and the socket is identified. */
+  private takaroReady(): boolean {
+    return this.takaroDownSince === null && (this.options.takaro.identified?.() ?? true);
+  }
+
   private queueEvent(event: PendingEvent): boolean {
     this.pendingEvents.push(event);
     if (this.pendingEvents.length === 1) logger.warn('Takaro is not reachable; queueing game events until it is');
@@ -450,7 +465,7 @@ export class Bridge {
     if (this.drainTimer) return;
     this.drainTimer = setTimeout(() => {
       this.drainTimer = null;
-      if (!this.pendingEvents.length || this.takaroDownSince !== null) return;
+      if (!this.pendingEvents.length || !this.takaroReady()) return;
       this.drainPending();
       if (this.pendingEvents.length) this.scheduleDrain();
     }, this.options.drainRetryMs ?? 1000);
@@ -565,6 +580,7 @@ export class Bridge {
     this.takaroDownSince = null;
     const collapsed = this.takeQueuedPresence();
     const staleChat = this.dropStaleChat();
+    this.trimQueuedLogs();
     const flushed = this.flushPending();
     const reconciled = this.options.currentOnline ? await this.reconcilePresence(this.options.currentOnline()) : 0;
     if (collapsed || staleChat || flushed || reconciled) {
@@ -597,6 +613,30 @@ export class Bridge {
     return removed;
   }
 
+  /**
+   * An outage queues the map log at the live budget, so a few minutes of it is hundreds of lines. Takaro drops a burst
+   * of that size as `event-rate-limited` (seen live: 179 of 279 after a battlegroup restart), and it keeps no logs, so
+   * only the newest budget's worth is replayed and the rest is counted.
+   */
+  private trimQueuedLogs(): number {
+    let keep = LOG_BUDGET.lines;
+    let removed = 0;
+    for (let i = this.pendingEvents.length - 1; i >= 0; i -= 1) {
+      const event = this.pendingEvents[i];
+      if (event.type !== 'log') continue;
+      if (keep > 0) {
+        keep -= 1;
+        continue;
+      }
+      this.pendingEvents.splice(i, 1);
+      this.releaseCursor(event);
+      removed += 1;
+    }
+    this.droppedQueuedLogs += removed;
+    if (removed) logger.info(`Dropped ${removed} queued log line(s) over the ${LOG_BUDGET.lines}-line log budget rather than replaying them`);
+    return removed;
+  }
+
   private dropStaleChat(): number {
     const maxAge = this.options.outageChatMaxAgeMs ?? DEFAULT_OUTAGE_CHAT_MAX_AGE_MS;
     if (maxAge <= 0) return 0;
@@ -618,14 +658,17 @@ export class Bridge {
 
   /**
    * Brings Takaro's idea of who is online back in line with reality in ONE pass: a connect for everybody online that
-   * Takaro was never told about, a disconnect for everybody Takaro still believes is on. Returns how many events it
-   * emitted.
+   * Takaro was never told about or knows on another character, a disconnect for everybody Takaro still believes is on.
+   * Returns how many events it emitted.
    */
   async reconcilePresence(current: TakaroPlayer[]): Promise<number> {
     const byId = new Map(current.filter((p) => p?.gameId).map((p) => [p.gameId, p]));
     let emitted = 0;
     for (const [gameId, player] of byId) {
-      if (this.online.has(gameId)) continue;
+      const known = this.online.get(gameId);
+      if (known && !switchedCharacter(known, player)) continue;
+      // Takaro reads a character switch as a relog, so a switch made during the outage is replayed as one.
+      if (known) this.emit('player-disconnected', { player: known });
       if (this.emit('player-connected', { player }) !== false) {
         emitted += 1;
         this.reconciled.connected += 1;

@@ -1,6 +1,15 @@
 import { logger } from '../logger.js';
 import { num, str } from './identity.js';
-import type { DuneInventoryRow, DunePlayerRow, DuneReachability, Position, TakaroLocation } from './types.js';
+import type {
+  DuneCharacterLevelRow,
+  DuneInventoryRow,
+  DunePlayerRow,
+  DuneProgressionRows,
+  DuneReachability,
+  DuneSpecializationRow,
+  Position,
+  TakaroLocation,
+} from './types.js';
 
 /**
  * The only thing `pg.ts` needs from a driver. Tests inject `testing/mockBattlegroup`'s fake instead of `pg.Pool`, and
@@ -26,6 +35,7 @@ export interface DunePgOptions {
  */
 export const OPTIONAL_COLUMNS = {
   player_state: [
+    'id',
     'life_state',
     'death_location',
     'character_name',
@@ -34,6 +44,8 @@ export const OPTIONAL_COLUMNS = {
     'last_avatar_activity',
     'last_login_time',
     'player_pawn_id',
+    'player_controller_id',
+    'character_state',
     'account_id',
     'reconnect_grace_period_end',
     'transfer_count',
@@ -45,14 +57,15 @@ export const OPTIONAL_COLUMNS = {
   farm_state: ['server_id', 'alive', 'ready', 'connected_players', 'map'],
   inventories: ['inventory_type', 'actor_id', 'max_item_count'],
   items: ['template_id', 'stack_size', 'quality_level', 'position_index', 'inventory_id'],
+  actor_fgl_entities: ['actor_id', 'entity_id', 'slot_name'],
+  fgl_entities: ['entity_id', 'components'],
+  specialization_tracks: ['player_id', 'track_type', 'xp_amount', 'level'],
   /**
-   * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb,
-   * map_name_id)` — it has **no name and no transform**, only a dev-style `marker_type` and a numeric hash id. The
-   * legacy `name`/`transform` probe below therefore comes back false on a stock build and `listLocations` answers
-   * with the world partitions alone, which is the honest outcome: a marker we cannot give a player-facing name is
-   * not something to ship (memory: catalogue-human-names).
+   * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb, ...)`.
+   * It holds the world map's places (caves, outposts, enemy camps) with their position and radius. Their only name is
+   * a localization key in `payload.DisplayName`, which `locationName` turns into words.
    */
-  markers: ['id', 'name', 'transform', 'map', 'marker_type', 'position', 'map_name_id'],
+  markers: ['marker_hash_id', 'marker_type', 'position', 'payload', 'area_radius', 'dimension_index'],
 } as const;
 
 export type TableName = keyof typeof OPTIONAL_COLUMNS;
@@ -238,6 +251,7 @@ export class DunePg {
     select.push(this.has('accounts', 'platform_id') ? `COALESCE(acct.platform_id::text, '') AS platform_id` : `'' AS platform_id`);
     select.push(this.has('accounts', 'platform_name') ? `COALESCE(acct.platform_name::text, '') AS platform_name` : `'' AS platform_name`);
     select.push(this.has('player_state', 'account_id') ? `ps.account_id::int8 AS account_id` : `NULL::int8 AS account_id`);
+    select.push(this.has('player_state', 'id') ? `ps.id::text AS character_id` : `NULL::text AS character_id`);
     select.push(this.has('player_state', 'character_name') ? `COALESCE(ps.character_name, '') AS character_name` : `'' AS character_name`);
     select.push(this.has('player_state', 'online_status') ? `COALESCE(ps.online_status::text, '') AS online_status` : `'' AS online_status`);
     select.push(this.has('player_state', 'life_state') ? `COALESCE(ps.life_state::text, '') AS life_state` : `'' AS life_state`);
@@ -294,6 +308,7 @@ export class DunePg {
 
     const where: string[] = [];
     const params: unknown[] = [];
+    if (this.has('player_state', 'character_state')) where.push(`ps.character_state::text <> 'Deleted'`);
     // `PlayerConnectionStatus` has three values; only `Online` counts. `LoggingOut` is a player on the way out and is
     // deliberately excluded here so that presence sees them disappear exactly once.
     if (options.onlineOnly && this.has('player_state', 'online_status')) where.push(`ps.online_status::text = 'Online'`);
@@ -311,12 +326,16 @@ export class DunePg {
     }
     params.push(Math.max(1, Math.min(options.limit ?? 500, 5000)));
 
+    // One player's lookup answers their most recently played character, the same one `currentCharacter` reads.
+    const recent = options.flsId && seenCol ? `${seenCol} DESC NULLS LAST, ` : '';
+    const order = `${recent}${this.has('player_state', 'character_name') ? 'ps.character_name NULLS LAST, ' : ''}ps.account_id`;
+
     const sql =
       `SELECT ${select.join(',\n       ')}\n` +
       `  FROM ${this.t('player_state')} ps\n` +
       (joins.length ? `  ${joins.join('\n  ')}\n` : '') +
       (where.length ? ` WHERE ${where.join(' AND ')}\n` : '') +
-      ` ORDER BY ${this.has('player_state', 'character_name') ? 'ps.character_name NULLS LAST, ' : ''}ps.account_id\n` +
+      ` ORDER BY ${order}\n` +
       ` LIMIT $${params.length}`;
 
     const { rows } = await this.db.query<Record<string, unknown>>(sql, params);
@@ -405,40 +424,106 @@ export class DunePg {
   }
 
   /**
-   * `listLocations`: the running map partitions plus the world's static markers. Takaro never calls this action in
-   * practice, so it is a best-effort read that answers `[]` rather than failing when neither table is present.
+   * What the character has reached, as the map process last saved it. `null` for `character` when this build lacks
+   * the tables or the character has no level component yet; a player with no specializations has no rows at all.
+   */
+  async progression(player: DunePlayerRow): Promise<DuneProgressionRows> {
+    const actors = player.accountId == null ? null : await this.currentCharacter(player.accountId);
+    if (!actors) return { character: null, specializations: [] };
+    return {
+      character: await this.characterLevel(actors.pawnId),
+      specializations: await this.specializations(actors.controllerId),
+    };
+  }
+
+  /**
+   * The actors of the account's most recently played character. An account can hold several, and a deleted one's row
+   * can outlive it, so reads keyed on the account alone would mix characters. Ids stay text: they are BIGINT.
+   */
+  private async currentCharacter(accountId: number): Promise<{ pawnId: string; controllerId: string } | null> {
+    const pawnCol = this.options.pawnColumn ?? 'player_pawn_id';
+    if (!this.has('player_state', pawnCol) || !this.has('player_state', 'player_controller_id')) return null;
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT ps.${quoteIdent(pawnCol)}::text AS pawn_id, ps.player_controller_id::text AS controller_id
+         FROM ${this.t('player_state')} ps
+        WHERE ps.account_id = $1::int8
+          ${this.has('player_state', 'character_state') ? `AND ps.character_state::text <> 'Deleted'` : ''}
+        ${this.has('player_state', 'last_avatar_activity') ? 'ORDER BY ps.last_avatar_activity DESC NULLS LAST' : ''}
+        LIMIT 1`,
+      [accountId],
+    );
+    const pawnId = str(rows[0]?.pawn_id);
+    const controllerId = str(rows[0]?.controller_id);
+    return pawnId && controllerId ? { pawnId, controllerId } : null;
+  }
+
+  private hasAll(table: TableName, columns: string[]): boolean {
+    return columns.every((column) => this.has(table, column));
+  }
+
+  private async characterLevel(pawnId: string): Promise<DuneCharacterLevelRow | null> {
+    if (!this.hasAll('fgl_entities', ['entity_id', 'components'])) return null;
+    if (!this.hasAll('actor_fgl_entities', ['actor_id', 'entity_id', 'slot_name'])) return null;
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT fe.components#>>'{FLevelComponent,1,TotalXPEarned}' AS total_xp_earned,
+              fe.components#>>'{FLevelComponent,1,TotalSkillPoints}' AS total_skill_points,
+              fe.components#>>'{FLevelComponent,1,KeystoneBonusSkillPoints}' AS keystone_bonus_skill_points
+         FROM ${this.t('actor_fgl_entities')} afe
+         JOIN ${this.t('fgl_entities')} fe ON fe.entity_id = afe.entity_id
+        WHERE afe.actor_id = $1::int8
+          AND afe.slot_name = 'DuneCharacter'
+          AND fe.components ? 'FLevelComponent'
+        LIMIT 1`,
+      [pawnId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      totalXpEarned: num(row.total_xp_earned),
+      totalSkillPoints: num(row.total_skill_points),
+      keystoneBonusSkillPoints: num(row.keystone_bonus_skill_points),
+    };
+  }
+
+  private async specializations(controllerId: string): Promise<DuneSpecializationRow[]> {
+    if (!this.hasAll('specialization_tracks', ['player_id', 'track_type', 'xp_amount', 'level'])) return [];
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT st.track_type::text AS track_type, st.level::float8 AS level, st.xp_amount::int8 AS xp_amount
+         FROM ${this.t('specialization_tracks')} st
+        WHERE st.player_id = $1::int8
+        ORDER BY st.track_type`,
+      [controllerId],
+    );
+    return rows.map((r) => ({ track: String(r.track_type ?? ''), level: num(r.level), xp: num(r.xp_amount) }));
+  }
+
+  /**
+   * `listLocations`: the world map's named places, from the `markers` table, each with its real position, its radius
+   * and its marker type as category. Markers without a display name are resource nodes, not places, and are left out.
+   * Map partitions are not listed: a partition is a whole map instance with no single point. Answers `[]` when the
+   * table is missing.
    */
   async locations(): Promise<TakaroLocation[]> {
+    if (!this.hasAll('markers', ['marker_hash_id', 'marker_type', 'position', 'payload'])) return [];
+    const radius = this.has('markers', 'area_radius') ? 'm.area_radius::float8' : 'NULL::float8';
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT m.marker_hash_id::int8 AS id, m.marker_type AS type, m.position::text AS position,
+              m.payload->>'DisplayName' AS display, ${radius} AS radius
+         FROM ${this.t('markers')} m
+        WHERE COALESCE(m.payload->>'DisplayName', '') <> ''
+        ORDER BY m.marker_type, m.marker_hash_id LIMIT 1000`,
+    );
     const out: TakaroLocation[] = [];
-    if (this.has('world_partition', 'partition_id')) {
-      const label = this.has('world_partition', 'label') ? `NULLIF(wp.label, '')` : 'NULL';
-      const map = this.has('world_partition', 'map') ? `NULLIF(wp.map, '')` : 'NULL';
-      const { rows } = await this.db.query<Record<string, unknown>>(
-        `SELECT wp.partition_id::int8 AS partition_id, COALESCE(${label}, ${map}, 'partition') AS name, COALESCE(${map}, '') AS map
-           FROM ${this.t('world_partition')} wp ORDER BY wp.partition_id LIMIT 200`,
-      );
-      for (const r of rows) {
-        const id = num(r.partition_id);
-        if (id === null) continue;
-        out.push({ code: `partition:${id}`, name: `${str(r.name) ?? 'partition'} (${str(r.map) ?? 'map'})`, position: { x: 0, y: 0, z: 0 } });
-      }
-    }
-    if (this.has('markers', 'transform') && this.has('markers', 'name')) {
-      const { rows } = await this.db.query<Record<string, unknown>>(
-        `SELECT m.id::int8 AS id, COALESCE(m.name, '') AS name,
-                ((m.transform).location).x::float8 AS x,
-                ((m.transform).location).y::float8 AS y,
-                ((m.transform).location).z::float8 AS z
-           FROM ${this.t('markers')} m WHERE m.transform IS NOT NULL ORDER BY m.id LIMIT 500`,
-      );
-      for (const r of rows) {
-        const x = num(r.x);
-        const y = num(r.y);
-        const z = num(r.z);
-        if (x === null || y === null || z === null) continue;
-        const name = str(r.name);
-        out.push({ code: `marker:${num(r.id) ?? name ?? out.length}`, name: name ?? `Marker ${num(r.id) ?? ''}`.trim(), position: { x, y, z } });
-      }
+    for (const r of rows) {
+      const position = parseVector(r.position);
+      const name = locationName(str(r.display));
+      if (!position || !name) continue;
+      const loc: TakaroLocation = { code: `marker:${num(r.id)}`, name, position };
+      const type = str(r.type);
+      if (type) loc.category = splitWords(type);
+      const rad = num(r.radius);
+      if (rad !== null && rad > 0) loc.radius = rad;
+      out.push(loc);
     }
     return out;
   }
@@ -461,6 +546,7 @@ function toPlayerRow(r: Record<string, unknown>): DunePlayerRow {
     platformId: str(r.platform_id),
     platformName: str(r.platform_name),
     accountId: num(r.account_id),
+    characterId: str(r.character_id),
     characterName: str(r.character_name),
     onlineStatus: str(r.online_status),
     lifeState: str(r.life_state),
@@ -500,4 +586,43 @@ export const DEAD_STATES = new Set(['dead', 'deadbycoriolis', 'deadbysandworm'])
 
 export function isDead(row: Pick<DunePlayerRow, 'lifeState'>): boolean {
   return DEAD_STATES.has((row.lifeState ?? '').toLowerCase());
+}
+
+/** `(86480,308661,2489)` (a Postgres `vector`) -> position; null when it does not parse. */
+export function parseVector(raw: unknown): { x: number; y: number; z: number } | null {
+  if (typeof raw !== 'string') return null;
+  const parts = raw.replace(/[()\s]/g, '').split(',').map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return { x: parts[0]!, y: parts[1]!, z: parts[2]! };
+}
+
+function splitWords(s: string): string {
+  return s
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+    .replace(/([0-9])([A-Za-z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * A map marker's `DisplayName` is a localization reference, `LOCTABLE("<table>", "<key>")`. The key's last segment
+ * carries the place: `UI/EnemyCampDisplayName/ScavengerCamp` is "Scavenger Camp",
+ * `NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_HaggaBasinSouth_Cave9` is "Hagga Basin South Cave 9".
+ */
+export function locationName(display: string | null): string | null {
+  if (!display) return null;
+  const key = /LOCTABLE\([^,]*,\s*"([^"]+)"\)/.exec(display)?.[1] ?? display;
+  let last = key.split('/').pop() ?? key;
+  last = last
+    .replace(/^WORLD_MAP_LOCATION_/, '')
+    .replace(/^(Survival|DeepDesert|Story)_/, '')
+    .replace(/^NPC_NAMED_(.+)_DISPLAYNAME$/, '$1')
+    .replace(/^Map_?Legend_?Entry_?/, '')
+    .replace(/PoI(\d+)/g, 'Point of Interest $1');
+  const name = splitWords(last)
+    .split(' ')
+    .map((w) => (w.length > 1 && w === w.toUpperCase() && /[A-Z]/.test(w) ? w[0] + w.slice(1).toLowerCase() : w))
+    .join(' ');
+  return name || null;
 }

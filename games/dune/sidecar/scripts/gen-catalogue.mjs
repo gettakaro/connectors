@@ -69,10 +69,35 @@ export function isDevName(name, code) {
   return false;
 }
 
+// Windows-1252 characters for bytes 0x80-0x9F, which Latin-1 leaves as control codes.
+const CP1252 = new Map(
+  [...'\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178'].map((ch, i) => [ch, 0x80 + i]),
+);
+
+/**
+ * Some wiki rows were saved as UTF-8 read back as Windows-1252 ("â€”" for "—"). Undo that when the text decodes
+ * cleanly as UTF-8; anything else is returned unchanged.
+ */
+export function fixMojibake(value) {
+  if (typeof value !== 'string' || !/[\u00c2-\u00f4][\u0080-\u00bf\u0152-\u2122]/.test(value)) return value;
+  const bytes = [];
+  for (const ch of value) {
+    const code = ch.codePointAt(0);
+    if (code <= 0xff && !(code >= 0x80 && code <= 0x9f)) bytes.push(code);
+    else if (CP1252.has(ch)) bytes.push(CP1252.get(ch));
+    else return value;
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes));
+  } catch {
+    return value;
+  }
+}
+
 /** Wiki text carries MediaWiki link markup; Takaro shows it raw, so it is flattened here. */
 export function cleanText(value) {
   if (typeof value !== 'string') return undefined;
-  const out = value
+  const out = fixMojibake(value)
     .replace(/\[\[:?(?:[^\]|]*\|)?([^\]|]+)\]\]/g, '$1') // [[Category:Unique|Unique]] → Unique
     .replace(/'{2,}/g, '')
     .replace(/<[^>]+>/g, '')
@@ -117,7 +142,7 @@ export function buildItems(raw) {
       dropped.noCode += 1;
       continue;
     }
-    const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+    const name = typeof entry?.name === 'string' ? fixMojibake(entry.name).trim() : '';
     if (!name) {
       dropped.noName += 1;
       if (droppedExamples.length < 20) droppedExamples.push({ code, name, why: 'no name' });

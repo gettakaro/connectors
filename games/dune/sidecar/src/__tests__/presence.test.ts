@@ -327,4 +327,60 @@ describe('a kick this connector made', () => {
     await h.tick();
     expect(h.events.map((e) => e.type)).toEqual(['player-connected']);
   });
+
+  describe('character switch', () => {
+    const asCharacter = (characterId: string, characterName: string) => mockPlayer({ characterId, characterName });
+    const seen = (events: Recorded[]) =>
+      events.map((e) => [e.type, (e.data.player as TakaroPlayer).character?.id]);
+
+    it('a switch while online is a relog: gone as the old character, back as the new one', async () => {
+      const h = harness();
+      h.set([asCharacter('10', 'Paul')]);
+      await h.tick();
+      h.set([asCharacter('11', 'Duncan')]);
+      await h.tick();
+      expect(seen(h.events)).toEqual([
+        ['player-connected', '10'],
+        ['player-disconnected', '10'],
+        ['player-connected', '11'],
+      ]);
+      expect(h.poller.onlinePlayers()[0]?.character?.id).toBe('11');
+    });
+
+    it('coming back inside the transfer grace on another character is still a switch', async () => {
+      const h = harness();
+      h.set([asCharacter('10', 'Paul')]);
+      await h.tick();
+      h.set([]);
+      await h.tick();
+      h.advance(5_000);
+      h.set([asCharacter('11', 'Duncan')]);
+      await h.tick();
+      expect(seen(h.events).slice(1)).toEqual([
+        ['player-disconnected', '10'],
+        ['player-connected', '11'],
+      ]);
+      expect(h.poller.pendingLeaves()).toEqual([]);
+    });
+
+    it('a map transfer on the same character stays silent', async () => {
+      const h = harness();
+      h.set([asCharacter('10', 'Paul')]);
+      await h.tick();
+      h.set([]);
+      await h.tick();
+      h.set([asCharacter('10', 'Paul')]);
+      await h.tick();
+      expect(h.events).toHaveLength(1);
+    });
+
+    it('a player seeded without a character is not a switch once the roster names one', async () => {
+      const seed = { gameId: TESTER.flsId as string, name: 'Paul' } as TakaroPlayer;
+      const h = harness({ initialOnline: [seed] });
+      h.set([asCharacter('10', 'Paul')]);
+      await h.tick();
+      expect(h.events).toEqual([]);
+      expect(h.poller.onlinePlayers()[0]?.character?.id).toBe('10');
+    });
+  });
 });

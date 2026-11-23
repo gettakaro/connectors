@@ -43,6 +43,7 @@ export interface Harness {
 export interface HarnessOptions {
   players?: ReturnType<typeof mockPlayer>[];
   plugin?: DunePluginClient | null;
+  entityWaitMs?: number;
   shutdownCmd?: string;
   shutdownNoticeSeconds?: number;
   /** Injected so the shutdown notice wait costs no real time in tests; records what was waited. */
@@ -126,6 +127,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     bans,
     catalogue,
     plugin: options.plugin ?? null,
+    ...(options.entityWaitMs !== undefined ? { entityWaitMs: options.entityWaitMs } : {}),
     // The plugin knows Postgres row ids, not FLS ids, so every plugin-backed read goes through the
     // join — exactly as in production. A harness without a plugin gets no join either.
     pluginJoin: options.plugin
