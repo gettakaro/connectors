@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.9.0...dragonwilds-v0.10.0) (2026-11-23)
+
+
+### Features
+
+* **dragonwilds:** support Steam build 26670300 ([#954](https://github.com/gettakaro/connectors/issues/954)) ([b095c38](https://github.com/gettakaro/connectors/commit/b095c38ab763243d48fcef803ebded46a429da50))
+
 ## [0.9.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.8.0...dragonwilds-v0.9.0) (2026-11-23)
 
 
