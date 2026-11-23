@@ -4,12 +4,12 @@
   "game": "rust",
   "platform": "carbon",
   "revision": "26778019",
-  "default": true,
+  "default": false,
   "support": {
-    "status": "candidate",
+    "status": "retired",
     "since": "2026-11-22",
     "evidence": [],
-    "notes": "Rust Dedicated Server public build 26778019 (2026-11-19 07:01 UTC) with Carbon production build v2.0.266 (commit 5a807c6, GitHub release asset id 764701369, uploaded 2026-11-18 19:29 UTC). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag."
+    "notes": "Rust Dedicated Server public build 26778019 (2026-11-19 07:01 UTC) with Carbon production build v2.0.266 (commit 5a807c6, GitHub release asset id 764701369, uploaded 2026-11-18 19:29 UTC). Carbon's production_build tag is re-uploaded in place, so what pins these bytes is the recorded sha256/size, not the tag. Retired 2026-11-23: public build 26864795 replaced 26778019, and Carbon re-uploaded production_build as v2.0.267, so the recorded Carbon bytes are no longer downloadable."
   },
   "inputs": {
     "server": {

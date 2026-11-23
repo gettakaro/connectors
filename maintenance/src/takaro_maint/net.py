@@ -6,6 +6,7 @@ import functools
 import hashlib
 import http.client
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -183,8 +184,21 @@ def _is_timeout(exc: BaseException) -> bool:
     )
 
 
+#: A GitHub release asset addressed by its id. The API answers that URL with the asset's JSON
+#: description unless the request asks for the bytes.
+_GITHUB_ASSET_ID_URL = re.compile(r"^https?://[^/]+/repos/[^/]+/[^/]+/releases/assets/[0-9]+$")
+
+
+def _url_headers(url: str) -> dict[str, str]:
+    """Headers a URL's own grammar requires, whoever is fetching it."""
+    if _GITHUB_ASSET_ID_URL.match(url):
+        return {"Accept": "application/octet-stream"}
+    return {}
+
+
 def _fetch_to(url: str, target: Path, headers: dict[str, str]) -> dict[str, Any]:
     target.parent.mkdir(parents=True, exist_ok=True)
+    headers = {**_url_headers(url), **headers}
     attempts = 0
     while True:
         attempts += 1

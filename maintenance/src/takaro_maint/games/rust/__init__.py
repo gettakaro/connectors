@@ -120,24 +120,16 @@ def _carbon_spec(resolved: dict[str, Any]) -> dict[str, Any]:
     return dict(resolved["inputs"][CARBON_INPUT])
 
 
-def _carbon_download_url(spec: dict[str, Any]) -> str:
-    """github.com's own download URL for the asset, which serves the bytes to any client.
+def _carbon_download_url(resolved: dict[str, Any]) -> str:
+    """The URL that serves the pinned Carbon bytes, as the github-release provider names it.
 
-    The API's asset-id URL is the immutable coordinate for a re-uploaded tag, but it answers
-    with JSON unless the request asks for ``application/octet-stream``, and neither
-    ``catalog validate --online`` nor ``setup-environment.sh`` (both of which re-fetch this
-    string and re-hash it) can ask for that. So the tag URL is what is recorded, and the pin
-    that matters is the recorded sha256.
-
-    The price is stated in the record's ``support.notes`` and is worth stating here too:
-    Carbon re-uploads ``production_build`` in place, and on the day it does, this URL serves
-    different bytes, the sha256 gate refuses them, and this target can no longer be installed
-    from anything it records. Recovering it then means a new target pinning the new bytes --
-    or teaching the shared ``github-release`` provider to fetch an asset-id URL with an
-    ``Accept: application/octet-stream`` header, which is the only immutable coordinate
-    GitHub offers and is not this adapter's to add.
+    A target that records ``assetId`` is fetched by that id from the API, which GitHub never
+    re-points: when Carbon re-uploads ``production_build`` the URL stops resolving instead of
+    serving different bytes. The API answers with JSON unless the request sends
+    ``Accept: application/octet-stream``; ``net`` and ``setup-environment.sh`` both send it.
+    Older targets without an id still name the tag URL, pinned only by their sha256.
     """
-    return f"https://github.com/{spec['repo']}/releases/download/{spec['tag']}/{spec['asset']}"
+    return str(resolved["resolvedUrls"][CARBON_INPUT])
 
 
 def _safe_members(archive: tarfile.TarFile, root: Path) -> list[tarfile.TarInfo]:
@@ -314,7 +306,7 @@ class RustAdapter(BaseAdapter):
             f"{prefix}_CARBON_SHA256": str(carbon["sha256"]),
             f"{prefix}_CARBON_SIZE": str(carbon["size"]),
             f"{prefix}_CARBON_URL": str(resolved["resolvedUrls"].get(CARBON_INPUT, "")),
-            f"{prefix}_CARBON_DOWNLOAD_URL": _carbon_download_url(carbon),
+            f"{prefix}_CARBON_DOWNLOAD_URL": _carbon_download_url(resolved),
         }
         assembly = server["files"].get(ASSEMBLY_CSHARP, {}).get("sha256")
         if assembly:

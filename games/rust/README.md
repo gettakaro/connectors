@@ -63,7 +63,7 @@ as online in Takaro. Without a token, a banner names the file to fix; a wrong to
 
 ## What works, what doesn't
 
-Checked on Rust build 26778019 with Carbon v2.0.266, 2026-11-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Rust build 26864795 with Carbon v2.0.267, 2026-11-23. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -97,6 +97,6 @@ Checked on Rust build 26778019 with Carbon v2.0.266, 2026-11-22. ✅ works, ⚠�
 ## Known issues
 
 - The first start on a new map pauses the server for a few seconds while it draws the world map.
-- Only Rust build 26778019 with Carbon v2.0.266 is checked; other builds likely work.
+- Only Rust build 26864795 with Carbon v2.0.267 is checked; other builds likely work.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
