@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/gettakaro/connectors/compare/terraria-v0.9.0...terraria-v0.9.1) (2026-11-23)
+
+
+### Documentation
+
+* **terraria:** state that the game has no player levels or skills ([#791](https://github.com/gettakaro/connectors/issues/791)) ([ab8bd4f](https://github.com/gettakaro/connectors/commit/ab8bd4fb1d1f1e2d3a08e9679542c104f0b94a97))
+
 ## [0.9.0](https://github.com/gettakaro/connectors/compare/terraria-v0.8.0...terraria-v0.9.0) (2026-11-12)
 
 
