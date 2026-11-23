@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.7.0](https://github.com/gettakaro/connectors/compare/valheim-v4.6.1...valheim-v4.7.0) (2026-11-23)
+
+
+### Features
+
+* **valheim:** report player skills as progression tracks ([#798](https://github.com/gettakaro/connectors/issues/798)) ([f75594c](https://github.com/gettakaro/connectors/commit/f75594c0472b01511e5851c77259ffd76516522b))
+
+
+### Bug Fixes
+
+* **valheim:** end timed bans and leave creature gear out of the item list ([#978](https://github.com/gettakaro/connectors/issues/978)) ([7fa22f9](https://github.com/gettakaro/connectors/commit/7fa22f9c48939c06b24f9f694ebf911f9fd0aaa7))
+
 ## [4.6.1](https://github.com/gettakaro/connectors/compare/valheim-v4.6.0...valheim-v4.6.1) (2026-11-13)
 
 
