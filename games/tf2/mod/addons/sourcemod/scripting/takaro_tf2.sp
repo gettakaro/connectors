@@ -7,6 +7,7 @@
 #include "takaro_tf2_item_catalog.inc"
 #include "takaro_tf2_chat.inc"
 #include "takaro_tf2_reconnect.inc"
+#include "takaro_tf2_entity_names.inc"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -387,31 +388,40 @@ void Event_ObjectDestroyed(Event event, const char[] name, bool dontBroadcast)
   int objectType = event.GetInt("objecttype");
   int entityIndex = event.GetInt("index");
 
+  char entityCode[64];
+  GetTfObjectEntityCode(objectType, entityCode, sizeof(entityCode));
   char entity[128];
-  GetTfObjectEntityName(objectType, entity, sizeof(entity));
+  GetTf2EntityName(entityCode, entity, sizeof(entity));
 
+  char weaponCode[128];
+  event.GetString("weapon", weaponCode, sizeof(weaponCode));
+  char attackerWeapon[128];
+  GetActiveWeaponName(attacker, attackerWeapon, sizeof(attackerWeapon));
   char weapon[128];
-  event.GetString("weapon", weapon, sizeof(weapon));
-  if (weapon[0] == '\0') {
-    strcopy(weapon, sizeof(weapon), "unknown");
-  }
+  ResolveTf2WeaponName(weaponCode, attackerWeapon, weapon, sizeof(weapon));
 
   JSONObject data = new JSONObject();
   JSONObject player = BuildPlayerObject(attacker);
   data.Set("player", player);
   delete player;
 
+  // Takaro refuses unknown event fields, so the classname and kill icon travel only in msg.
   data.SetString("entity", entity);
   data.SetString("weapon", weapon);
 
-  char msg[256];
+  char ownerPart[MAX_NAME_LENGTH + 16];
   if (IsTakaroClient(owner)) {
-    char ownerName[MAX_NAME_LENGTH];
-    GetClientName(owner, ownerName, sizeof(ownerName));
-    Format(msg, sizeof(msg), "Destroyed %s entity %d owned by %s", entity, entityIndex, ownerName);
-  } else {
-    Format(msg, sizeof(msg), "Destroyed %s entity %d", entity, entityIndex);
+    GetClientName(owner, ownerPart, sizeof(ownerPart));
+    Format(ownerPart, sizeof(ownerPart), " owned by %s", ownerPart);
   }
+  char weaponPart[300];
+  if (weaponCode[0] != '\0') {
+    Format(weaponPart, sizeof(weaponPart), " with %s (%s)", weapon, weaponCode);
+  } else {
+    Format(weaponPart, sizeof(weaponPart), " with %s", weapon);
+  }
+  char msg[512];
+  Format(msg, sizeof(msg), "Destroyed %s (%s) entity %d%s%s", entity, entityCode, entityIndex, ownerPart, weaponPart);
   data.SetString("msg", msg);
 
   EmitGameEvent("entity-killed", data);
@@ -1048,29 +1058,15 @@ JSONArray HandleListItems()
   return items;
 }
 
-// The destructible TF2 entities a player can kill: Engineer buildings and the Halloween/MvM bosses.
-// The code is the entity classname, which entity-killed reports as `entity`.
+// The entities entity-killed can report (takaro_tf2_entity_names.inc); entity-killed sends the name.
 JSONArray HandleListEntities()
 {
-  static const char codes[][] = {
-    "obj_sentrygun", "obj_dispenser", "obj_teleporter", "obj_attachment_sapper",
-    "tank_boss", "headless_hatman", "eyeball_boss", "merasmus", "tf_zombie"
-  };
-  static const char names[][] = {
-    "Sentry Gun", "Dispenser", "Teleporter", "Sapper",
-    "Tank", "Horseless Headless Horsemann", "MONOCULUS", "Merasmus", "Skeleton"
-  };
-  static const char types[][] = {
-    "neutral", "neutral", "neutral", "neutral",
-    "hostile", "hostile", "hostile", "hostile", "hostile"
-  };
-
   JSONArray entities = new JSONArray();
-  for (int i = 0; i < sizeof(codes); i++) {
+  for (int i = 0; i < TF2_ENTITY_COUNT; i++) {
     JSONObject entity = new JSONObject();
-    entity.SetString("code", codes[i]);
-    entity.SetString("name", names[i]);
-    entity.SetString("type", types[i]);
+    entity.SetString("code", g_Tf2EntityCodes[i]);
+    entity.SetString("name", g_Tf2EntityNames[i]);
+    entity.SetString("type", g_Tf2EntityTypes[i]);
     entities.Push(entity);
     delete entity;
   }
@@ -1686,25 +1682,20 @@ void PushBanDTO(JSONArray bans, const char[] identity, const char[] name, const 
   delete ban;
 }
 
-void GetTfObjectEntityName(int objectType, char[] buffer, int maxlen)
+// The catalog display name of the client's active weapon, empty when it has none.
+void GetActiveWeaponName(int client, char[] buffer, int maxlen)
 {
-  switch (objectType) {
-    case 0: {
-      strcopy(buffer, maxlen, "obj_dispenser");
-    }
-    case 1: {
-      strcopy(buffer, maxlen, "obj_teleporter");
-    }
-    case 2: {
-      strcopy(buffer, maxlen, "obj_sentrygun");
-    }
-    case 3: {
-      strcopy(buffer, maxlen, "obj_attachment_sapper");
-    }
-    default: {
-      Format(buffer, maxlen, "obj_%d", objectType);
-    }
+  buffer[0] = '\0';
+  if (!IsPlayerAlive(client)) {
+    return;
   }
+  int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+  if (weapon <= MaxClients || !IsValidEntity(weapon) || !HasEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex")) {
+    return;
+  }
+  char code[16];
+  IntToString(GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex"), code, sizeof(code));
+  g_ItemNames.GetString(code, buffer, maxlen);
 }
 
 JSONObject BuildPlayerObject(int client)

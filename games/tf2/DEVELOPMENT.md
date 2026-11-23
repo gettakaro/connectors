@@ -13,6 +13,7 @@ and SourceMod 1.13 are installed by the operator.
 |---|---|
 | `mod/addons/sourcemod/scripting/takaro_tf2.sp` | The plugin: Takaro protocol (v0 and v1 with event acks), game adapter, cvars. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_chat.inc` | Server chat name resolution and the one renderer for Takaro chat lines. |
+| `mod/addons/sourcemod/scripting/takaro_tf2_entity_names.inc` | Entity and weapon display names for `listEntities` and `entity-killed`. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_reconnect.inc` | Reconnect policy: delay per failure streak, stable-session and liveness timeouts. |
 | `mod/addons/sourcemod/scripting/takaro_tf2_item_catalog.inc` | Generated weapon catalog for `listItems` (item definition index, in-game name). |
 | `mod/cfg/sourcemod/takaro_tf2.cfg` | The config template shipped in the zip (no secrets). |
@@ -21,6 +22,7 @@ and SourceMod 1.13 are installed by the operator.
 | `scripts/run-live-smoke.sh` | Boots a local srcds against the fake Takaro in `tests/live-harness.mjs`. |
 | `tests/takaro_tf2_chat_test.sp` | Unit tests for `takaro_tf2_chat.inc`, run as a plugin on a SourceMod server. |
 | `tests/takaro_tf2_reconnect_test.sp` | Unit tests for `takaro_tf2_reconnect.inc`, run the same way. |
+| `tests/takaro_tf2_entity_names_test.sp` | Unit tests for `takaro_tf2_entity_names.inc`, run the same way. |
 | `tests/validate-static.mjs` | Source-level contract checks (actions, events, cvars, wire shapes, `capabilities.json`). |
 | `capabilities.json` | What each Takaro action and event does on TF2. |
 
@@ -56,8 +58,9 @@ The build also compiles `tests/takaro_tf2_chat_test.sp` (never shipped) to
 `_data/build/stage-<fp16>/out/takaro_tf2_chat_test.smx`. Copy it into any SourceMod server's
 `addons/sourcemod/plugins/` and run `sm plugins load takaro_tf2_chat_test`: it prints
 `takaro_tf2_chat_test: PASS <n>` (or one `FAIL` line per broken case) to the server console and the
-SourceMod log, then unloads itself. `takaro_tf2_reconnect_test.smx` is built and run the same way and prints
-`takaro_tf2_reconnect_test: PASS <n>`.
+SourceMod log, then unloads itself. `takaro_tf2_reconnect_test.smx` and `takaro_tf2_entity_names_test.smx` are
+built and run the same way and print `takaro_tf2_reconnect_test: PASS <n>` and
+`takaro_tf2_entity_names_test: PASS <n>`.
 
 `run-live-smoke.sh` needs a local TF2 dedicated server with MetaMod:Source 1.12 and SourceMod 1.13
 installed, and the `ws` npm package for the fake Takaro:
@@ -120,7 +123,10 @@ item (code = item definition index) to `takaro_tf2_item_catalog.inc`.
 - `getPlayerInventory` lists the equipped weapons; `giveItem` answers a structured unsupported error.
 - `listLocations` reads the running map (intelligence, team spawns, control points); `getMapInfo`
   answers a disabled map and `getMapTile` a transparent placeholder.
-- `entity-killed` covers TF2's `object_destroyed` (Engineer buildings), not every entity removal.
+- `entity-killed` covers TF2's `object_destroyed` (Engineer buildings), not every entity removal. `entity` is the
+  display name ("Sentry Gun"); `weapon` is a display name too: a stock kill icon's name, else the attacker's active
+  weapon from the item catalog, else a readable form of the icon. Takaro refuses events with fields it does not
+  know, so the classname (the `listEntities` code) and the raw kill icon are only in `msg`.
 
 ## Release
 

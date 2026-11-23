@@ -159,8 +159,20 @@ assert(plugin.includes('item.SetString("code", code)') && plugin.includes('item.
 {
   const start = plugin.indexOf("JSONArray HandleListEntities()");
   const body = plugin.slice(start, plugin.indexOf("\n}\n", start));
-  assert(start !== -1 && body.includes('"Sentry Gun"') && body.includes('"obj_sentrygun"'), "listEntities must list destructible TF2 entities with display names and classname codes");
+  assert(start !== -1 && body.includes("g_Tf2EntityCodes[i]") && body.includes("g_Tf2EntityNames[i]"), "listEntities must list the entity table with display names and classname codes");
   assert(!body.includes("GetMaxEntities"), "listEntities must not dump live engine classnames");
+}
+{
+  const names = readFileSync(join(scriptingRoot, "takaro_tf2_entity_names.inc"), "utf8");
+  assert(plugin.includes('#include "takaro_tf2_entity_names.inc"'), "plugin must use the shared entity names");
+  assert(names.includes('"obj_sentrygun"') && names.includes('"Sentry Gun"') && names.includes('"Rocket Launcher"'), "entity and kill-icon tables must carry display names");
+  const killed = plugin.slice(plugin.indexOf("void Event_ObjectDestroyed("), plugin.indexOf("Action Command_Reconnect("));
+  assert(killed.includes("GetTf2EntityName(entityCode, entity") && killed.includes('data.SetString("entity", entity)'), "entity-killed must send the display name as entity");
+  assert(killed.includes("ResolveTf2WeaponName(weaponCode") && killed.includes('data.SetString("weapon", weapon)'), "entity-killed must send a weapon display name");
+  // Takaro validates events with forbidNonWhitelisted: any field beyond player/entity/weapon/position/msg drops the event.
+  const keys = [...killed.matchAll(/data\.Set(?:String|Int|Float|Bool)?\("([^"]+)"/g)].map((m) => m[1]);
+  assert(keys.every((k) => ["player", "entity", "weapon", "position", "msg"].includes(k)), `entity-killed must only send fields Takaro accepts, got ${keys.join(",")}`);
+  assert(readFileSync(packagePath, "utf8").includes("takaro_tf2_entity_names_test"), "the entity names unit-test plugin must be built");
 }
 assert(plugin.includes('"m_iItemDefinitionIndex"') && plugin.includes("g_ItemNames.GetString"), "getPlayerInventory must use listItems codes (item definition index) and catalog display names");
 assert(plugin.includes("HandleListLocations") && plugin.includes("item_teamflag") && plugin.includes("info_player_teamspawn") && !plugin.includes("ctf_2fort:"), "listLocations must read locations from the running map, not hardcoded coordinates");
