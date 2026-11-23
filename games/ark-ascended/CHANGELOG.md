@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/gettakaro/connectors/compare/ark-ascended-v0.1.1...ark-ascended-v0.2.0) (2026-11-23)
+
+
+### Features
+
+* **ark-ascended:** add Steam build 26749470 as the default target ([#959](https://github.com/gettakaro/connectors/issues/959)) ([aaadc42](https://github.com/gettakaro/connectors/commit/aaadc426bbdbc7e97f70c0c4f1876c4ab3a52ad4))
+
 ## [0.1.1](https://github.com/gettakaro/connectors/compare/ark-ascended-v0.1.0...ark-ascended-v0.1.1) (2026-11-12)
 
 
