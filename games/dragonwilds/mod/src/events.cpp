@@ -1971,6 +1971,16 @@ void Events::SetRawLogSink(std::function<void(std::string)> sink) {
 
 bool Events::BanEnforcementLive() { return g_preLoginHooked.load(); }
 
+void Events::HeldItems(void* inventory, void* out[2]) {
+    out[0] = out[1] = nullptr;
+    if (!g_clsLoadout || !ValidObject(inventory) || !Reflect::IsA(inventory, g_clsLoadout)) return;
+    auto fromSlot = SymFn<FnGetEquipmentFromSlot>("ULoadoutComponent::GetEquipmentFromSlot");
+    if (!fromSlot) return;
+    const int64_t slots[2] = {g_slotHeldRight, g_slotHeldLeft};
+    for (int i = 0; i < 2; i++)
+        if (slots[i] >= 0 && slots[i] <= 255) out[i] = fromSlot(inventory, (uint8_t)slots[i]);
+}
+
 std::string Events::DiagnosticsJson() {
     auto one = [](const char* name, SourceStat& s, bool hooked) {
         return "{\"source\":" + JsonStr(name) + ",\"hooked\":" + (hooked ? "true" : "false") +

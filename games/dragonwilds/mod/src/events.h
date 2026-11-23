@@ -29,4 +29,8 @@ bool InWorld(const std::string& gameId);
 // consumer must redact before persisting or forwarding. With a sink set, the tailer no longer
 // emits `log` ring events itself.
 void SetRawLogSink(std::function<void(std::string)> sink);
+// Game thread. When `inventory` is the player's ULoadoutComponent, the item objects it holds in the
+// HeldRight and HeldLeft slots (null when empty); otherwise both are null. A held item is the
+// hotbar item the player drew, so the hotbar already lists it.
+void HeldItems(void* inventory, void* out[2]);
 }  // namespace Events

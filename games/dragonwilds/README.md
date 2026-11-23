@@ -71,7 +71,7 @@ follow [INSTALL.md](INSTALL.md).
 
 ## What works, what doesn't
 
-Checked on server build 25991736, 2026-10-17. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on server build 26670300, 2026-11-23. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -98,15 +98,14 @@ Checked on server build 25991736, 2026-10-17. ✅ works, ⚠️ works with a lim
 | Player death | ✅ | Names the creature. |
 | Entity killed | ✅ | |
 | Server log lines | ✅ | The world password is removed. |
-| Discord chat bridge | ⚠️ | Game to Discord works (use `chatBridgeNoEcho`); Discord to game not checked. |
+| Discord chat bridge | ✅ | Both ways. Use `chatBridgeNoEcho`. |
 | Modules | ✅ | |
-| Game name, version and icon | ⚠️ | Not checked yet. |
+| Game name, version and icon | ✅ | |
 | Game updates | ✅ | A feature the update breaks reports degraded; the rest keeps working. |
 
 ## Known issues
 
 - The server idles until `OwnerId` is set.
 - Client and server must be on the same game version.
-- A banned player connects briefly before being dropped.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
