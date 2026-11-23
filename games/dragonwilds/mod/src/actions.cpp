@@ -585,9 +585,14 @@ std::vector<InvItem> ReadInventory(const PlayerInfo& p, std::string& detail) {
             continue;
         }
         std::string invName = Reflect::ObjName(c);
+        // The loadout also lists the item in the player's hand, which is the hotbar item they drew:
+        // leave it out, or one sword shows as two.
+        void* held[2];
+        Events::HeldItems(c, held);
         for (int32_t i = 0; i < items.Num; i++) {
             void* item = items.Data[i];
             if (!item || !MemReadable(item, 0x40)) continue;
+            if (item == held[0] || item == held[1]) continue;
             InvItem e;
             e.inventory = invName;
             e.slot = i;
@@ -1578,7 +1583,19 @@ Actions::Result Actions::Bans() {
         // native bridge's ban recovery verifies against.
         auto gameRows = ReadBans();
         bool live = Events::BanEnforcementLive();
-        return {200, [gameRows = std::move(gameRows), live] {
+        // A Steam player is known to Takaro by steamId (see Player() in the native bridge); report it
+        // here too, so a ban row names the same player as getPlayers and every event. EOS answers
+        // from its process-lifetime cache, so this is known for anyone seen since the server started.
+        std::map<std::string, std::string> steamIds;
+        auto noteSteam = [&steamIds](const std::string& id) {
+            Eos::Linked linked;
+            if (!id.empty() && !steamIds.count(id) && Eos::LinkedAccounts(id, linked) == Eos::Lookup::Done &&
+                !linked.steamId.empty())
+                steamIds[id] = linked.steamId;
+        };
+        for (auto& b : gameRows) noteSteam(b.gameId);
+        for (auto& b : state::BanList()) noteSteam(b.gameId);
+        return {200, [gameRows = std::move(gameRows), live, steamIds = std::move(steamIds)] {
             std::map<std::string, std::string> names;  // gameId -> name, from the game's list
             std::set<std::string> inGame;
             std::vector<std::string> order;
@@ -1605,7 +1622,10 @@ Actions::Result Actions::Bans() {
                 first = false;
                 std::string name = names[id];
                 if (name.empty() && inPlugin) name = it->second.name;
-                o += "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(name) + ",\"reason\":" +
+                auto steam = steamIds.find(id);
+                o += "{\"gameId\":" + JsonStr(id) + ",\"name\":" + JsonStr(name) +
+                     (steam != steamIds.end() ? ",\"steamId\":" + JsonStr(steam->second) : std::string()) +
+                     ",\"reason\":" +
                      JsonStr(inPlugin ? it->second.reason : std::string()) + ",\"expiresAt\":" +
                      ((inPlugin && !it->second.expiresAt.empty()) ? JsonStr(it->second.expiresAt)
                                                                   : std::string("null")) +

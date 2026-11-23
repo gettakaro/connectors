@@ -66,6 +66,7 @@ bool locationDown = false;
 std::string progressionId;
 bool unbanFails = false;
 std::set<std::string> gameBans;    // the game's KnownPlayerList flags
+std::map<std::string, std::string> banSteamIds;  // EOS-linked Steam ids the plugin adds to ban rows
 std::string commandMode = "ok";
 Json PlayersJson() {
     if (!playersOnline) return Json::array();
@@ -111,6 +112,8 @@ Result Bans() {
                     {"inGameList", gameBans.count(b.gameId) > 0}, {"inPluginList", true}};
         rows[b.gameId] = row;
     }
+    for (auto& kv : rows)
+        if (auto it = banSteamIds.find(kv.first); it != banSteamIds.end()) kv.second["steamId"] = it->second;
     Json out = Json::array();
     for (auto& kv : rows) out.push_back(kv.second);
     return {200, out.dump()};
@@ -497,6 +500,16 @@ int main() {
                 Check(row == Json({{"player", {{"gameId", U}, {"name", U}, {"epicOnlineServicesId", U}, {"platformId", "epic:" + U}}},
                                    {"reason", ""}, {"expiresAt", nullptr}}),
                       "permanent offline ban DTO " + row.dump());
+        banSteamIds[A] = "76561190000000001";
+        listed = h.Ok("listBans");
+        Check(std::any_of(listed.begin(), listed.end(), [](const Json& r) { return r["player"]["gameId"] == A; }),
+              "the Steam player's ban is listed");
+        for (const auto& row : listed)
+            if (row["player"]["gameId"] == A)
+                Check(row["player"]["steamId"] == "76561190000000001" && row["player"]["platformId"] == "steam:76561190000000001" &&
+                          !row["player"].contains("epicOnlineServicesId"),
+                      "a Steam player's ban row carries the same ids as getPlayers: " + row.dump());
+        banSteamIds.clear();
         h.Ok("unbanPlayer", {{"gameId", U}});
         Check(h.engine->DueTimedBans(now).empty(), "not due yet");
         h.Open();  // restart before expiry: the schedule is durable
