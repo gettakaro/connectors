@@ -395,11 +395,12 @@ t.test("argument validation answers invalid_args instead of calling the game", f
   tk.request("teleportPlayer", { gameId = STEAM, x = "a", y = 1, z = 1 }, "tp")
   tk.request("giveItem", { gameId = STEAM, amount = 1 }, "gi")
   tk.request("giveItem", { gameId = STEAM, item = "X", amount = 0 }, "gi0")
+  tk.request("giveItem", { gameId = STEAM, item = "X", amount = 50.9 }, "gifrac")
   tk.request("banPlayer", { gameId = STEAM, expiresAt = "tomorrow" }, "ban")
   tk.request("kickPlayer", {}, "kick")
   tk.request("sendMessage", { message = "" }, "msg")
   tk.pump()
-  for _, rid in ipairs({ "tp", "gi", "gi0", "ban", "kick", "msg" }) do
+  for _, rid in ipairs({ "tp", "gi", "gi0", "gifrac", "ban", "kick", "msg" }) do
     t.ok(tk.response(rid).errorMessage:find("^invalid_args"), rid)
   end
   t.eq(#game.calls, 0)

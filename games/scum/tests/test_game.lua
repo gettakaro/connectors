@@ -224,8 +224,12 @@ end)
 
 t.test("shutdown quits through the console, which also works with nobody online", function()
   local W = world()
+  t.eq(next(W.g.online), nil, "nobody online")
   t.ok(W.g:shutdown().ok)
-  t.eq(W.find("ExecuteConsoleCommand")[1][1], "quit")
+  local call = W.find("ExecuteConsoleCommand")[1]
+  t.eq(call[1], "quit")
+  t.eq(call[2], nil, "no player controller needed")
+  t.eq(#W.find("QuitGame"), 0, "QuitGame does nothing without a player controller")
 end)
 
 t.test("the catalogues count as ready when items and entities are both built", function()

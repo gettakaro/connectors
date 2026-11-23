@@ -252,7 +252,8 @@ function H.giveItem(self, args, reply)
   if not id then return reply(fail("invalid_args: gameId is required")) end
   if not item or util.trim(item) == "" then return reply(fail("invalid_args: item is required")) end
   if amount < 1 then return reply(fail("invalid_args: amount must be at least 1")) end
-  self:call("give_item", { gameId = id, item = item, amount = math.floor(amount), quality = quality },
+  if amount ~= math.floor(amount) then return reply(fail("invalid_args: amount must be a whole number")) end
+  self:call("give_item", { gameId = id, item = item, amount = amount, quality = quality },
     simple_reply(reply))
 end
 
