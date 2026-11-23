@@ -136,6 +136,8 @@ static void TestConfig() {
     c = resolve("{\"identityToken\": oops", true);
     CHECK(c.hold == Hold::FileError && c.fileError.find("not valid JSON") != std::string::npos, "%s",
           c.fileError.c_str());
+    c = resolve("\xEF\xBB\xBF{\"registrationToken\":\"reg-5678\",\"identityToken\":\"id-1\"}", true);
+    CHECK(c.enabled && c.fileError.empty(), "a UTF-8 byte order mark is accepted: %s", c.fileError.c_str());
     c = resolve("[1]", true);
     CHECK(c.hold == Hold::FileError, "non-object file holds");
     c = resolve("{\"registrationToken\":5}", true);
@@ -195,6 +197,7 @@ static void TestSetJsonString() {
     EQ(set("{\"name\": 5}", "name", "n"), "<none>");
     EQ(set("{\"name\": ", "name", "n"), "<none>");
     EQ(set("[]", "name", "n"), "<none>");
+    EQ(set("\xEF\xBB\xBF{\"a\": \"1\"}", "a", "2"), "\xEF\xBB\xBF{\"a\": \"2\"}");
 }
 
 static void TestConfigWatcher() {

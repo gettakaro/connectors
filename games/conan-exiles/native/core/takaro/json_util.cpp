@@ -94,7 +94,11 @@ std::string NumText(double d) {
     return sign + out;
 }
 
-bool ParseJson(const std::string& text, JsonValue& out) { return JsonParse(text, out); }
+bool ParseJson(const std::string& text, JsonValue& out) {
+    // Windows editors and PowerShell's Set-Content -Encoding UTF8 start the file with a UTF-8 byte order mark.
+    if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) return JsonParse(text.substr(3), out);
+    return JsonParse(text, out);
+}
 
 bool JsonDepthExceeds(const std::string& text, int limit) {
     int depth = 0;
