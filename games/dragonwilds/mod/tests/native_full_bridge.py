@@ -93,6 +93,8 @@ def protocol_v1(cert, key, state):
         names = [c['name'] for c in offered['capabilities']]
         assert len(names) == len(set(names)) and 'testReachability' not in names, names
         assert {'players.location', 'moderation.ban', 'events.player-connected', 'events.chat-message'} <= set(names), names
+        assert offered['capabilities'][names.index('players.progression')]['parameters'] == {'source': 'client-reported'}, offered
+        assert offered['capabilities'][names.index('players.characters')]['parameters'] == {'held': 'client'}, offered
         dims = offered['capabilities'][names.index('map')]['parameters']['dimensions']
         assert [d['id'] for d in dims] == ['overworld'] and dims[0]['source'] == {'type': 'none'}, dims
         # Game Profile: the game and connector identity, game.profile with the running version and icon.
@@ -105,6 +107,9 @@ def protocol_v1(cert, key, state):
         icon = profile['icon']
         assert re.fullmatch(r'[0-9a-f]{12}', icon['revision']) and 0 < icon['size'] <= 128 * 1024, icon
         eventually(lambda: run.health()['protocolVersion'] == 1)
+        run.request('v1-progression', 'getPlayerProgression', json.dumps({'gameId': 'f' * 32}))
+        answer = run.response('v1-progression')
+        assert answer.get('error') is None and answer['payload'] is None, answer
         run.request('v1-icon', 'getGameIcon', '{}')
         answer = run.response('v1-icon')
         assert 'error' not in answer or answer['error'] is None, answer
@@ -214,6 +219,8 @@ def replay(cert, key, state):
 def backlog_request_latency(cert, key, state):
     # A large unconfirmed backlog replayed after a restart must not delay Takaro requests past
     # its 10 s timeout (seen live with ~350 events: requests timed out for ~30 s after boot).
+    # The budget stays under that timeout, not near the idle time: this peer decodes every replayed
+    # frame in Python, and on a busy machine that alone takes seconds.
     PONGS.clear()
     run = Run(cert, key, state)
     try:
@@ -229,7 +236,7 @@ def backlog_request_latency(cert, key, state):
         for i in range(20):
             run.request(f'backlog-reach-{i}', 'testReachability')
         for i in range(20):
-            run.response(f'backlog-reach-{i}', timeout=max(0.1, 2 - (time.monotonic() - started)))
+            run.response(f'backlog-reach-{i}', timeout=max(0.1, 8 - (time.monotonic() - started)))
         elapsed = time.monotonic() - started
         eventually(lambda: not read(state / 'event-outbox.json')['pending'], timeout=60)
         print(f'production bridge 20 requests during 400-event replay plus 600 raw log lines answered in {elapsed:.2f}s: pass', flush=True)
@@ -788,6 +795,77 @@ def answer_deadline(cert, key, state):
         run.close()
 
 
+def early_request(cert, key, state):
+    # Takaro's first reachability check after registration can reach the socket before its
+    # identifyResponse. It is held, not refused, and answered once identified.
+    run = Run(cert, key, state, identify=False)
+    try:
+        index = run.peer.connections.get(timeout=5)
+        while True:
+            i, opcode, data = run.peer.frames.get(timeout=5)
+            if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
+                break
+        run.index = index
+        run.request('early-reach', 'testReachability', '{}')
+        run.request('early-players', 'getPlayers', '{}')
+        time.sleep(0.5)
+        while True:
+            try:
+                run.pending.append(run.peer.frames.get_nowait())
+            except queue.Empty:
+                break
+        assert not [e for e in run.pending if e[1] == 1 and json.loads(e[2]).get('requestId', '').startswith('early-')], \
+            'request answered before identifyResponse'
+        run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+        reach = run.response('early-reach')
+        assert 'error' not in reach and reach['payload']['connectable'] is True, reach
+        players = run.response('early-players')
+        assert 'error' not in players and isinstance(players['payload'], list), players
+        print('production bridge request before identifyResponse held and answered after it: pass', flush=True)
+    finally:
+        run.close()
+
+
+def wait_identify(run):
+    index = run.peer.connections.get(timeout=15)
+    while True:
+        i, opcode, data = run.peer.frames.get(timeout=5)
+        if i == index and opcode == 1 and json.loads(data)['type'] == 'identify':
+            return index
+        run.pending.append((i, opcode, data))
+
+
+def early_request_limits(cert, key, state):
+    # At most 32 requests are held; more are refused at once. Held requests never cross to a
+    # new socket: a connection that closes before identifyResponse drops them.
+    run = Run(cert, key, state, identify=False)
+    try:
+        index = run.index = wait_identify(run)
+        for n in range(34):
+            run.request(f'held-{n}', 'getPlayers', '{}')
+        for n in (32, 33):
+            assert run.response(f'held-{n}')['error'] == 'invalid request'
+        run.request('stale', 'getPlayers', '{}')
+        assert run.response('stale')['error'] == 'invalid request'
+        run.peer.close_session(index)
+        index = run.index = wait_identify(run)
+        run.request('fresh-early', 'testReachability', '{}')
+        run.peer.send(index, {'type': 'identifyResponse', 'payload': {}})
+        assert run.response('fresh-early')['payload']['connectable'] is True
+        time.sleep(0.7)
+        while True:
+            try:
+                run.pending.append(run.peer.frames.get_nowait())
+            except queue.Empty:
+                break
+        crossed = [e for e in run.pending if e[0] == index and e[1] == 1 and
+                   json.loads(e[2]).get('requestId', '').startswith('held-')]
+        assert not crossed, crossed
+        print('production bridge holds at most 32 early requests and drops them with their socket: pass', flush=True)
+    finally:
+        run.close()
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix='dragonwilds-full-bridge-') as tmp:
         directory = Path(tmp)
@@ -800,7 +878,7 @@ def main():
         subprocess.run(['openssl', 'x509', '-req', '-in', str(csr), '-signkey', str(key),
                         '-days', '1', '-extfile', str(ext), '-out', str(cert)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for test in (protocol_v1, protocol_v0_forced, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
+        for test in (protocol_v1, protocol_v0_forced, early_request, early_request_limits, answer_deadline, outage, reconcile_after_crash, log_events, whitelist, args_shapes, timed_expiry_restart, legacy_import,
                      replay, backlog_request_latency, crash_write, directory_sync, mutations, stale_effect,
                      engine_before_plugin, ambiguous_engine_ban, newer_ban_after_crash, permanent_restart, timed_replacement,
                      failed_ban_write,

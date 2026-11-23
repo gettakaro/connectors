@@ -80,6 +80,7 @@ Checked on server build 25991736, 2026-10-17. ✅ works, ⚠️ works with a lim
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ⚠️ | All 12 skills with level, XP and progress, per character; client-reported, because the player's game keeps the character. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Only creatures the server has loaded so far. |
 | Locations | ⚠️ | Lodestones only. |

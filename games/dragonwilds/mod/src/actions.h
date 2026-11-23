@@ -27,6 +27,10 @@ Result Players();
 Result Player(const std::string& gameId);
 Result PlayerLocation(const std::string& gameId);
 Result PlayerInventory(const std::string& gameId);
+// The cached skills of a player, never a game-thread call; 404 when there is no reading yet.
+Result PlayerProgression(const std::string& gameId);
+// Game thread: copies the skills of every in-world player into that cache.
+void RefreshProgression();
 Result Items(const std::string& search);
 Result Entities();
 Result Locations();
