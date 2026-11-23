@@ -187,12 +187,17 @@ inline bool no_options(const json::Value& args) {
 }
 
 inline json::Value player_json(const std::string& id, const std::string& name,
-                               const std::string& ip = {}, std::optional<int32_t> ping = std::nullopt) {
+                               const std::string& ip = {}, std::optional<int32_t> ping = std::nullopt,
+                               const gate::Character& character = {}) {
   json::Value out = json::obj({{"gameId", json::str(id)}, {"name", json::str(name.empty() ? id : name)},
                                {"steamId", json::str(id)}, {"platformId", json::str("steam:" + id)}});
   // Only a live connection's verified values; never a placeholder.
   if (!ip.empty()) out.set("ip", json::str(ip));
   if (ping && *ping >= 0) out.set("ping", json::num(*ping));
+  if (!character.id.empty())
+    out.set("character", json::obj({{"id", json::str(character.id)},
+                                    {"name", json::str(character.name.empty() ? (name.empty() ? id : name)
+                                                                              : character.name)}}));
   return out;
 }
 
@@ -387,7 +392,7 @@ class Adapter {
       json::Value out = json::Value::array();
       for (const auto& p : gate_.players()) {
         known_.remember(p.id, p.name);
-        out.push(player_json(p.id, p.name, p.ip, p.ping));
+        out.push(player_json(p.id, p.name, p.ip, p.ping, gate_.character(p.id)));
       }
       return out;
     }
@@ -395,8 +400,9 @@ class Adapter {
       // Takaro calls getPlayer for offline players too and rejects null, {}
       // and error frames alike: always answer with a real IGamePlayer.
       const std::string id = player_id(args);
-      if (auto online = gate_.player(id)) return player_json(id, online->name, online->ip, online->ping);
-      return player_json(id, known_.name(id));
+      if (auto online = gate_.player(id))
+        return player_json(id, online->name, online->ip, online->ping, gate_.character(id));
+      return player_json(id, known_.name(id), {}, std::nullopt, gate_.character(id));
     }
     if (action == "getPlayerLocation") {
       const auto position = gate_.location(player_id(args));
@@ -419,6 +425,7 @@ class Adapter {
       }
       return out;
     }
+    if (action == "getPlayerProgression") return player_progression(args);
     if (action == "giveItem") return give_item(args);
     if (action == "teleportPlayer") return teleport(args);
     if (action == "listItems" || action == "listEntities") return catalog(action == "listEntities", args);
@@ -567,6 +574,29 @@ class Adapter {
       out.push(json::obj({{"code", json::str(code)}, {"name", json::str(name)}}));
     }
     return out;
+  }
+
+  // Answers from the game-thread sample. A known player without a reading yet
+  // (no body so far) has no tracks; null is only for a player the game never saw.
+  json::Value player_progression(const json::Value& args) {
+    if (protocol_version_.load() < 1) withhold("getPlayerProgression is unavailable on this build (protocol v1 only)");
+    std::string id;
+    try {
+      id = player_id(args);
+    } catch (const Withhold&) {
+      return json::Value::null();
+    }
+    json::Value out = json::Value::array();
+    if (const auto reading = gate_.progression(id)) {
+      json::Value track = json::obj({{"key", json::str("character")}, {"name", json::str("Level")},
+                                     {"level", json::num(reading->level)},
+                                     {"experience", json::num(reading->experience)}});
+      if (reading->progress) track.set("progress", json::num(*reading->progress));
+      out.push(std::move(track));
+      return out;
+    }
+    if (gate_.player(id) || !known_.name(id).empty()) return out;
+    return json::Value::null();
   }
 
   json::Value list_locations(const json::Value& args) {

@@ -138,6 +138,12 @@ inline std::optional<bool> dispatch_teleport(void* controller, void* pawn, FVect
   return api.teleport(pawn, false, target, current);
 }
 
+// A point saved while the survivor lay down after login, crouched or went prone sits below a
+// standing survivor. The engine still teleports there, but lifts the standing capsule out of the
+// ground (about 40 units from prone), so the vertical check allows that lift.
+inline constexpr float kTeleportTolerance = 25.0f;
+inline constexpr float kTeleportMaxLift = 100.0f;
+
 inline Result teleport_player(void* controller, void* pawn, FVector target, const Api& api = {}) {
   if (!api.location) return Result::invalid;
   const std::optional<bool> dispatched = dispatch_teleport(controller, pawn, target, api);
@@ -147,7 +153,10 @@ inline Result teleport_player(void* controller, void* pawn, FVector target, cons
   if (!std::isfinite(actual.x) || !std::isfinite(actual.y) || !std::isfinite(actual.z))
     return Result::unverified;
   const float dx = actual.x - target.x, dy = actual.y - target.y, dz = actual.z - target.z;
-  return dx * dx + dy * dy + dz * dz <= 25.0f * 25.0f ? Result::verified : Result::unverified;
+  return dx * dx + dy * dy <= kTeleportTolerance * kTeleportTolerance && dz >= -kTeleportTolerance &&
+                 dz <= kTeleportMaxLift
+             ? Result::verified
+             : Result::unverified;
 }
 
 } // namespace ark_actions

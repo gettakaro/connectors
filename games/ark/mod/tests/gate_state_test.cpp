@@ -207,6 +207,47 @@ int main() {
     check(page.events.size() == 1 && page.events[0].type == "log" && page.events[0].id.empty(),
           "log event has no invented player");
 
+    {
+      gate::Server survivors("survivor-boot");
+      const std::string steam = "76561198000000011";
+      survivors.record_login(steam, "Limon", "192.0.2.1", 40, {"92463960", "Human"});
+      survivors.record_progression(steam, {20, 1900.0, 0.5});
+      check(!survivors.record_character(steam, {"92463960", "Human"}), "the same survivor is no switch");
+      survivors.record_chat(steam, "Limon", "hello");
+      survivors.record_death_position(steam, 1, 2, 3);
+      survivors.record_player_death(steam, "Limon", "");
+      auto rows = survivors.events_since(0, 16);
+      check(rows.events.size() == 3 && rows.events[0].character.id == "92463960" &&
+                rows.events[1].character.id == "92463960" && rows.events[2].character.name == "Human",
+            "every player event names the survivor");
+
+      const auto since = rows.latest;
+      check(survivors.record_character(steam, {"843947694", "Human"}), "a new survivor is a switch");
+      rows = survivors.events_since(since, 16);
+      check(rows.events.size() == 2 && rows.events[0].type == "player-disconnected" &&
+                rows.events[0].character.id == "92463960" && rows.events[1].type == "player-connected" &&
+                rows.events[1].character.id == "843947694" && rows.events[1].ip == "192.0.2.1",
+            "a switch leaves as the old survivor and joins as the new one");
+      check(survivors.player(steam).has_value(), "a switch keeps the player online");
+      check(!survivors.progression(steam), "a new survivor does not inherit the old level");
+
+      survivors.record_logout(steam);
+      check(survivors.character(steam).id == "843947694", "the survivor stays known offline");
+      const auto last = survivors.events_since(0, 16);
+      check(last.events.back().type == "player-disconnected" && last.events.back().character.id == "843947694",
+            "a logout names the current survivor");
+      check(!last.events.back().position, "a new survivor does not leave at the old one's death position");
+      check(!survivors.record_character(steam, {"1000000", "Other"}), "an offline player cannot switch");
+
+      // No survivor at login: the first sighting must still reach Takaro as a connect.
+      const std::string fresh = "76561198000000012";
+      survivors.record_login(fresh, "New");
+      check(survivors.character(fresh).id.empty(), "no survivor is invented");
+      check(survivors.record_character(fresh, {"60000", "Human"}), "the first survivor is reported");
+      check(!survivors.record_character(fresh, {"", ""}), "an unverified read changes nothing");
+      check(survivors.character(fresh).id == "60000", "an unverified read keeps the survivor");
+    }
+
     std::cout << "gate_state tests passed\n";
     return EXIT_SUCCESS;
   } catch (const std::exception& error) {

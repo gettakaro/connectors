@@ -145,8 +145,8 @@ inline std::optional<json::Value> map_event(const gate::Event& e, KnownPlayers& 
     return std::nullopt;
   if (!valid_steam64(e.id)) return std::nullopt;
   data.set("player", e.type == "player-connected"
-                        ? player_json(e.id, name_of(e.id, e.name), e.ip, e.ping)
-                        : player_json(e.id, name_of(e.id, e.name)));
+                        ? player_json(e.id, name_of(e.id, e.name), e.ip, e.ping, e.character)
+                        : player_json(e.id, name_of(e.id, e.name), {}, std::nullopt, e.character));
   if (e.type == "chat-message") {
     data.set("msg", json::str(e.message));
     data.set("channel", json::str("global"));
@@ -277,6 +277,8 @@ class Bridge {
   ws::Connection conn_;
   std::atomic<uint64_t> epoch_{0};
   std::atomic<bool> identified_{false};
+  // Identified before the game was ready (the wait timed out on a slow world load).
+  bool identified_not_ready_ = false;
   std::atomic<int> protocol_version_{0};
   std::atomic<uint64_t> connections_{0};
   ReconnectPolicy policy_{ReconnectPolicy::Settings{config_.reconnect_fast, config_.reconnect_fast_jitter,
@@ -347,6 +349,12 @@ class Bridge {
       payload.set("protocolVersions", std::move(versions));
       json::Value manifest = json::Value::array();
       for (const auto& name : capability_manifest()) manifest.push(json::obj({{"name", json::str(name)}}));
+      // ARK keeps the character on the server: the client cannot report its own level.
+      manifest.push(json::obj({{"name", json::str("players.progression")},
+                               {"parameters", json::obj({{"source", json::str("server")}})}}));
+      // Survivors live on the server. A death does not end one, so `ends` stays out.
+      manifest.push(json::obj({{"name", json::str("players.characters")},
+                               {"parameters", json::obj({{"held", json::str("server")}})}}));
       manifest.push(game_profile_capability(config_.game_version, config_.game_icon.get()));
       if (auto dimension = map_dimension(config_.map_name)) {
         json::Value dimensions = json::Value::array();
@@ -488,6 +496,14 @@ class Bridge {
       return false;
     }
     if (!conn_.is_open()) { disconnect("closed"); return false; }
+    // Takaro syncs the item and entity catalogues once, right after identify, and skips them
+    // while testReachability says "starting". Identify again once the game is ready.
+    if (identified_not_ready_ && identified_.load() && gate_.health().ready) {
+      identified_not_ready_ = false;
+      log("takaro-game-ready-after-identify identifying again");
+      disconnect("identify again: game ready");
+      return false;
+    }
     const auto now = std::chrono::steady_clock::now();
     if (identified_.load() && now >= next_pump_) {
       next_pump_ = now + config_.pump_interval;
@@ -618,6 +634,7 @@ class Bridge {
       adapter_.set_protocol_version(version);
       policy_.identified(std::chrono::steady_clock::now());
       identified_ = true;
+      identified_not_ready_ = !gate_.health().ready;
       if (!before_identify_.empty()) {
         log("takaro-requests-before-identify " + std::to_string(before_identify_.size()) + " now handled");
         {
