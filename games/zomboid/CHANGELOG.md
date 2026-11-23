@@ -4,6 +4,13 @@ All notable changes to the Takaro Project Zomboid connector are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0](https://github.com/gettakaro/connectors/compare/zomboid-v1.7.1...zomboid-v1.8.0) (2026-11-23)
+
+
+### Features
+
+* **zomboid:** report perks as player progression and survivors as characters ([#800](https://github.com/gettakaro/connectors/issues/800)) ([0300cd3](https://github.com/gettakaro/connectors/commit/0300cd3ec00ed376481d1dffc290e1b81cd4f657))
+
 ## [1.7.1](https://github.com/gettakaro/connectors/compare/zomboid-v1.7.0...zomboid-v1.7.1) (2026-11-13)
 
 
