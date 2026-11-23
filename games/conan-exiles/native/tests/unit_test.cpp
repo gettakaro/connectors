@@ -138,6 +138,19 @@ static void TestConfig() {
           c.fileError.c_str());
     c = resolve("[1]", true);
     CHECK(c.hold == Hold::FileError, "non-object file holds");
+    // Saved with a UTF-8 byte order mark (PowerShell Set-Content -Encoding UTF8, Windows editors).
+    c = resolve("\xEF\xBB\xBF{\"registrationToken\":\"reg-bom1\",\"identityToken\":\"id-bom\"}", true);
+    CHECK(c.enabled && c.fileError.empty(), "a BOM before the JSON is accepted: %s", c.fileError.c_str());
+    EQ(c.registrationToken, "reg-bom1");
+    EQ(StateDirFor(saved, env, "\xEF\xBB\xBF{\"stateDir\":\"/var/lib/bom\"}"), "/var/lib/bom");
+    {
+        auto r = SetJsonString("\xEF\xBB\xBF{\"identityToken\": \"\"}", "identityToken", "id-new");
+        CHECK(r && r->find("id-new") != std::string::npos, "SetJsonString keeps working on a BOM file");
+        if (r) {
+            Config w = resolve(*r, true);
+            CHECK(w.identityToken == "id-new", "the rewritten BOM file still resolves: %s", w.fileError.c_str());
+        }
+    }
     c = resolve("{\"registrationToken\":5}", true);
     CHECK(c.hold == Hold::FileError && c.fileError.find("must be a string") != std::string::npos, "%s",
           c.fileError.c_str());

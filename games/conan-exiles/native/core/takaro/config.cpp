@@ -42,10 +42,15 @@ unsigned ParseUnsigned(const std::string& text, unsigned fallback, unsigned lo, 
 const char* const kKnownKeys[] = {"url", "takaroWsUrl", "identityToken", "registrationToken", "name",
                                   "serverName", "serverChatName", "caFile", "stateDir", "protocol"};
 
+// Windows editors and PowerShell (Set-Content -Encoding UTF8) save UTF-8 with a byte order mark.
+std::string WithoutBom(const std::string& text) {
+    return text.compare(0, 3, "\xEF\xBB\xBF") == 0 ? text.substr(3) : text;
+}
+
 // A parsed JSON object, or the reason it is not one.
 JsonValue ParseObject(const std::string& text, std::string& error) {
     JsonValue parsed;
-    if (!ParseJson(text, parsed) || parsed.type != JsonValue::Object) {
+    if (!ParseJson(WithoutBom(text), parsed) || parsed.type != JsonValue::Object) {
         error = "not a JSON object";
         return JObj();
     }
@@ -263,7 +268,7 @@ size_t EndOfValue(const std::string& t, size_t i) {
 
 std::optional<std::string> SetJsonString(const std::string& text, const std::string& key, const std::string& value) {
     JsonValue parsed;
-    if (!ParseJson(text, parsed) || parsed.type != JsonValue::Object) return std::nullopt;
+    if (!ParseJson(WithoutBom(text), parsed) || parsed.type != JsonValue::Object) return std::nullopt;
     const JsonValue* existing = parsed.get(key);
     if (existing && existing->type != JsonValue::String) return std::nullopt;
     const std::string literal = JsonStr(value);
@@ -306,7 +311,7 @@ std::optional<std::string> SetJsonString(const std::string& text, const std::str
         }
     }
     JsonValue check;
-    if (!ParseJson(out, check) || check.type != JsonValue::Object) return std::nullopt;
+    if (!ParseJson(WithoutBom(out), check) || check.type != JsonValue::Object) return std::nullopt;
     const JsonValue* got = check.get(key);
     if (!got || got->type != JsonValue::String || got->str != value) return std::nullopt;
     return out;
