@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/empyrion-v0.3.0...empyrion-v0.4.0) (2026-11-23)
+
+
+### Features
+
+* **empyrion:** report the player level through getPlayerProgression ([#801](https://github.com/gettakaro/connectors/issues/801)) ([4d68dbf](https://github.com/gettakaro/connectors/commit/4d68dbf85f560f9a6cfda741f04c4063b0d4a4c5))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/empyrion-v0.2.0...empyrion-v0.3.0) (2026-11-17)
 
 
