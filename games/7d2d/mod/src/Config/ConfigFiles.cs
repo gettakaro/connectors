@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Text;
 using System.Xml;
 
 namespace Takaro.Config
@@ -15,7 +16,13 @@ namespace Takaro.Config
         public bool Enabled = true;
         public int ReconnectIntervalSeconds = ConfigFiles.DefaultReconnectIntervalSeconds;
         public string ServerChatName = "";
-        public bool ReportCharacters = false;
+        public bool ReportCharacters = true;
+
+        /// <summary>
+        /// Set by Load when it brought a file from an older layout up to
+        /// ConfigFiles.Version. Not part of the file.
+        /// </summary>
+        public bool Upgraded;
 
         public bool SameConnection(ConfigValues other)
         {
@@ -40,6 +47,23 @@ namespace Takaro.Config
         // stable connection is retried within about a second whatever it says.
         public const int DefaultReconnectIntervalSeconds = 2;
 
+        /// <summary>
+        /// The layout version on the root element. Version 2 turned
+        /// ReportCharacters on by default. A file without it was written by an
+        /// older release, which always wrote ReportCharacters as false (its
+        /// default); that false is read as "not chosen" and the file is
+        /// upgraded once. In a version 2 file false is the admin's choice.
+        /// </summary>
+        public const int Version = 2;
+
+        // The line older releases wrote; Update swaps it for the current one,
+        // which is the end of Header.
+        private const string OldCharactersHint =
+            "  Turn it on only when your Takaro supports Characters, then restart the server.\n";
+        public const string CharactersHint =
+            "  It is on by default; set it to false to keep lives out of Takaro (for example\n"
+            + "  when your Takaro is older than 2.3), then restart the server.\n";
+
         public const string Header =
             "\n"
             + "  Takaro connection settings.\n"
@@ -56,11 +80,13 @@ namespace Takaro.Config
             + "  for \"Server\".\n"
             + "\n"
             + "  ReportCharacters tells Takaro about each life on a Permanent Death server.\n"
-            + "  Turn it on only when your Takaro supports Characters, then restart the server.\n";
+            + "  It is on by default; set it to false to keep lives out of Takaro (for example\n"
+            + "  when your Takaro is older than 2.3), then restart the server.\n";
 
         /// <summary>
-        /// Reads the config, creating it when it is missing and writing a new
-        /// identity into it when it has none; nothing else is ever written. A
+        /// Reads the config, creating it when it is missing, writing a new
+        /// identity into it when it has none and bringing a file from an older
+        /// layout up to Version; nothing else is ever written. A
         /// failed write is returned in writeError, and the values (with the new
         /// identity) are still returned. Throws XmlException when the file is
         /// not valid XML (for example, half-saved) and IOException when it
@@ -76,12 +102,15 @@ namespace Takaro.Config
             wrote = false;
             writeError = null;
             ConfigValues values;
+            bool needsUpgrade = false;
             if (File.Exists(path))
             {
-                values = Read(path);
-                if (values.IdentityToken != "")
+                values = Read(path, out int version);
+                needsUpgrade = version < Version;
+                if (values.IdentityToken != "" && !needsUpgrade)
                     return values;
-                values.IdentityToken = newIdentity();
+                if (values.IdentityToken == "")
+                    values.IdentityToken = newIdentity();
             }
             else
             {
@@ -91,7 +120,10 @@ namespace Takaro.Config
             try
             {
                 if (File.Exists(path))
-                    WriteIdentity(path, values.IdentityToken);
+                {
+                    Update(path, values);
+                    values.Upgraded = needsUpgrade;
+                }
                 else
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -110,9 +142,15 @@ namespace Takaro.Config
 
         public static ConfigValues Read(string path)
         {
+            return Read(path, out _);
+        }
+
+        public static ConfigValues Read(string path, out int version)
+        {
             var doc = new XmlDocument();
             doc.Load(path);
             var values = new ConfigValues();
+            version = FileVersion(doc);
             XmlNode chat = doc.DocumentElement?.SelectSingleNode("Chat");
             if (chat != null)
                 values.ServerChatName = Text(chat, "ServerChatName");
@@ -120,6 +158,8 @@ namespace Takaro.Config
             if (
                 players != null
                 && bool.TryParse(Text(players, "ReportCharacters"), out bool report)
+                // An older release wrote its default false into every file.
+                && (report || version >= Version)
             )
                 values.ReportCharacters = report;
             XmlNode webSocket = doc.DocumentElement?.SelectSingleNode("WebSocket");
@@ -147,7 +187,9 @@ namespace Takaro.Config
                 + "<!--"
                 + Header
                 + "-->\n"
-                + "<Takaro>\n"
+                + "<Takaro version=\""
+                + Version
+                + "\">\n"
                 + "  <WebSocket>\n"
                 + Element("Url", values.Url)
                 + Element("RegistrationToken", values.RegistrationToken)
@@ -164,22 +206,66 @@ namespace Takaro.Config
                 + "</Takaro>\n";
         }
 
-        // Sets IdentityToken, keeping the file's layout and comments.
-        private static void WriteIdentity(string path, string identityToken)
+        private static int FileVersion(XmlDocument doc)
+        {
+            string text = doc.DocumentElement?.GetAttribute("version") ?? "";
+            return int.TryParse(text, out int version) && version > 0 ? version : 1;
+        }
+
+        // Sets IdentityToken and, for a file from an older layout, the version
+        // and the ReportCharacters value Read gave it, keeping the file's
+        // layout, comments and every other setting.
+        private static void Update(string path, ConfigValues values)
         {
             var doc = new XmlDocument { PreserveWhitespace = true };
             doc.Load(path);
             XmlElement root = doc.DocumentElement;
             if (root == null)
                 throw new XmlException("no root element");
-            XmlNode webSocket = root.SelectSingleNode("WebSocket");
-            if (webSocket == null)
-                webSocket = root.AppendChild(doc.CreateElement("WebSocket"));
-            XmlNode node = webSocket.SelectSingleNode("IdentityToken");
+            SetChild(doc, root, "WebSocket", "IdentityToken", values.IdentityToken);
+            if (FileVersion(doc) < Version)
+            {
+                root.SetAttribute("version", Version.ToString());
+                SetChild(
+                    doc,
+                    root,
+                    "Players",
+                    "ReportCharacters",
+                    values.ReportCharacters ? "true" : "false"
+                );
+                foreach (XmlNode node in doc.ChildNodes)
+                {
+                    if (node is XmlComment comment && comment.Value.Contains(OldCharactersHint))
+                        comment.Value = comment.Value.Replace(OldCharactersHint, CharactersHint);
+                }
+            }
+            // No byte order mark: the file is rewritten in place and should
+            // differ from the admin's copy only in what changed.
+            WriteAtomically(
+                path,
+                tmp =>
+                {
+                    using (var writer = new StreamWriter(tmp, false, new UTF8Encoding(false)))
+                        doc.Save(writer);
+                }
+            );
+        }
+
+        private static void SetChild(
+            XmlDocument doc,
+            XmlElement root,
+            string section,
+            string name,
+            string value
+        )
+        {
+            XmlNode parent = root.SelectSingleNode(section);
+            if (parent == null)
+                parent = root.AppendChild(doc.CreateElement(section));
+            XmlNode node = parent.SelectSingleNode(name);
             if (node == null)
-                node = webSocket.AppendChild(doc.CreateElement("IdentityToken"));
-            node.InnerText = identityToken;
-            WriteAtomically(path, doc.Save);
+                node = parent.AppendChild(doc.CreateElement(name));
+            node.InnerText = value;
         }
 
         // A reader polling the file must never see it half-written. The

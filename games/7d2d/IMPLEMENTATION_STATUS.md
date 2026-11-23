@@ -255,7 +255,10 @@ mod/src/
   `progression.xml`, are left out so one bad name cannot fail the reading.
 - `players.characters` is declared only when the server's death penalty is Permanent Death: an
   account otherwise has one avatar per save, so Takaro's implicit Character fits. It needs a Takaro
-  version with Characters support. `held` is `server` and `ends` is `death`. The game has no character
+  version with Characters support (2.3 or later); `<ReportCharacters>` in Config.xml is on by default
+  and turns it off. Config.xml carries a layout version on its root: a file without one comes from
+  0.9 to 0.10, which wrote `false` as their default, so that `false` is read as unset and the file is
+  rewritten once as version 2 with `true`; in a version 2 file `false` is the admin's choice. `held` is `server` and `ends` is `death`. The game has no character
   id, so the id is `<gameId>-<life>`, with `life` kept in the player registry. `character` goes on
   `getPlayers`, `getPlayer` and every player event, and `player-death` carries `characterEnded`.
   The game resets the player at the respawn, so saves between the death and the `Died` respawn

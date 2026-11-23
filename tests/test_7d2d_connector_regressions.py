@@ -195,7 +195,7 @@ class SourceRegressionTests(unittest.TestCase):
         header_source = header_source.split('";\n', 1)[0] + '"'
         parts = re.findall(r'"((?:[^"\\]|\\.)*)"', header_source)
         header = "".join(part.encode().decode("unicode_escape") for part in parts)
-        self.assertIn("<!--" + header + "-->\n<Takaro>", readme)
+        self.assertIn("<!--" + header + '-->\n<Takaro version="2">', readme)
         self.assertIn("<RegistrationToken></RegistrationToken>", readme)
         self.assertNotIn("your-registration-token-here", readme)
         self.assertNotIn("Loaded Mod: Takaro (0.", readme)
