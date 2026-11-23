@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapPlayer, mapProgression } from '../dune/mapping.js';
+import { FIRST_LEVEL_XP, mapPlayer, mapProgression } from '../dune/mapping.js';
 import type { DuneProgressionRows } from '../dune/types.js';
 import { MAP_DIMENSIONS } from '../dune/mapDimensions.js';
 import { buildManifest } from '../takaro/capabilities.js';
@@ -41,10 +41,22 @@ describe('getPlayerProgression', () => {
     ]);
   });
 
-  it('a new character with no skill points is level 1', async () => {
+  it('a new character with no XP is level 0, as the game shows it', () => {
     expect(mapProgression({ character: level(0, 0, 0), specializations: [] })).toEqual([
-      { key: 'character', name: 'Level', level: 1, experience: 0 },
+      { key: 'character', name: 'Level', level: 0, experience: 0 },
     ]);
+    expect(mapProgression({ character: level(0, 0, FIRST_LEVEL_XP - 1), specializations: [] })[0]?.level).toBe(0);
+  });
+
+  it('a character reaches level 1 at the first level XP, before its first skill point', () => {
+    expect(mapProgression({ character: level(0, 0, FIRST_LEVEL_XP), specializations: [] })).toEqual([
+      { key: 'character', name: 'Level', level: 1, experience: FIRST_LEVEL_XP },
+    ]);
+  });
+
+  it('a skill point means level 2 whatever the XP total says', () => {
+    expect(mapProgression({ character: level(1, 0, 404), specializations: [] })[0]?.level).toBe(2);
+    expect(mapProgression({ character: level(1, 0, null), specializations: [] })[0]?.level).toBe(2);
   });
 
   it('keystone bonus points do not raise the level', () => {

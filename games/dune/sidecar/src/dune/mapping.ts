@@ -516,6 +516,9 @@ export function aggregateInventory(items: TakaroItem[]): TakaroItem[] {
   return out;
 }
 
+/** XP at which a new character reaches level 1, as the game shows it. Level 1 grants no skill point. */
+export const FIRST_LEVEL_XP = 100;
+
 const SPECIALIZATION_TRACKS: Record<string, { key: string; name: string }> = {
   Crafting: { key: 'specialization.crafting', name: 'Crafting Specialization' },
   Gathering: { key: 'specialization.gathering', name: 'Gathering Specialization' },
@@ -525,9 +528,10 @@ const SPECIALIZATION_TRACKS: Record<string, { key: string; name: string }> = {
 };
 
 /**
- * The game stores no level, it derives one from XP through a curve in its cooked content. Every level past the first
- * grants one skill point and keystones add theirs on top, both in `TotalSkillPoints`, so the level is that total minus
- * the keystone bonus, plus the first level. `progress` is left out for the character because it needs that curve.
+ * The game stores no level, it derives one from XP through a curve in its cooked content. A new character is level 0
+ * and reaches level 1 at {@link FIRST_LEVEL_XP} XP without a skill point. Every level after that grants one skill point
+ * and keystones add theirs on top, both in `TotalSkillPoints`, so from level 1 on the level is that total minus the
+ * keystone bonus, plus one. `progress` is left out for the character because it needs that curve.
  *
  * A row that cannot make a valid track is dropped rather than answered: one invalid track fails the whole reading, and
  * a track missing from a reading is merely unknown to Takaro.
@@ -536,8 +540,9 @@ export function mapProgression(rows: DuneProgressionRows): TakaroProgressionTrac
   const tracks: TakaroProgressionTrack[] = [];
   const character = rows.character;
   if (character && Number.isInteger(character.totalSkillPoints)) {
-    const level = character.totalSkillPoints! - (character.keystoneBonusSkillPoints ?? 0) + 1;
-    if (Number.isInteger(level) && level >= 1) {
+    const earned = character.totalSkillPoints! - (character.keystoneBonusSkillPoints ?? 0);
+    const level = earned > 0 || (character.totalXpEarned ?? 0) >= FIRST_LEVEL_XP ? earned + 1 : 0;
+    if (Number.isInteger(level) && level >= 0) {
       tracks.push({
         key: 'character',
         name: 'Level',
