@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/gettakaro/connectors/compare/ark-v0.5.1...ark-v0.6.0) (2026-11-23)
+
+
+### Features
+
+* **ark:** report player level and experience to Takaro ([#805](https://github.com/gettakaro/connectors/issues/805)) ([0760f27](https://github.com/gettakaro/connectors/commit/0760f2757e85bc22aac7d6f3d204cfd0fdd16414))
+
 ## [0.5.1](https://github.com/gettakaro/connectors/compare/ark-v0.5.0...ark-v0.5.1) (2026-11-14)
 
 
