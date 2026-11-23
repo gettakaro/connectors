@@ -131,7 +131,7 @@ public sealed class MainThreadActionSchedulerTests
         public Task<TakaroActionResult> GetMapTileAsync(int x, int y, int z, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> TeleportPlayerAsync(string identifier, TakaroPosition position, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Unexpected();
-        public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) => Unexpected();
+        public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, DateTimeOffset? expiresAt, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> ListBansAsync(CancellationToken cancellationToken = default) => Unexpected();
         public Task<TakaroActionResult> ShutdownAsync(CancellationToken cancellationToken = default) => Unexpected();

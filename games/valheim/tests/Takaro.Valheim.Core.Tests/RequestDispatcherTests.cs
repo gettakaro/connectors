@@ -98,7 +98,7 @@ public sealed class RequestDispatcherTests
                 "location:steam:76561198000000001",
                 "inventory:76561198000000001",
                 "kick:Steam_2:spam",
-                "ban:Steam_3:cheating",
+                "ban:Steam_3:cheating:2031-12-31T23:59:59.0000000+00:00",
                 "unban:Steam_3"
             },
             adapter.Calls);
@@ -494,8 +494,8 @@ public sealed class RequestDispatcherTests
             return Task.FromResult(TakaroActionResult.Ok(new { kicked = true }));
         }
 
-        public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) =>
-            RecordCall($"ban:{identifier}:{reason}", Task.FromResult(TakaroActionResult.Ok(new { banned = true })));
+        public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, DateTimeOffset? expiresAt, CancellationToken cancellationToken = default) =>
+            RecordCall($"ban:{identifier}:{reason}:{expiresAt:O}", Task.FromResult(TakaroActionResult.Ok(new { banned = true })));
 
         public Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
             RecordCall($"unban:{identifier}", Task.FromResult(TakaroActionResult.Ok(new { unbanned = true })));

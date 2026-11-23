@@ -6,19 +6,22 @@ public sealed record ValheimBan(
     string GameId,
     string Name,
     string? SteamId = null,
-    string? PlatformId = null);
+    string? PlatformId = null,
+    string? Reason = null,
+    DateTimeOffset? ExpiresAt = null);
 
 public static class ModerationFactory
 {
     /// <summary>
     /// Builds the listBans payload. Takaro writes each entry's <c>name</c> onto the matched player
     /// and rejects the whole list when one name is missing, so a ban without a real player name is
-    /// left out; Valheim still enforces it from bannedlist.txt.
+    /// left out; Valheim still enforces it from bannedlist.txt. Reason and expiry come from the
+    /// connector's own record of the ban, since the game keeps neither.
     /// </summary>
     public static object[] CreateBanEntries(IEnumerable<ValheimBan> bans) =>
         bans
             .Where(ban => !string.IsNullOrWhiteSpace(ban.GameId) && !IsPlaceholderName(ban.GameId, ban.Name))
-            .Select(ban => new BanEntry(ToBannedPlayer(ban), string.Empty, null))
+            .Select(ban => new BanEntry(ToBannedPlayer(ban), ban.Reason ?? string.Empty, ban.ExpiresAt))
             .ToArray();
 
     /// <summary>

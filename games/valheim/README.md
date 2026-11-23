@@ -109,7 +109,7 @@ Checked on Valheim 1.0.21 (Steam build 26266951), 2026-11-23. ✅ works, ⚠️ 
 | Send a message | ✅ | Broadcasts and whispers. |
 | Console commands | ⚠️ | Allowlisted commands only (default `help`). |
 | Kick | ✅ | |
-| Ban and unban | ⚠️ | The reason is discarded. |
+| Ban and unban | ✅ | Timed bans end on time. The game stores only the banned id, so the connector keeps the reason and end itself. |
 | Ban list | ✅ | A ban for someone the server has never seen (no name known) stays in the game but is not shown in Takaro. |
 | Give an item | ✅ | Dropped at the player's feet. |
 | Shop | ✅ | Delivered at the buyer's feet. |

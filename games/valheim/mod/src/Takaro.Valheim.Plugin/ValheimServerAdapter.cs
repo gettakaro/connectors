@@ -19,6 +19,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     private readonly Dictionary<string, HashSet<string>> banAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> banNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly WorldMapService worldMap;
+    private readonly BanTerms banTerms;
 
     public ValheimServerAdapter(
         ManualLogSource logger,
@@ -27,8 +28,10 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         ValheimPlayerResolver playerResolver,
         CompanionInventoryCache companionInventory,
         CompanionProgressionCache companionProgression,
-        WorldMapService worldMap)
+        WorldMapService worldMap,
+        BanTerms banTerms)
     {
+        this.banTerms = banTerms ?? throw new ArgumentNullException(nameof(banTerms));
         this.logger = logger;
         this.worldMap = worldMap ?? throw new ArgumentNullException(nameof(worldMap));
         commandPolicy = new ConsoleCommandPolicy(config.CommandAllowlistExact, config.CommandAllowlistPrefixes);
@@ -331,7 +334,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
         var items = scene.m_prefabs
             .Select(prefab => new { Prefab = prefab, ItemDrop = prefab.GetComponent<ItemDrop>() })
-            .Where(entry => entry.ItemDrop != null)
+            .Where(entry => entry.ItemDrop != null && IsPlayerItem(entry.ItemDrop))
             .Select(entry => new
             {
                 code = entry.Prefab.name,
@@ -344,9 +347,17 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             .OrderBy(item => item.code)
             .ToArray();
 
-        logger.LogInfo($"Takaro Valheim listItems returned {items.Length} item prefab(s).");
+        logger.LogInfo($"Takaro Valheim listItems returned {items.Length} item prefab(s); creature-only gear without an inventory icon left out.");
         return Task.FromResult(RuntimeArrayActionPolicy.FromSource(true, items, "Valheim item prefab registry"));
     }
+
+    /// <summary>
+    /// True for items a player can hold. Creature attacks and creature-only gear (Abomination_attack1,
+    /// draugr_sword, Charred_Helmet, NPC hair) are item prefabs too, but have no inventory icon; no
+    /// recipe makes them and nothing drops them.
+    /// </summary>
+    private static bool IsPlayerItem(ItemDrop itemDrop) =>
+        itemDrop.m_itemData?.m_shared?.m_icons is { Length: > 0 } icons && icons.Any(icon => icon != null);
 
     public Task<TakaroActionResult> ListEntitiesAsync(CancellationToken cancellationToken = default)
     {
@@ -465,7 +476,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         return Task.FromResult(TakaroActionResult.Ok());
     }
 
-    public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default)
+    public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, DateTimeOffset? expiresAt, CancellationToken cancellationToken = default)
     {
         var znet = ZNet.instance;
         if (znet is null)
@@ -483,13 +494,15 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
 
         znet.Ban(primaryIdentifier);
         RememberBanAliases(primaryIdentifier, displayName, identifier, player, peer);
+        RecordBanTerms(primaryIdentifier, reason, expiresAt);
 
         if (peer is not null)
         {
             peer.m_rpc?.Invoke("Kicked");
         }
 
-        logger.LogInfo($"Takaro Valheim banned {displayName ?? "<unknown name>"} ({primaryIdentifier}). Reason: {reason ?? "<none>"}.");
+        logger.LogInfo(
+            $"Takaro Valheim banned {displayName ?? "<unknown name>"} ({primaryIdentifier}) until {(expiresAt is { } end ? end.ToString("O") : "lifted")}. Reason: {reason ?? "<none>"}.");
         return Task.FromResult(TakaroActionResult.Ok());
     }
 
@@ -514,6 +527,8 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             banNames.Remove(candidate);
         }
 
+        ForgetBanTerms(candidates);
+
         logger.LogInfo($"Takaro Valheim unban requested for '{identifier}', removed {candidates.Length} matching alias(es).");
         return Task.FromResult(TakaroActionResult.Ok());
     }
@@ -530,12 +545,18 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
         }
 
         var bans = network.Banned
-            .Select(ban => new ValheimBan(
-                GameId: ban,
-                Name: ModerationFactory.PickPlayerName(
-                    ban,
-                    banNames.TryGetValue(ban, out var banName) ? banName : null,
-                    playerResolver.TryGetKnownName(ban, out var knownName) ? knownName : null) ?? string.Empty))
+            .Select(ban =>
+            {
+                var term = banTerms.TryGet(ban, out var stored) ? stored : null;
+                return new ValheimBan(
+                    GameId: ban,
+                    Name: ModerationFactory.PickPlayerName(
+                        ban,
+                        banNames.TryGetValue(ban, out var banName) ? banName : null,
+                        playerResolver.TryGetKnownName(ban, out var knownName) ? knownName : null) ?? string.Empty,
+                    Reason: term?.Reason,
+                    ExpiresAt: term?.ExpiresAt);
+            })
             .ToArray();
         var entries = ModerationFactory.CreateBanEntries(bans);
 
@@ -560,6 +581,68 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
             "ShowMessage",
             (int)MessageHud.MessageType.TopLeft,
             $"Takaro: {message}");
+
+    /// <summary>
+    /// Lifts bans whose time is up. Valheim's ban list has no expiry, so the connector ends a timed
+    /// ban itself. Runs on the main thread from the plugin's Update; cheap when nothing is due.
+    /// </summary>
+    public void LiftExpiredBans(DateTimeOffset now)
+    {
+        var znet = ZNet.instance;
+        if (znet?.Banned is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var banned = znet.Banned.ToArray();
+            banTerms.Retain(banned);
+            foreach (var due in banTerms.Due(now))
+            {
+                var matches = banned
+                    .Where(ban => string.Equals(PlayerMapper.ToCanonicalPlatformUserId(ban), due, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                foreach (var ban in matches)
+                {
+                    znet.Unban(ban);
+                    banAliases.Remove(ban);
+                    banNames.Remove(ban);
+                }
+
+                banTerms.Forget(new[] { due });
+                logger.LogInfo($"Takaro Valheim lifted the expired ban of {due}.");
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning($"Takaro Valheim could not lift expired bans: {exception.Message}");
+        }
+    }
+
+    private void RecordBanTerms(string gameId, string? reason, DateTimeOffset? expiresAt)
+    {
+        try
+        {
+            banTerms.Record(gameId, reason, expiresAt);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning($"Takaro Valheim could not store the ban terms of {gameId}: {exception.Message}");
+        }
+    }
+
+    private void ForgetBanTerms(IEnumerable<string> gameIds)
+    {
+        try
+        {
+            banTerms.Forget(gameIds);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning($"Takaro Valheim could not drop ban terms: {exception.Message}");
+        }
+    }
 
     private void RememberBanAliases(string primaryIdentifier, string? displayName, string requestedIdentifier, TakaroPlayer? player, ZNetPeer? peer)
     {
@@ -790,7 +873,7 @@ public sealed class ValheimServerAdapter : IValheimTakaroAdapter
     public Task<TakaroActionResult> KickPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable moderation."));
 
-    public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, CancellationToken cancellationToken = default) =>
+    public Task<TakaroActionResult> BanPlayerAsync(string identifier, string? reason, DateTimeOffset? expiresAt, CancellationToken cancellationToken = default) =>
         Task.FromResult(TakaroActionResult.Error("scaffold_mode", "Build with Valheim references to enable moderation."));
 
     public Task<TakaroActionResult> UnbanPlayerAsync(string identifier, CancellationToken cancellationToken = default) =>
