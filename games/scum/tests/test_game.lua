@@ -554,6 +554,16 @@ t.test("giveItem with a full inventory: items stay at the feet, the first goes i
   t.eq(W.g:give_item({ gameId = ID1, item = "Nope", amount = 1 }).ok, false)
 end)
 
+t.test("giveItem above the per-give limit is refused before anything spawns, never shortened", function()
+  local W = world()
+  W.add_pc(ID1, "Alice")
+  local r = W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 60 })
+  t.eq(r.ok, false)
+  t.eq(r.reason, "amount 60 is above the limit of 50 per give")
+  t.eq(#W.spawned, 0, "nothing spawned")
+  t.eq(W.g:give_item({ gameId = ID1, item = "Weapon_M9", amount = 50 }).ok, true, "the limit itself is allowed")
+end)
+
 t.test("events: login/logout from the login log, state dedup, IP kept, banned login queued for a kick", function()
   local W = world()
   W.g:start_events(W.events)

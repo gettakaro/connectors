@@ -36,6 +36,7 @@ M.CATALOG_BUDGET_US = 4000      -- game-thread time per 100 ms tick for building
 M.TAIL_EVERY_MS = 1000
 M.BAN_CHECK_EVERY_MS = 10000
 M.CATEGORIES = { "login", "chat", "kill", "admin" }
+-- Items spawned per give (each spawn runs on the game thread). A larger give is refused, never shortened.
 M.MAX_GIVE = 50
 M.HANDS_DELAY_MS = 1500
 M.DEATH_POLL_MS = 1000
@@ -433,13 +434,16 @@ function Game:give_item(params)
   if not pc then return { ok = false, reason = "player is offline" } end
   local prisoner = self:pawn(pc)
   if not prisoner then return { ok = false, reason = "player has no character" } end
+  local n = params.amount or 1
+  if n > M.MAX_GIVE then
+    return { ok = false, reason = string.format("amount %d is above the limit of %d per give", n, M.MAX_GIVE) }
+  end
   local cls, why = self:load_class("Item", params.item)
   if not cls then return { ok = false, reason = why } end
   local gps = self:static("_gps", M.UE.GameplayStatics)
   local at = prisoner:K2_GetActorLocation()
   local xf = { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = at.X, Y = at.Y, Z = at.Z + 50 },
     Scale3D = { X = 1, Y = 1, Z = 1 } }
-  local n = math.min(params.amount or 1, M.MAX_GIVE)
   -- Inventory: UInventoryUserComponent (on the controller) :Server_CharacterInventoryComponent_PickupItem(prisoner
   -- inventory, item) is the server side of the player's own "pick up"; called on the server it runs locally and puts
   -- the item into a free clothes/backpack slot (live 2026-10-14: 2 apples -> shirt + pants pockets, ground empty).

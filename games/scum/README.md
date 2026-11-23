@@ -78,7 +78,7 @@ Checked on SCUM 1.3.6.2.179673 (Steam build 26790009), 2026-11-22. ✅ works, �
 | Kick | ✅ | |
 | Ban and unban | ✅ | Timed and permanent, also offline. |
 | Ban list | ✅ | |
-| Give an item | ⚠️ | Drops at the player's feet when SCUM refuses the pickup. |
+| Give an item | ⚠️ | Up to 50 per give; a larger give is refused. Drops at the player's feet when SCUM refuses the pickup. |
 | Shop | ✅ | |
 | Shut down the server | ✅ | Needs `ENABLE_DESTRUCTIVE_COMMANDS=true`. |
 | Player joined / left | ✅ | |
