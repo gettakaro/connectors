@@ -80,6 +80,56 @@ class ProtocolV1Test {
     }
 
     @Test
+    void manifestDeclaresProgressionAsServerOwned() {
+        JsonObject progression = null;
+        for (JsonElement e : Capabilities.manifest(List.of())) {
+            if (e.getAsJsonObject().get("name").getAsString().equals("players.progression")) {
+                progression = e.getAsJsonObject();
+            }
+        }
+        assertNotNull(progression);
+        assertEquals("server", progression.getAsJsonObject("parameters").get("source").getAsString());
+    }
+
+    private JsonObject askProgression() {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.onMessage("{\"type\":\"request\",\"requestId\":\"p1\",\"payload\":{\"action\":\"getPlayerProgression\","
+                + "\"args\":\"{\\\"gameId\\\":\\\"bob\\\"}\"}}");
+        return frame(0);
+    }
+
+    @Test
+    void progressionOfAnUnknownPlayerIsNullNotAnError() {
+        JsonObject response = askProgression();
+        assertEquals("response", response.get("type").getAsString());
+        assertTrue(response.get("payload").isJsonNull());
+        assertFalse(response.has("error"));
+    }
+
+    @Test
+    void progressionOfAKnownPlayerWithoutTracksIsAnEmptyList() {
+        adapter.progression = List.of();
+        assertEquals(0, askProgression().getAsJsonArray("payload").size());
+    }
+
+    @Test
+    void progressionTrackLeavesOutFieldsItDoesNotHave() {
+        adapter.progression = List.of(
+                new ProgressionTrack("longBlade", "Long Blade", 3, 412.5, 0.25),
+                new ProgressionTrack("axe", null, 10, null, null));
+        JsonArray tracks = askProgression().getAsJsonArray("payload");
+        JsonObject full = tracks.get(0).getAsJsonObject();
+        assertEquals("longBlade", full.get("key").getAsString());
+        assertEquals("Long Blade", full.get("name").getAsString());
+        assertEquals(3, full.get("level").getAsInt());
+        assertEquals(412.5, full.get("experience").getAsDouble());
+        assertEquals(0.25, full.get("progress").getAsDouble());
+        assertEquals(Set.of("key", "level"), tracks.get(1).getAsJsonObject().keySet());
+    }
+
+    @Test
     void mapDimensionCarriesAxesBoundsAndImageSource() {
         JsonObject dim = Capabilities.dimensionJson(DIM);
         assertEquals("knox-county", dim.get("id").getAsString());
@@ -220,6 +270,68 @@ class ProtocolV1Test {
     }
 
     @Test
+    void charactersAreDeclaredAsServerHeldAndEndedByDeath() {
+        JsonObject parameters = null;
+        for (JsonElement e : Capabilities.manifest(List.of())) {
+            if (e.getAsJsonObject().get("name").getAsString().equals("players.characters")) {
+                parameters = e.getAsJsonObject().getAsJsonObject("parameters");
+            }
+        }
+        assertNotNull(parameters);
+        assertEquals("server", parameters.get("held").getAsString());
+        assertEquals("death", parameters.getAsJsonArray("ends").get(0).getAsString());
+    }
+
+    @Test
+    void version1PlayersAndEventsCarryTheCharacter() throws Exception {
+        PlayerInfo player = new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0)
+                .withCharacter(new GameCharacter("id-1", "Valencia Gregory"));
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.emitPlayerConnected(player);
+        client.emitChatMessage(player, "global", "hi");
+        client.emitEntityKilled(player, "Zombie", null);
+        client.emitPlayerDeath(player, null, 1, 2, 0, null);
+        Thread.sleep(200);
+        List<JsonObject> events = events();
+        assertEquals(4, events.size());
+        for (JsonObject event : events) {
+            JsonObject character = event.getAsJsonObject("payload").getAsJsonObject("data")
+                    .getAsJsonObject("player").getAsJsonObject("character");
+            assertEquals("id-1", character.get("id").getAsString());
+            assertEquals("Valencia Gregory", character.get("name").getAsString());
+        }
+        JsonObject death = events.get(3).getAsJsonObject("payload").getAsJsonObject("data");
+        assertTrue(death.get("characterEnded").getAsBoolean());
+    }
+
+    @Test
+    void aPlayerWithoutACharacterSendsNoCharacterField() throws Exception {
+        client.onOpen(null);
+        identify(1);
+        sent.clear();
+        client.emitChatMessage(new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0), "global", "hi");
+        Thread.sleep(200);
+        assertFalse(events().get(0).getAsJsonObject("payload").getAsJsonObject("data")
+                .getAsJsonObject("player").has("character"));
+    }
+
+    @Test
+    void version0CarriesNoCharacterData() throws Exception {
+        PlayerInfo player = new PlayerInfo("p", "P", null, null, null, "steam:1", null, 0)
+                .withCharacter(new GameCharacter("id-1", "Valencia Gregory"));
+        client.onOpen(null);
+        identify(0);
+        sent.clear();
+        client.emitPlayerDeath(player, null, 1, 2, 0, null);
+        Thread.sleep(200);
+        JsonObject death = events().get(0).getAsJsonObject("payload").getAsJsonObject("data");
+        assertFalse(death.has("characterEnded"));
+        assertFalse(death.getAsJsonObject("player").has("character"));
+    }
+
+    @Test
     void positionsStayWithoutDimensionOnVersion0OrWithoutAMap() throws Exception {
         adapter.location = new PlayerLocation(1, 2, 0, null);
         client.onOpen(null);
@@ -301,6 +413,26 @@ class ProtocolV1Test {
         assertEquals("capabilities", msg.get("type").getAsString());
         assertTrue(msg.has("requestId"));
         assertTrue(names(msg.getAsJsonObject("payload").getAsJsonArray("capabilities")).contains("map"));
+    }
+
+    @Test
+    void aMapThatLoadsDuringIdentifyIsDeclaredOnceIdentified() {
+        client.onOpen(null);
+        sent.clear();
+        adapter.dimensions = List.of(DIM);
+        identify(1);
+        JsonObject msg = frame(0);
+        assertEquals("capabilities", msg.get("type").getAsString());
+        assertTrue(names(msg.getAsJsonObject("payload").getAsJsonArray("capabilities")).contains("map"));
+    }
+
+    @Test
+    void anUnchangedMapSendsNoSecondManifest() {
+        adapter.dimensions = List.of(DIM);
+        client.onOpen(null);
+        sent.clear();
+        identify(1);
+        assertTrue(sent.stream().noneMatch(raw -> raw.contains("\"type\":\"capabilities\"")));
     }
 
     @Test
@@ -459,6 +591,7 @@ class ProtocolV1Test {
 
     private static class FakeAdapter implements GameAdapter {
         List<MapDimension> dimensions = List.of();
+        List<ProgressionTrack> progression = null;
         PlayerLocation location;
         List<GameLocation> locations = List.of();
         RuntimeException failGiveWith;
@@ -476,6 +609,7 @@ class ProtocolV1Test {
         @Override public List<PlayerInfo> getPlayers() { return List.of(); }
         @Override public PlayerLocation getPlayerLocation(String gameId) { return location; }
         @Override public List<InventoryItem> getPlayerInventory(String gameId) { return List.of(); }
+        @Override public List<ProgressionTrack> getPlayerProgression(String gameId) { return progression; }
         @Override public List<GameItem> listItems() { return List.of(); }
         @Override public List<GameEntity> listEntities() { return List.of(); }
         @Override public List<GameLocation> listLocations() { return locations; }

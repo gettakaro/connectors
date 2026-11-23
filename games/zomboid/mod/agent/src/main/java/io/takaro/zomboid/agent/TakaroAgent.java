@@ -60,9 +60,11 @@ public final class TakaroAgent {
             MainThreadQueue queue = new MainThreadQueue();
             PlayerRegistry registry = new PlayerRegistry();
             BanStore banStore = new BanStore();
-            Reconciler reconciler = new Reconciler(registry, banStore);
-            ZomboidAdapter adapter = new ZomboidAdapter(queue, registry, reconciler, banStore,
-                    config.isDebugEnabled());
+            Progression progression = new Progression();
+            Characters characters = new Characters(() -> Pz.characterFile());
+            Reconciler reconciler = new Reconciler(registry, banStore, progression, characters);
+            ZomboidAdapter adapter = new ZomboidAdapter(queue, registry, reconciler, banStore, progression,
+                    characters, config.isDebugEnabled());
             TakaroConnector connector = new TakaroConnector(adapter, config);
 
             // Connector is started from the first tick (right JVM + main thread). Only
@@ -87,7 +89,7 @@ public final class TakaroAgent {
                     }
                 });
             };
-            Bridge.configure(queue, reconciler, registry, starter,
+            Bridge.configure(queue, reconciler, registry, progression, characters, starter,
                     loader.isLogEvents(), loader.isDebugCatalog());
 
             // --- install hooks (binds only in the JVM that loads the game classes) ---

@@ -320,6 +320,12 @@ class ActionRoutingTest {
     }
 
     @Test
+    void progressionIsNotAnActionOnProtocol0() {
+        client.onMessage("{\"type\":\"request\",\"requestId\":\"p0\",\"payload\":{\"action\":\"getPlayerProgression\",\"args\":\"{}\"}}");
+        assertTrue(sentMessages.get(0).contains("Action not implemented"), sentMessages.get(0));
+    }
+
+    @Test
     void unknownActionReturnsError() {
         sendRequest("nonExistentAction", "req-err", "{}");
         // Unknown actions respond synchronously, no need to wait

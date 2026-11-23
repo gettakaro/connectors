@@ -20,17 +20,25 @@ import java.util.Map;
  */
 public final class Reconciler {
 
+    private static final long PROGRESSION_INTERVAL_MS = 10_000L;
+
     private final PlayerRegistry registry;
     private final BanStore banStore;
+    private final Progression progression;
+    private final Characters characters;
     private volatile EventEmitter emitter;
+    private long lastProgressionMs;
 
     private Map<String, PlayerInfo> previous = new LinkedHashMap<>();
     private volatile boolean dirty;
     private boolean seeded;
 
-    public Reconciler(PlayerRegistry registry, BanStore banStore) {
+    public Reconciler(PlayerRegistry registry, BanStore banStore, Progression progression,
+                      Characters characters) {
         this.registry = registry;
         this.banStore = banStore;
+        this.progression = progression;
+        this.characters = characters;
     }
 
     public void setEmitter(EventEmitter emitter) {
@@ -87,12 +95,27 @@ public final class Reconciler {
         registry.set(new ArrayList<>(current.values()));
 
         expireBans();
+        refreshProgression();
+    }
+
+    private void refreshProgression() {
+        long now = System.currentTimeMillis();
+        if (now - lastProgressionMs < PROGRESSION_INTERVAL_MS) {
+            return;
+        }
+        lastProgressionMs = now;
+        try {
+            Pz.readProgression(progression, characters);
+        } catch (Throwable t) {
+            AgentLog.error("reconciler: progression read failed", t);
+        }
     }
 
     private Map<String, PlayerInfo> snapshotByGameId() {
+        Pz.observeCharacters(characters, progression);
         Map<String, PlayerInfo> map = new LinkedHashMap<>();
         for (PlayerInfo p : Pz.getPlayers()) {
-            map.put(p.gameId(), p);
+            map.put(p.gameId(), p.withCharacter(characters.current(p.gameId())));
         }
         return map;
     }
