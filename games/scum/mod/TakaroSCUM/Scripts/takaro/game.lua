@@ -39,6 +39,7 @@ M.CATEGORIES = { "login", "chat", "kill", "admin" }
 -- Items spawned per give (each spawn runs on the game thread). A larger give is refused, never shortened.
 M.MAX_GIVE = 50
 M.HANDS_DELAY_MS = 1500
+M.ANNOUNCE_GRACE_MS = 20000 -- getPlayers waits this long for the login-log line before announcing a player without a character
 M.DEATH_POLL_MS = 1000
 M.DEATH_HOLD_MS = 3000 -- wait for a kill-log line (it names the attacker) before reporting a plain death
 M.PROGRESSION_SCAN_MS = 15000    -- how often the skill cache looks for players to read (FindAllOf costs ~5 ms)
@@ -1109,10 +1110,27 @@ function Game:mark_online(p)
 end
 
 -- getPlayers is the authoritative online list: a player we never announced gets player-connected here.
+-- A dead player has no prisoner, so getPlayers cannot name the character. Takaro only switches characters on
+-- player-connected, so such a player is left to the login-log line (which has the profile id) for a short grace.
 function Game:reconcile_online(list)
   if not self.events then return end
+  local now = self:now_ms()
+  local seen = {}
+  for _, p in ipairs(list) do seen[p.steamId] = true end
+  self.unnamedSince = self.unnamedSince or {}
+  for id in pairs(self.unnamedSince) do
+    if not seen[id] then self.unnamedSince[id] = nil end -- left before being announced: a rejoin starts a new grace
+  end
   for _, p in ipairs(list) do
-    if self:mark_online(p) then self.events:player_connected(p) end
+    if not self.online[p.steamId] then
+      local first = self.unnamedSince[p.steamId]
+      if p.character or (first and now - first >= M.ANNOUNCE_GRACE_MS) then
+        self.unnamedSince[p.steamId] = nil
+        if self:mark_online(p) then self.events:player_connected(p) end
+      elseif not first then
+        self.unnamedSince[p.steamId] = now
+      end
+    end
   end
 end
 
@@ -1129,12 +1147,14 @@ function Game:on_login(e)
       self.kickQueue[#self.kickQueue + 1] = { id = e.steamId, tries = 0 }
       return -- a refused login is not a session: no player-connected
     end
+    if self.unnamedSince then self.unnamedSince[e.steamId] = nil end
     if self:mark_online({ steamId = e.steamId }) then
       self.events:player_connected({ steamId = e.steamId, name = e.name, ip = e.ip, character = character })
     end
   else
     self.pendingDeaths[e.steamId] = nil
     self.alive[e.steamId] = nil
+    if self.unnamedSince then self.unnamedSince[e.steamId] = nil end
     if self.online[e.steamId] then
       self.online[e.steamId] = nil
       self.events:player_disconnected({ steamId = e.steamId, name = e.name, ip = e.ip, character = character })

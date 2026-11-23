@@ -821,6 +821,57 @@ t.test("location of an offline player is the last position seen, never an error 
   t.eq(W.g:get_player_location({ gameId = ID2 }).ok, false, "never seen: nothing to report")
 end)
 
+t.test("a player getPlayers sees without a character waits for the login line, which names the character", function()
+  local W = world()
+  W.g:start_events(W.events)
+  local f = LOGS .. "/login_20261013210000.log"
+  W.files[f] = ""
+  W.g:tick(1000)
+  local pc = W.add_pc(ID1, "Alice") or W.pcs[#W.pcs]
+  pc:GetPrisoner()._serverUserProfileId = { Value = 0 } -- dead at join: no prisoner profile yet
+  W.g:list_players()
+  t.eq(#W.events.got, 0, "not announced without a character")
+  W.files[f] = W.files[f] .. u16("2026.10.13-21.00.05: '10.0.0.5 " .. ID1 .. ":Alice(6)' logged in at: X=1 Y=2 Z=3\r\n")
+  W.g:tick(3000)
+  t.eq(#W.events.got, 1)
+  t.deep(W.events.got[1][2].character, { id = "6", name = "Alice" })
+  W.g:list_players()
+  t.eq(#W.events.got, 1, "no second connect")
+end)
+
+t.test("a player without a character and without a login line is still announced after the grace", function()
+  local W = world()
+  W.g:start_events(W.events)
+  local pc = W.add_pc(ID1, "Alice") or W.pcs[#W.pcs]
+  pc:GetPrisoner()._serverUserProfileId = { Value = 0 }
+  local grace = require("takaro.game").ANNOUNCE_GRACE_MS
+  W.g:list_players()
+  t.eq(#W.events.got, 0)
+  W.now = W.now + (grace - 1000) * 1000
+  W.g:list_players()
+  t.eq(#W.events.got, 0, "still within the grace")
+  W.now = W.now + 2000 * 1000
+  W.g:list_players()
+  t.eq(#W.events.got, 1)
+  t.eq(W.events.got[1][2].character, nil)
+end)
+
+t.test("a player who leaves unannounced starts a new grace on rejoin", function()
+  local W = world()
+  W.g:start_events(W.events)
+  local grace = require("takaro.game").ANNOUNCE_GRACE_MS
+  local pc = W.add_pc(ID1, "Alice") or W.pcs[#W.pcs]
+  pc:GetPrisoner()._serverUserProfileId = { Value = 0 }
+  W.g:list_players()
+  W.pcs[#W.pcs] = nil -- gone before the grace ended
+  W.g:list_players()
+  W.now = W.now + (grace + 1000) * 1000
+  pc = W.add_pc(ID1, "Alice") or W.pcs[#W.pcs]
+  pc:GetPrisoner()._serverUserProfileId = { Value = 0 }
+  W.g:list_players()
+  t.eq(#W.events.got, 0, "the rejoin waits again for its login line")
+end)
+
 t.test("hot reload with a player online: no second player-connected from the next getPlayers", function()
   local W = world()
   W.add_pc(ID1, "Alice")
@@ -828,7 +879,8 @@ t.test("hot reload with a player online: no second player-connected from the nex
   W.g:list_players()
   t.eq(#W.events.got, 0)
   -- a new player after the reload is announced as usual
-  W.add_pc(ID2, "Bob")
+  local bob = W.add_pc(ID2, "Bob") or W.pcs[#W.pcs]
+  bob:GetPrisoner()._serverUserProfileId = { Value = 9 }
   W.g:list_players()
   t.eq(#W.events.got, 1)
   t.eq(W.events.got[1][2].steamId, ID2)

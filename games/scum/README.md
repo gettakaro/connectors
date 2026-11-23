@@ -59,7 +59,7 @@ One to two minutes after start, `ue4ss\Mods\TakaroSCUM\takaro.log` shows
 
 ## What works, what doesn't
 
-Checked on SCUM 1.3.6.2.179673 (Steam build 26790009), 2026-11-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on SCUM 1.3.6.3.180352 (Steam build 26864403), 2026-11-23. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
