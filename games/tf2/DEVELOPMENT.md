@@ -29,10 +29,10 @@ The zip mirrors the server's `tf/` folder (`addons/sourcemod/...` and `cfg/sourc
 ## Build
 
 ```bash
-games/tf2/scripts/build-release.sh 0.1.0 dist --target linux-25995664
-games/tf2/scripts/build-release.sh 0.1.0 dist --target windows-25995664
+games/tf2/scripts/build-release.sh 0.1.0 dist --target linux-26334371
+games/tf2/scripts/build-release.sh 0.1.0 dist --target windows-26334371
 # or through the maintenance tool, as CI does:
-maintenance/bin/takaro-maint build --game tf2 --target linux-25995664 --version 0.1.0 --out dist --toolchain container
+maintenance/bin/takaro-maint build --game tf2 --target linux-26334371 --version 0.1.0 --out dist --toolchain container
 ```
 
 Everything the build downloads is pinned in `catalog/tf2/targets/<platform>-<build>.json`: the
@@ -65,7 +65,7 @@ installed, and the `ws` npm package for the fake Takaro:
 ```bash
 npm install --prefix games/tf2/_data/harness ws@8
 TF2_SERVER_ROOT=/path/to/tf2-server \
-TF2_PACKAGE=games/tf2/_data/dist/<fp16>/takaro-tf2-linux-25995664-0.1.0.zip \
+TF2_PACKAGE=games/tf2/_data/dist/<fp16>/takaro-tf2-linux-26334371-0.1.0.zip \
   games/tf2/scripts/run-live-smoke.sh
 ```
 

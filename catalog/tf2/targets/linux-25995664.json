@@ -4,7 +4,7 @@
   "game": "tf2",
   "platform": "linux",
   "revision": "25995664",
-  "default": true,
+  "default": false,
   "support": {
     "status": "candidate",
     "since": "2026-10-20",

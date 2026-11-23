@@ -89,7 +89,7 @@ just build-release-zomboid 0.0.1
 just build-release-conan 1.0.0
 just build-release-terraria 0.1.0
 just build-release-valheim 2.0.0
-just build-release-tf2 0.1.0 dist windows-25995664
+just build-release-tf2 0.1.0 dist windows-26334371
 just build-release-empyrion 0.1.0
 TAKARO_ASA_DLL=TakaroAsa.dll just build-release-ark-ascended 0.1.0
 ```
