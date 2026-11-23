@@ -497,7 +497,14 @@ void Bridge::DeliverEvents() {
     auto it = std::upper_bound(pending.begin(), pending.end(), lastQueuedId_,
                                [](uint64_t id, const PendingEvent& e) { return id < e.id; });
     size_t queued = 0;
+    const int64_t now = o_.steadyMs();
+    while (!logSentAt_.empty() && now - logSentAt_.front() >= o_.logWindowMs) logSentAt_.pop_front();
     for (; it != pending.end() && queued < kNoticeBatch; ++it) {
+        const bool log = it->type == "log";
+        if (log && logSentAt_.size() >= o_.logBudget) {
+            logWaits_++;  // later events keep their order and wait behind it
+            break;
+        }
         std::string frame = protocol_ >= 1 ? WithStream(it->frame, it->stream, it->seq) : it->frame;
         QueueStatus st = o_.transport->Queue({FrameKind::Event, Text(std::move(frame)), epoch_, it->id});
         if (st != QueueStatus::Accepted) {
@@ -509,6 +516,7 @@ void Bridge::DeliverEvents() {
             break;
         }
         lastQueuedId_ = it->id;
+        if (log) logSentAt_.push_back(now);
         queued++;
         eventsQueued_++;
     }
@@ -626,6 +634,7 @@ void Bridge::Publish(int64_t now) {
                                            .N("pendingBytes", (double)ob.pendingBytes)
                                            .Raw("nextId", std::to_string(ob.nextId))
                                            .Raw("queuedThrough", std::to_string(lastQueuedId_))
+                                           .N("logWaits", (double)logWaits_)
                                            .N("confirmedTotal", (double)ob.confirmedTotal)
                                            .N("losses", (double)ob.losses)
                                            .N("admitted", (double)eventsAdmitted_)
