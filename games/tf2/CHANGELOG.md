@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0](https://github.com/gettakaro/connectors/compare/tf2-v0.3.0...tf2-v0.4.0) (2026-11-23)
+
+
+### Features
+
+* **tf2:** support Steam build 26334371 ([#899](https://github.com/gettakaro/connectors/issues/899)) ([514f5c3](https://github.com/gettakaro/connectors/commit/514f5c376f24be61fb5127d0b500cc05ffbf3092))
+
+
+### Bug Fixes
+
+* **tf2:** send display names in entity-killed ([#965](https://github.com/gettakaro/connectors/issues/965)) ([de059f4](https://github.com/gettakaro/connectors/commit/de059f4f77620c1dca146f174f78a0cfa30d4c98))
+
+
+### Documentation
+
+* **tf2:** state that player levels are not available ([#792](https://github.com/gettakaro/connectors/issues/792)) ([db03d54](https://github.com/gettakaro/connectors/commit/db03d54e76cbbe558a5d523bbf2dacfbafbfbf76))
+
 ## [0.3.0](https://github.com/gettakaro/connectors/compare/tf2-v0.2.0...tf2-v0.3.0) (2026-11-12)
 
 
