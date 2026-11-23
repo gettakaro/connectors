@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/gettakaro/connectors/compare/scum-v0.4.0...scum-v0.5.0) (2026-11-23)
+
+
+### Features
+
+* **scum:** report skills, attributes and characters ([#806](https://github.com/gettakaro/connectors/issues/806)) ([9043d17](https://github.com/gettakaro/connectors/commit/9043d177e968a5a9ecaa459fa8f1255461755d34))
+* **scum:** support Steam build 26864403 ([#961](https://github.com/gettakaro/connectors/issues/961)) ([1fa939a](https://github.com/gettakaro/connectors/commit/1fa939abc96544e7c05f27c1114e7b963adfbd39))
+
 ## [0.4.0](https://github.com/gettakaro/connectors/compare/scum-v0.3.0...scum-v0.4.0) (2026-11-13)
 
 
