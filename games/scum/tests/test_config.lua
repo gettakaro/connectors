@@ -57,8 +57,17 @@ end)
 t.test("a registered server connects at start", function()
   local g = F.game()
   g.catalogs_done = function() return false end
-  local _, native = F.app({ game = g, files = { ["/mod/TakaroRegistered.txt"] = "gs\n" } })
+  local _, native = F.app({ game = g, files = { ["/mod/TakaroRegistered.txt"] = F.registered_marker() } })
   t.ok(native.connected)
+end)
+
+t.test("a marker from another Takaro URL or identity waits for the catalogues again", function()
+  local g = F.game()
+  g.catalogs_done = function() return false end
+  for _, marker in ipairs({ "gs\n", require("takaro.sha256").hex("wss://other.example.test/\n" .. F.ID_TOKEN) .. "\n" }) do
+    local _, native = F.app({ game = g, files = { ["/mod/TakaroRegistered.txt"] = marker } })
+    t.eq(native.connected, nil, marker)
+  end
 end)
 
 t.test("an identity from a start without a token does not count as registered", function()
@@ -75,7 +84,7 @@ t.test("the first identify marks the server registered", function()
   app:tick()
   tk.connect()
   app:tick()
-  t.ok(fs.files["/mod/TakaroRegistered.txt"])
+  t.eq(fs.files["/mod/TakaroRegistered.txt"], F.registered_marker(), "digest of URL and identity, not the gameserver id")
 end)
 
 t.test("a generated identity token is reused on the next start", function()

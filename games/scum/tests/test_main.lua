@@ -35,7 +35,7 @@ t.test("main.lua starts the app, connects, identifies and answers through the UE
   f:write(F.config_text())
   f:close()
   f = assert(io.open(dir .. "/TakaroRegistered.txt", "wb"))
-  f:write("gs\n")
+  f:write(F.registered_marker())
   f:close()
   local native = F.native()
   local loops = install(native, dir)

@@ -10,6 +10,7 @@ local actions = require("takaro.actions")
 local events = require("takaro.events")
 local game = require("takaro.game")
 local map = require("takaro.map")
+local sha256 = require("takaro.sha256")
 local v1 = require("takaro.v1")
 local profile = require("takaro.profile")
 
@@ -160,13 +161,20 @@ function App:start()
   end
   -- Takaro reads the item and entity catalogues right after a server registers and then only hourly, so a new server
   -- registers once they are ready, or it stays without items for up to an hour.
-  self.registered = self.fs.read(self.dir .. "/" .. M.REGISTERED_FILE) ~= nil
+  local marker = self.fs.read(self.dir .. "/" .. M.REGISTERED_FILE)
+  self.registered = marker ~= nil and util.trim(marker) == self:registration_digest()
   if self.game.catalogs_done and not self.registered then
     self.log:info("not registered yet: connecting to Takaro once the item catalogue is ready")
     self.connectBy = self:now() + M.FIRST_CONNECT_WAIT_MS
   else
     self:connect()
   end
+end
+
+-- The registration marker holds a digest of the Takaro URL and identity, so a server pointed at another Takaro or
+-- given another identity waits for its catalogues again like a new server.
+function App:registration_digest()
+  return sha256.hex(tostring(self.cfg.url) .. "\n" .. tostring(self.identityToken))
 end
 
 function App:connect()
@@ -192,7 +200,7 @@ function App:tick()
     self:connect()
   end
   if self.client.identified and not self.registered then
-    self.registered = self.fs.write(self.dir .. "/" .. M.REGISTERED_FILE, self.client.gameServerId .. "\n") == true
+    self.registered = self.fs.write(self.dir .. "/" .. M.REGISTERED_FILE, self:registration_digest() .. "\n") == true
   end
   self:read_map_bounds(now)
   self:read_game_version(now)
