@@ -61,13 +61,11 @@ export const OPTIONAL_COLUMNS = {
   fgl_entities: ['entity_id', 'components'],
   specialization_tracks: ['player_id', 'track_type', 'xp_amount', 'level'],
   /**
-   * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb,
-   * map_name_id)` — it has **no name and no transform**, only a dev-style `marker_type` and a numeric hash id. The
-   * legacy `name`/`transform` probe below therefore comes back false on a stock build and `listLocations` answers
-   * with the world partitions alone, which is the honest outcome: a marker we cannot give a player-facing name is
-   * not something to ship (memory: catalogue-human-names).
+   * The shipped `markers` table is `(marker_hash_id, dimension_index, marker_type, position Vector, payload jsonb, ...)`.
+   * It holds the world map's places (caves, outposts, enemy camps) with their position and radius. Their only name is
+   * a localization key in `payload.DisplayName`, which `locationName` turns into words.
    */
-  markers: ['id', 'name', 'transform', 'map', 'marker_type', 'position', 'map_name_id'],
+  markers: ['marker_hash_id', 'marker_type', 'position', 'payload', 'area_radius', 'dimension_index'],
 } as const;
 
 export type TableName = keyof typeof OPTIONAL_COLUMNS;
@@ -500,40 +498,32 @@ export class DunePg {
   }
 
   /**
-   * `listLocations`: the running map partitions plus the world's static markers. Takaro never calls this action in
-   * practice, so it is a best-effort read that answers `[]` rather than failing when neither table is present.
+   * `listLocations`: the world map's named places, from the `markers` table, each with its real position, its radius
+   * and its marker type as category. Markers without a display name are resource nodes, not places, and are left out.
+   * Map partitions are not listed: a partition is a whole map instance with no single point. Answers `[]` when the
+   * table is missing.
    */
   async locations(): Promise<TakaroLocation[]> {
+    if (!this.hasAll('markers', ['marker_hash_id', 'marker_type', 'position', 'payload'])) return [];
+    const radius = this.has('markers', 'area_radius') ? 'm.area_radius::float8' : 'NULL::float8';
+    const { rows } = await this.db.query<Record<string, unknown>>(
+      `SELECT m.marker_hash_id::int8 AS id, m.marker_type AS type, m.position::text AS position,
+              m.payload->>'DisplayName' AS display, ${radius} AS radius
+         FROM ${this.t('markers')} m
+        WHERE COALESCE(m.payload->>'DisplayName', '') <> ''
+        ORDER BY m.marker_type, m.marker_hash_id LIMIT 1000`,
+    );
     const out: TakaroLocation[] = [];
-    if (this.has('world_partition', 'partition_id')) {
-      const label = this.has('world_partition', 'label') ? `NULLIF(wp.label, '')` : 'NULL';
-      const map = this.has('world_partition', 'map') ? `NULLIF(wp.map, '')` : 'NULL';
-      const { rows } = await this.db.query<Record<string, unknown>>(
-        `SELECT wp.partition_id::int8 AS partition_id, COALESCE(${label}, ${map}, 'partition') AS name, COALESCE(${map}, '') AS map
-           FROM ${this.t('world_partition')} wp ORDER BY wp.partition_id LIMIT 200`,
-      );
-      for (const r of rows) {
-        const id = num(r.partition_id);
-        if (id === null) continue;
-        out.push({ code: `partition:${id}`, name: `${str(r.name) ?? 'partition'} (${str(r.map) ?? 'map'})`, position: { x: 0, y: 0, z: 0 } });
-      }
-    }
-    if (this.has('markers', 'transform') && this.has('markers', 'name')) {
-      const { rows } = await this.db.query<Record<string, unknown>>(
-        `SELECT m.id::int8 AS id, COALESCE(m.name, '') AS name,
-                ((m.transform).location).x::float8 AS x,
-                ((m.transform).location).y::float8 AS y,
-                ((m.transform).location).z::float8 AS z
-           FROM ${this.t('markers')} m WHERE m.transform IS NOT NULL ORDER BY m.id LIMIT 500`,
-      );
-      for (const r of rows) {
-        const x = num(r.x);
-        const y = num(r.y);
-        const z = num(r.z);
-        if (x === null || y === null || z === null) continue;
-        const name = str(r.name);
-        out.push({ code: `marker:${num(r.id) ?? name ?? out.length}`, name: name ?? `Marker ${num(r.id) ?? ''}`.trim(), position: { x, y, z } });
-      }
+    for (const r of rows) {
+      const position = parseVector(r.position);
+      const name = locationName(str(r.display));
+      if (!position || !name) continue;
+      const loc: TakaroLocation = { code: `marker:${num(r.id)}`, name, position };
+      const type = str(r.type);
+      if (type) loc.category = splitWords(type);
+      const rad = num(r.radius);
+      if (rad !== null && rad > 0) loc.radius = rad;
+      out.push(loc);
     }
     return out;
   }
@@ -596,4 +586,43 @@ export const DEAD_STATES = new Set(['dead', 'deadbycoriolis', 'deadbysandworm'])
 
 export function isDead(row: Pick<DunePlayerRow, 'lifeState'>): boolean {
   return DEAD_STATES.has((row.lifeState ?? '').toLowerCase());
+}
+
+/** `(86480,308661,2489)` (a Postgres `vector`) -> position; null when it does not parse. */
+export function parseVector(raw: unknown): { x: number; y: number; z: number } | null {
+  if (typeof raw !== 'string') return null;
+  const parts = raw.replace(/[()\s]/g, '').split(',').map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return { x: parts[0]!, y: parts[1]!, z: parts[2]! };
+}
+
+function splitWords(s: string): string {
+  return s
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+    .replace(/([0-9])([A-Za-z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * A map marker's `DisplayName` is a localization reference, `LOCTABLE("<table>", "<key>")`. The key's last segment
+ * carries the place: `UI/EnemyCampDisplayName/ScavengerCamp` is "Scavenger Camp",
+ * `NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_HaggaBasinSouth_Cave9` is "Hagga Basin South Cave 9".
+ */
+export function locationName(display: string | null): string | null {
+  if (!display) return null;
+  const key = /LOCTABLE\([^,]*,\s*"([^"]+)"\)/.exec(display)?.[1] ?? display;
+  let last = key.split('/').pop() ?? key;
+  last = last
+    .replace(/^WORLD_MAP_LOCATION_/, '')
+    .replace(/^(Survival|DeepDesert|Story)_/, '')
+    .replace(/^NPC_NAMED_(.+)_DISPLAYNAME$/, '$1')
+    .replace(/^Map_?Legend_?Entry_?/, '')
+    .replace(/PoI(\d+)/g, 'Point of Interest $1');
+  const name = splitWords(last)
+    .split(' ')
+    .map((w) => (w.length > 1 && w === w.toUpperCase() && /[A-Z]/.test(w) ? w[0] + w.slice(1).toLowerCase() : w))
+    .join(' ');
+  return name || null;
 }

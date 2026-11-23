@@ -147,6 +147,7 @@ export interface TakaroLocation {
   name: string;
   position: Position;
   radius?: number;
+  category?: string;
   sizeX?: number;
   sizeY?: number;
   sizeZ?: number;

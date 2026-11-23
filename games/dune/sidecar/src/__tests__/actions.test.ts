@@ -1,3 +1,4 @@
+import { locationName } from '../dune/pg.js';
 import { describe, expect, it } from 'vitest';
 import { ActionError, MAX_SHUTDOWN_NOTICE_SECONDS, parseArgv, playerId } from '../dune/adapter.js';
 import { DunePluginClient } from '../dune/pluginClient.js';
@@ -152,10 +153,25 @@ describe('reads', () => {
     expect(entities.find((e) => e.code === 'Buggy')).toMatchObject({ name: 'Scout Buggy', type: 'friendly' });
   });
 
-  it('listLocations reports the running partitions', async () => {
+  it('listLocations reports the map places with their real position, radius and category', async () => {
     const h = await harness();
-    const locations = (await h.adapter.handleAction('listLocations', {})) as { code: string; name: string }[];
-    expect(locations[0]).toMatchObject({ code: 'partition:1', name: 'Hagga Basin (survival_1)' });
+    const locations = (await h.adapter.handleAction('listLocations', {})) as Record<string, unknown>[];
+    expect(locations).toEqual([
+      { code: 'marker:-187194160', name: 'Hagga Basin South Cave 9', category: 'Cave', radius: 1500, position: { x: 56481, y: 318080, z: 2260 } },
+      { code: 'marker:-1334271672', name: 'Scavenger Camp', category: 'Enemy Camp', position: { x: 86480, y: 308661, z: 2489 } },
+    ]);
+  });
+});
+
+describe('locationName', () => {
+  it('turns map marker localization keys into place names', () => {
+    const loc = (k: string) => locationName(`LOCTABLE("/Game/x.x", "${k}")`);
+    expect(loc('NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_VermiliusGap_Cave5_Hidden_Eyrie')).toBe('Vermilius Gap Cave 5 Hidden Eyrie');
+    expect(loc('NPCS_AND_WORLD/NPC_NAMED_SISTER_MESA_DISPLAYNAME')).toBe('Sister Mesa');
+    expect(loc('UI/Map_Legend_Entry_HouseRepresentative_Dyvetz')).toBe('House Representative Dyvetz');
+    expect(loc('NPCS_AND_WORLD/WORLD_MAP_LOCATION_Survival_VermiliusGap_PoI3')).toBe('Vermilius Gap Point of Interest 3');
+    expect(loc('NPCS_AND_WORLD/MITHRA')).toBe('Mithra');
+    expect(locationName(null)).toBeNull();
   });
 });
 
