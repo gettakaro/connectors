@@ -72,7 +72,7 @@ in Takaro. If it is not connected, the console shows a `****` block naming the p
 
 ## What works, what doesn't
 
-Checked on server build 26672347 (Linux and Windows), 2026-11-15. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on server build 26672347 (Linux and Windows), 2026-11-23. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
