@@ -77,6 +77,22 @@ t.test("an identity from a start without a token does not count as registered", 
   t.eq(native.connected, nil)
 end)
 
+t.test("a marker from the same URL with another identity waits for the catalogues again", function()
+  local sha = require("takaro.sha256")
+  local g = F.game()
+  g.catalogs_done = function() return false end
+  local other = sha.hex("wss://connect.example.test/\nanother-identity") .. "\n"
+  local _, native = F.app({ game = g, files = { ["/mod/TakaroRegistered.txt"] = other } })
+  t.eq(native.connected, nil, "configured IDENTITY_TOKEN changed")
+  -- identity from TakaroIdentity.txt (no IDENTITY_TOKEN in the config)
+  local cfg = "TAKARO_WS_URL=wss://connect.example.test/\nREGISTRATION_TOKEN=" .. F.REG_TOKEN .. "\n"
+  local mine = sha.hex("wss://connect.example.test/\nscum-keepme") .. "\n"
+  local _, n2 = F.app({ game = g, config = cfg, files = { ["/mod/TakaroIdentity.txt"] = "scum-keepme\n", ["/mod/TakaroRegistered.txt"] = mine } })
+  t.ok(n2.connected, "marker of the identity file's token counts")
+  local _, n3 = F.app({ game = g, config = cfg, files = { ["/mod/TakaroIdentity.txt"] = "scum-changed\n", ["/mod/TakaroRegistered.txt"] = mine } })
+  t.eq(n3.connected, nil, "identity file changed")
+end)
+
 t.test("the first identify marks the server registered", function()
   local g = F.game()
   g.catalogs_done = function() return true end
