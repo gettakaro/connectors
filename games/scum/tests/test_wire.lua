@@ -89,8 +89,8 @@ t.test("WIRE-3: every action answers identically for [], {}, JSON-string, null a
       local rid = action .. "-" .. i
       request_raw_args(tk, action, shape.raw, rid)
       tk.pump()
-      local payload = tk.response(rid)
-      t.ok(payload ~= nil, action .. " answered for " .. shape.name)
+      local payload, frame = tk.response(rid)
+      t.ok(frame ~= nil, action .. " answered for " .. shape.name)
       if first == nil then first = payload else t.deep(payload, first, action .. " same result for " .. shape.name) end
     end
   end
@@ -238,8 +238,10 @@ t.test("always respond: every action answers with a stub adapter, in the shape T
   tk.pump()
   for _, action in ipairs(coverage.ACTIONS) do
     local p, frame = tk.response("all-" .. action)
-    t.ok(p ~= nil, action .. " answered")
-    if action == "getPlayerInventory" then
+    t.ok(frame ~= nil, action .. " answered")
+    if action == "getPlayerProgression" then
+      t.eq(frame.text:match('"payload":(....)'), "null", "an unknown player is null, never an error")
+    elseif action == "getPlayerInventory" then
       t.ok(type(p.error) == "string", "getPlayerInventory: a failing adapter answers { error }, Takaro keeps the last inventory")
     elseif actions.LIST_ACTIONS[action] then
       t.eq(frame.text:match('"payload":(.)'), "[", action .. " is a bare array")
@@ -393,11 +395,12 @@ t.test("argument validation answers invalid_args instead of calling the game", f
   tk.request("teleportPlayer", { gameId = STEAM, x = "a", y = 1, z = 1 }, "tp")
   tk.request("giveItem", { gameId = STEAM, amount = 1 }, "gi")
   tk.request("giveItem", { gameId = STEAM, item = "X", amount = 0 }, "gi0")
+  tk.request("giveItem", { gameId = STEAM, item = "X", amount = 50.9 }, "gifrac")
   tk.request("banPlayer", { gameId = STEAM, expiresAt = "tomorrow" }, "ban")
   tk.request("kickPlayer", {}, "kick")
   tk.request("sendMessage", { message = "" }, "msg")
   tk.pump()
-  for _, rid in ipairs({ "tp", "gi", "gi0", "ban", "kick", "msg" }) do
+  for _, rid in ipairs({ "tp", "gi", "gi0", "gifrac", "ban", "kick", "msg" }) do
     t.ok(tk.response(rid).errorMessage:find("^invalid_args"), rid)
   end
   t.eq(#game.calls, 0)

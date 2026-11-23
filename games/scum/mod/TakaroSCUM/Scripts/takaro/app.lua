@@ -10,6 +10,7 @@ local actions = require("takaro.actions")
 local events = require("takaro.events")
 local game = require("takaro.game")
 local map = require("takaro.map")
+local sha256 = require("takaro.sha256")
 local v1 = require("takaro.v1")
 local profile = require("takaro.profile")
 
@@ -20,6 +21,8 @@ M.MAX_NOTICES_PER_TICK = 500
 M.STATUS_EVERY_MS = 60000
 M.SAVE_KNOWN_EVERY_MS = 30000
 M.IDENTITY_FILE = "TakaroIdentity.txt"
+M.REGISTERED_FILE = "TakaroRegistered.txt"
+M.FIRST_CONNECT_WAIT_MS = 15 * 60 * 1000 -- a catalogue that never finishes must not keep a new server off Takaro
 M.KNOWN_FILE = "known-players.json"
 M.WORLD_BOUNDS_RETRY_MS = 10000
 M.GAME_VERSION_RETRY_MS = 10000
@@ -156,6 +159,25 @@ function App:start()
     self.log:warn("REGISTRATION_TOKEN is empty in %s; not connecting to Takaro", config.FILE_NAME)
     return
   end
+  -- Takaro reads the item and entity catalogues right after a server registers and then only hourly, so a new server
+  -- registers once they are ready, or it stays without items for up to an hour.
+  local marker = self.fs.read(self.dir .. "/" .. M.REGISTERED_FILE)
+  self.registered = marker ~= nil and util.trim(marker) == self:registration_digest()
+  if self.game.catalogs_done and not self.registered then
+    self.log:info("not registered yet: connecting to Takaro once the item catalogue is ready")
+    self.connectBy = self:now() + M.FIRST_CONNECT_WAIT_MS
+  else
+    self:connect()
+  end
+end
+
+-- The registration marker holds a digest of the Takaro URL and identity, so a server pointed at another Takaro or
+-- given another identity waits for its catalogues again like a new server.
+function App:registration_digest()
+  return sha256.hex(tostring(self.cfg.url) .. "\n" .. tostring(self.identityToken))
+end
+
+function App:connect()
   if not self.native.connect(self.cfg.url, self.cfg.caFile) then
     self.log:error("native transport refused the Takaro URL (must be wss://host[:port]/path)")
   end
@@ -172,6 +194,13 @@ function App:tick()
   if self.game.tick then
     local okg, errg = pcall(self.game.tick, self.game, now)
     if not okg then self.log:error("game tick failed: %s", tostring(errg)) end
+  end
+  if self.connectBy and (now >= self.connectBy or self.game:catalogs_done()) then
+    self.connectBy = nil
+    self:connect()
+  end
+  if self.client.identified and not self.registered then
+    self.registered = self.fs.write(self.dir .. "/" .. M.REGISTERED_FILE, self:registration_digest() .. "\n") == true
   end
   self:read_map_bounds(now)
   self:read_game_version(now)

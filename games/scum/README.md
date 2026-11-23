@@ -59,7 +59,7 @@ One to two minutes after start, `ue4ss\Mods\TakaroSCUM\takaro.log` shows
 
 ## What works, what doesn't
 
-Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on SCUM 1.3.6.2.179673 (Steam build 26790009), 2026-11-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -68,6 +68,7 @@ Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, �
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | Rounds in a weapon are not listed. |
+| Player levels and skills | ⚠️ | Skills as `skill.<name>` (level 0 to 4) and attributes as `attribute.<name>`, with experience. No overall character level. Each character keeps its own levels. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Zombie and NPC names are built from codes. |
 | Locations | ❌ | SCUM has no named places. |
@@ -77,7 +78,7 @@ Checked on SCUM 1.3.5.1.172191 (Steam build 26280049), 2026-10-29. ✅ works, �
 | Kick | ✅ | |
 | Ban and unban | ✅ | Timed and permanent, also offline. |
 | Ban list | ✅ | |
-| Give an item | ⚠️ | Drops at the player's feet when SCUM refuses the pickup. |
+| Give an item | ⚠️ | Up to 50 per give; a larger give is refused. Drops at the player's feet when SCUM refuses the pickup. |
 | Shop | ✅ | |
 | Shut down the server | ✅ | Needs `ENABLE_DESTRUCTIVE_COMMANDS=true`. |
 | Player joined / left | ✅ | |

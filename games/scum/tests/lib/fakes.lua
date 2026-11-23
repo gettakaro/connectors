@@ -137,6 +137,11 @@ function F.config_text(extra)
   }, "\n")
 end
 
+-- The registration marker a server writes after its first identify with the default test config.
+function F.registered_marker()
+  return require("takaro.sha256").hex("wss://connect.example.test/\n" .. F.ID_TOKEN) .. "\n"
+end
+
 -- A started App wired to fakes.
 function F.app(opts)
   opts = opts or {}

@@ -84,6 +84,7 @@ end
 function Router:fallback(action, why, rawArgs)
   why = why or "unavailable"
   if action == "getPlayerInventory" then return { error = "inventory unavailable: " .. why } end
+  if action == "getPlayerProgression" then return json.null end
   if M.LIST_ACTIONS[action] then return {} end
   if action == "getPlayer" then
     return self.known:resolve(players.game_id_from_args(M.normalize_args(rawArgs)) or "")
@@ -199,6 +200,17 @@ function H.getPlayerInventory(self, args, reply)
   end)
 end
 
+-- Takaro polls this on every player sync, so the adapter answers from its cached reading. null = the game does not
+-- know the player, [] = a known player without a reading yet; an unknown player is never an error.
+function H.getPlayerProgression(self, args, reply)
+  local id = players.game_id_from_args(args)
+  if not id then return reply(json.null) end
+  self:call("get_player_progression", { gameId = id }, function(res)
+    if res.ok and type(res.value) == "table" then return reply(res.value) end
+    reply(self.known:get(id) and {} or json.null)
+  end)
+end
+
 function H.listItems(self, _args, reply) self:call("list_items", {}, list_reply(self, "listItems", reply)) end
 function H.listEntities(self, _args, reply) self:call("list_entities", {}, list_reply(self, "listEntities", reply)) end
 function H.listLocations(self, _args, reply) self:call("list_locations", {}, list_reply(self, "listLocations", reply)) end
@@ -240,7 +252,8 @@ function H.giveItem(self, args, reply)
   if not id then return reply(fail("invalid_args: gameId is required")) end
   if not item or util.trim(item) == "" then return reply(fail("invalid_args: item is required")) end
   if amount < 1 then return reply(fail("invalid_args: amount must be at least 1")) end
-  self:call("give_item", { gameId = id, item = item, amount = math.floor(amount), quality = quality },
+  if amount ~= math.floor(amount) then return reply(fail("invalid_args: amount must be a whole number")) end
+  self:call("give_item", { gameId = id, item = item, amount = amount, quality = quality },
     simple_reply(reply))
 end
 
