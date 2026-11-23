@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.10.2...7d2d-v0.11.0) (2026-11-23)
+
+
+### Features
+
+* **7d2d:** report Characters on Permanent Death servers by default ([#963](https://github.com/gettakaro/connectors/issues/963)) ([61e4aba](https://github.com/gettakaro/connectors/commit/61e4aba0c9d8158f043904fa4dcf880c70b5e85a))
+
 ## [0.10.2](https://github.com/gettakaro/connectors/compare/7d2d-v0.10.1...7d2d-v0.10.2) (2026-11-13)
 
 
