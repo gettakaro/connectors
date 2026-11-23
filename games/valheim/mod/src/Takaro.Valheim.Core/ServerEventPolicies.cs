@@ -206,6 +206,26 @@ public static class KillWeaponPolicy
 /// <summary>Turns a Valheim localisation token into readable text when no translation is loaded.</summary>
 public static class ValheimDisplayName
 {
+    private static readonly System.Text.RegularExpressions.Regex RichTextTag = new(
+        @"</?(?:b|i|u|s|color|size|material|quad)(?:=[^>]*)?>",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Removes Unity rich-text tags that some translations carry for in-game styling
+    /// (<c>&lt;color=orange&gt;Zil&lt;/color&gt;</c> becomes <c>Zil</c>). Returns the fallback
+    /// when nothing readable is left.
+    /// </summary>
+    public static string StripRichText(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var stripped = RichTextTag.Replace(value!, string.Empty).Trim();
+        return stripped.Length == 0 ? fallback : stripped;
+    }
+
     public static string FromToken(string? token, string fallback)
     {
         if (string.IsNullOrWhiteSpace(token))

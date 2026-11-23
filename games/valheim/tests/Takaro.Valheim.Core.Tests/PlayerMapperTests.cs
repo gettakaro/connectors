@@ -6,6 +6,29 @@ namespace Takaro.Valheim.Core.Tests;
 [TestClass]
 public sealed class PlayerMapperTests
 {
+    [DataTestMethod]
+    [DataRow(38, 38)]
+    [DataRow(1, 1)]
+    [DataRow(0, null)]
+    [DataRow(-1, null)]
+    [DataRow(60_000, null)]
+    public void PingIsOnlyARealMeasurement(int milliseconds, int? expected)
+    {
+        Assert.AreEqual(expected, PlayerMapper.ToPing(milliseconds));
+        var player = PlayerMapper.ToTakaroPlayer(new ValheimPlayer("Hehe", "Steam_76561198000735875", null, null, PlayerMapper.ToPing(milliseconds)));
+        Assert.AreEqual(expected, player.Ping);
+    }
+
+    [DataTestMethod]
+    [DataRow(12, 12)]
+    [DataRow(0, 0)]
+    [DataRow(-1, null)]
+    [DataRow(60_000, null)]
+    public void SteamPingKeepsAFastLanReading(int milliseconds, int? expected)
+    {
+        Assert.AreEqual(expected, PlayerMapper.ToSteamPing(milliseconds));
+    }
+
     [TestMethod]
     public void ToTakaroPlayerUsesPlatformIdAsStableGameId()
     {

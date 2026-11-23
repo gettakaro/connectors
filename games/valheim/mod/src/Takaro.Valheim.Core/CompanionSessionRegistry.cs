@@ -36,7 +36,7 @@ public sealed record CompanionSessionSnapshot(
 
 public sealed class CompanionSessionRegistry
 {
-    private const CompanionCapability KnownCapabilities = CompanionCapability.Inventory;
+    private const CompanionCapability KnownCapabilities = CompanionProtocol.KnownCapabilities;
 
     private readonly int minimumProtocolVersion;
     private readonly int maximumProtocolVersion;

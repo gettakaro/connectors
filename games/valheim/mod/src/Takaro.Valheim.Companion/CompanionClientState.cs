@@ -23,7 +23,7 @@ public sealed class CompanionClientState
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(5);
 
     private const int MaximumRetiredNonces = 16;
-    private const CompanionCapability KnownCapabilities = CompanionCapability.Inventory;
+    private const CompanionCapability KnownCapabilities = CompanionProtocol.KnownCapabilities;
 
     private static readonly JsonSerializerOptions WireJson = new()
     {
@@ -221,6 +221,7 @@ public sealed class CompanionClientState
     {
         envelope = null;
         if (messageType != CompanionMessageTypes.InventorySnapshot
+            && messageType != CompanionMessageTypes.SkillsSnapshot
             && messageType != CompanionMessageTypes.KillVerdict
             && messageType != CompanionMessageTypes.CommandProbeInvoke)
         {
@@ -358,9 +359,12 @@ public sealed class CompanionClientState
     }
 
     private static CompanionCapability RequiredCapability(string messageType) =>
-        messageType == CompanionMessageTypes.InventorySnapshot
-            ? CompanionCapability.Inventory
-            : CompanionCapability.None;
+        messageType switch
+        {
+            CompanionMessageTypes.InventorySnapshot => CompanionCapability.Inventory,
+            CompanionMessageTypes.SkillsSnapshot => CompanionCapability.Skills,
+            _ => CompanionCapability.None
+        };
 
     private static long NextGeneration(long value) =>
         value == long.MaxValue ? 1 : value + 1;

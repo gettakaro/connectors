@@ -72,6 +72,16 @@ public static class CompanionEnvelopeCodec
         "slot"
     ];
 
+    private static readonly string[] SkillsFields = ["skills"];
+
+    private static readonly string[] SkillFields =
+    [
+        "code",
+        "level",
+        "accumulator",
+        "progress"
+    ];
+
     private static readonly string[] KillVerdictFields =
     [
         "creatureZdo",
@@ -283,6 +293,8 @@ public static class CompanionEnvelopeCodec
                 return TryNormalizePayload<CompanionInventoryReport>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.KillVerdict:
                 return TryNormalizePayload<CompanionKillVerdict>(envelope, out normalizedPayload, out errorCode);
+            case CompanionMessageTypes.SkillsSnapshot:
+                return TryNormalizePayload<CompanionSkillsReport>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.CommandProbeCatalog:
                 return TryNormalizePayload<CommandProbeCatalog>(envelope, out normalizedPayload, out errorCode);
             case CompanionMessageTypes.CommandProbeInvoke:
@@ -347,6 +359,9 @@ public static class CompanionEnvelopeCodec
             case CompanionMessageTypes.KillVerdict:
                 validFields = HasStrictFields(payload, KillVerdictFields);
                 break;
+            case CompanionMessageTypes.SkillsSnapshot:
+                validFields = HasStrictFields(payload, SkillsFields);
+                break;
             case CompanionMessageTypes.CommandProbeCatalog:
                 validFields = HasStrictFields(payload, CommandProbeCatalogFields);
                 break;
@@ -367,29 +382,16 @@ public static class CompanionEnvelopeCodec
             return false;
         }
 
-        if (messageType == CompanionMessageTypes.InventorySnapshot)
+        if (messageType == CompanionMessageTypes.InventorySnapshot
+            && !HasStrictArrayItems(payload.GetProperty("stacks"), InventoryStackFields, out errorCode))
         {
-            var stacks = payload.GetProperty("stacks");
-            if (stacks.ValueKind != JsonValueKind.Array)
-            {
-                errorCode = InvalidPayloadError;
-                return false;
-            }
+            return false;
+        }
 
-            foreach (var stack in stacks.EnumerateArray())
-            {
-                if (stack.ValueKind != JsonValueKind.Object)
-                {
-                    errorCode = InvalidPayloadError;
-                    return false;
-                }
-
-                if (!HasStrictFields(stack, InventoryStackFields))
-                {
-                    errorCode = InvalidPayloadFieldsError;
-                    return false;
-                }
-            }
+        if (messageType == CompanionMessageTypes.SkillsSnapshot
+            && !HasStrictArrayItems(payload.GetProperty("skills"), SkillFields, out errorCode))
+        {
+            return false;
         }
 
         if (messageType == CompanionMessageTypes.KillVerdict
@@ -397,6 +399,36 @@ public static class CompanionEnvelopeCodec
         {
             errorCode = InvalidPayloadError;
             return false;
+        }
+
+        return true;
+    }
+
+    private static bool HasStrictArrayItems(
+        JsonElement array,
+        IReadOnlyCollection<string> requiredFields,
+        out string errorCode)
+    {
+        errorCode = string.Empty;
+        if (array.ValueKind != JsonValueKind.Array)
+        {
+            errorCode = InvalidPayloadError;
+            return false;
+        }
+
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                errorCode = InvalidPayloadError;
+                return false;
+            }
+
+            if (!HasStrictFields(item, requiredFields))
+            {
+                errorCode = InvalidPayloadFieldsError;
+                return false;
+            }
         }
 
         return true;
@@ -425,6 +457,7 @@ public static class CompanionEnvelopeCodec
             || (payloadType == typeof(CompanionHeartbeat) && messageType == CompanionMessageTypes.Heartbeat)
             || (payloadType == typeof(CompanionInventoryReport) && messageType == CompanionMessageTypes.InventorySnapshot)
             || (payloadType == typeof(CompanionKillVerdict) && messageType == CompanionMessageTypes.KillVerdict)
+            || (payloadType == typeof(CompanionSkillsReport) && messageType == CompanionMessageTypes.SkillsSnapshot)
             || (payloadType == typeof(CommandProbeCatalog) && messageType == CompanionMessageTypes.CommandProbeCatalog)
             || (payloadType == typeof(CommandProbeInvocation) && messageType == CompanionMessageTypes.CommandProbeInvoke)
             || (payloadType == typeof(CommandProbeReceipt) && messageType == CompanionMessageTypes.CommandProbeReceipt);
@@ -455,6 +488,8 @@ public static class CompanionEnvelopeCodec
                     && heartbeat.TimestampUnixMilliseconds <= MaximumTimestampUnixMilliseconds;
             case CompanionInventoryReport inventory:
                 return IsValidInventory(inventory);
+            case CompanionSkillsReport skills:
+                return IsValidSkills(skills);
             case CompanionKillVerdict verdict:
                 return IsZdoId(verdict.CreatureZdo)
                     && IsRequiredString(verdict.Prefab, CompanionProtocol.MaximumCodeCharacters)
@@ -511,6 +546,33 @@ public static class CompanionEnvelopeCodec
         return true;
     }
 
+    private static bool IsValidSkills(CompanionSkillsReport report)
+    {
+        if (report.Skills is null || report.Skills.Count > CompanionProtocol.MaximumSkills)
+        {
+            return false;
+        }
+
+        var codes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var skill in report.Skills)
+        {
+            if (skill is null
+                || !IsRequiredString(skill.Code, CompanionProtocol.MaximumCodeCharacters)
+                || !codes.Add(skill.Code)
+                || !IsWithin(skill.Level, CompanionProtocol.MaximumSkillLevel)
+                || !IsWithin(skill.Accumulator, CompanionProtocol.MaximumSkillAccumulator)
+                || !IsWithin(skill.Progress, 1f))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsWithin(float value, float maximum) =>
+        !float.IsNaN(value) && value >= 0 && value <= maximum;
+
     /// <summary>A ZDOID in Valheim's "userID:id" text form.</summary>
     public static bool IsZdoId(string? value)
     {
@@ -530,7 +592,7 @@ public static class CompanionEnvelopeCodec
     }
 
     private static bool HasKnownCapabilities(CompanionCapability capabilities) =>
-        (capabilities & ~CompanionCapability.Inventory) == CompanionCapability.None;
+        (capabilities & ~CompanionProtocol.KnownCapabilities) == CompanionCapability.None;
 
     private static bool IsKnownMessageType(string? messageType)
     {
@@ -540,6 +602,7 @@ public static class CompanionEnvelopeCodec
             || messageType == CompanionMessageTypes.Heartbeat
             || messageType == CompanionMessageTypes.InventorySnapshot
             || messageType == CompanionMessageTypes.KillVerdict
+            || messageType == CompanionMessageTypes.SkillsSnapshot
             || CompanionMessageTypes.IsCommandProbe(messageType);
     }
 

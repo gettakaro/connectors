@@ -1,7 +1,7 @@
 # Takaro Valheim Connector
 
 A BepInEx plugin that runs inside a Valheim dedicated server. Players join with plain Valheim;
-only reading a player's inventory needs an optional mod on that player's game.
+only reading a player's inventory and skills needs an optional mod on that player's game.
 
 ## Install
 
@@ -29,9 +29,9 @@ Stop the server and unzip so the whole `TakaroValheim` folder lands in `BepInEx/
 <server>/BepInEx/plugins/TakaroValheim/...the other files from the zip
 ```
 
-**Optional inventory mod.** A player who wants Takaro to see their inventory installs BepInExPack
-Valheim 5.4.2351 in their game folder, then unzips `takaro-valheim-inventory-companion.zip` (same
-release) into its `BepInEx/plugins/`. Other players play normally without it.
+**Optional inventory mod.** A player who wants Takaro to see their inventory and skills installs
+BepInExPack Valheim 5.4.2351 in their game folder, then unzips
+`takaro-valheim-inventory-companion.zip` (same release) into its `BepInEx/plugins/`. Other players play normally without it.
 
 ### 3. Configure
 
@@ -91,7 +91,7 @@ a token, a banner names the file to fix; a wrong token shows `Takaro rejected th
 
 ## What works, what doesn't
 
-Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Valheim 1.0.21 (Steam build 26266951), 2026-11-23. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
@@ -100,6 +100,8 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ⚠️ | Only for players with the optional inventory mod. |
+| Player levels and skills | ⚠️ | One track per skill, only for players with the optional inventory mod. Valheim has no character level and keeps skills on the player's PC, so they are client-reported. |
+| Characters | ✅ | Each character on an account is tracked on its own; needs no mod. |
 | Item list | ✅ | |
 | Entity list | ✅ | |
 | Locations | ⚠️ | Stones, altars and traders, after Resync Locations. Not checked yet. |
@@ -121,7 +123,7 @@ Checked on Valheim 1.0.20 (Steam build 25909431), 2026-10-22. ✅ works, ⚠️ 
 | Modules | ✅ | |
 | Game name, version and icon | ✅ | The icon can take about two hours to appear. |
 | Restarts and outages | ✅ | Events from an outage are sent afterwards. |
-| Single player lookup | ❌ | Takaro uses the player list. |
+| Single player lookup | ✅ | Answers only for online players. |
 
 ## Known issues
 

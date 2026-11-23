@@ -38,6 +38,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
     private readonly Random jitter = new();
     // When Takaro accepted this connection's identify; null until it does.
     private DateTimeOffset? identifiedAt;
+    private static readonly TimeSpan GameReadyPollInterval = TimeSpan.FromSeconds(1);
     private DateTimeOffset connectedAt = DateTimeOffset.MaxValue;
     private static readonly string PingFrame = """{"type":"ping"}""";
     private DateTimeOffset oldestUnansweredPingAt = DateTimeOffset.MaxValue;
@@ -50,6 +51,8 @@ public sealed class TakaroWebSocketRunner : IDisposable
     // One event stream per process: kept across reconnects so Takaro dedupes resent events.
     private readonly string streamId = Guid.NewGuid().ToString("N");
     private Task? runLoop;
+    private readonly Func<bool> gameReady;
+    private bool loggedWaitForGame;
 
     public TakaroWebSocketRunner(
         ConnectorConfig config,
@@ -60,9 +63,11 @@ public sealed class TakaroWebSocketRunner : IDisposable
         string configPath = "BepInEx/config/com.takaro.valheim.cfg",
         TimeSpan? backoffUnit = null,
         GameProfile? profile = null,
-        WorldMapService? worldMap = null)
+        WorldMapService? worldMap = null,
+        Func<bool>? gameReady = null)
     {
         this.config = config;
+        this.gameReady = gameReady ?? (() => true);
         this.profile = profile;
         this.worldMap = worldMap;
         this.backoffUnit = backoffUnit ?? ReconnectPolicy.DefaultBackoffUnit;
@@ -330,6 +335,21 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     continue;
                 }
 
+                // Takaro starts its sync jobs on identify, and every one that finds the server
+                // not ready counts as a failed probe: enough of them and it stops polling for up
+                // to half an hour. So a booting server stays away until its world has loaded.
+                if (!gameReady())
+                {
+                    if (!loggedWaitForGame)
+                    {
+                        loggedWaitForGame = true;
+                        log("Takaro Valheim connects once the world has loaded.");
+                    }
+
+                    await Task.Delay(GameReadyPollInterval, cancellationToken);
+                    continue;
+                }
+
                 using var client = new ClientWebSocket();
                 identified = false;
                 identifiedAt = null;
@@ -541,7 +561,7 @@ public sealed class TakaroWebSocketRunner : IDisposable
                     var location = await RunAdapterActionAsync(
                         () => adapter.GetPlayerLocationAsync(player.GameId, cancellationToken),
                         cancellationToken);
-                    if (location.Success)
+                    if (PlayerLifecyclePresenceFilter.IsObserved(player, location.Success))
                     {
                         playersWithObservedPositions.Add(player.GameId);
                     }

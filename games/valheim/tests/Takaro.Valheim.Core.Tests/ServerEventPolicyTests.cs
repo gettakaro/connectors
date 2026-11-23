@@ -158,6 +158,19 @@ public sealed class ServerEventPolicyTests
         Assert.AreEqual(expected, ValheimDisplayName.FromCode(code));
     }
 
+    [DataTestMethod]
+    [DataRow("<color=orange>Zil</color>", "Fallback", "Zil")]
+    [DataRow("<COLOR=#FFAA00>Brutal Bat</COLOR>", "Fallback", "Brutal Bat")]
+    [DataRow("<b><i>Thungr</i></b>", "Fallback", "Thungr")]
+    [DataRow("Raspberries", "Fallback", "Raspberries")]
+    [DataRow("1 < 2 > 0", "Fallback", "1 < 2 > 0")]
+    [DataRow("<color=red></color>", "Fallback", "Fallback")]
+    [DataRow(null, "Fallback", "Fallback")]
+    public void StripsUnityRichTextFromDisplayNames(string? value, string fallback, string expected)
+    {
+        Assert.AreEqual(expected, ValheimDisplayName.StripRichText(value, fallback));
+    }
+
     [TestMethod]
     public void WrittenEventsStayQueuedUntilAPongConfirmsThem()
     {

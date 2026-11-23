@@ -8,6 +8,7 @@ public static class CompanionMessageTypes
     public const string Heartbeat = "heartbeat";
     public const string InventorySnapshot = "inventory-snapshot";
     public const string KillVerdict = "kill-verdict";
+    public const string SkillsSnapshot = "skills-snapshot";
     public const string CommandProbeCatalog = "command-probe-catalog";
     public const string CommandProbeInvoke = "command-probe-invoke";
     public const string CommandProbeReceipt = "command-probe-receipt";
@@ -49,6 +50,19 @@ public sealed record CompanionInventoryStack(
     float Durability,
     bool Equipped,
     int Slot);
+
+public sealed record CompanionSkillsReport(IReadOnlyList<CompanionSkill> Skills);
+
+/// <summary>
+/// One entry of the character's skill list: the Skills.SkillType name, the raw level (which a
+/// death can leave fractional), the raw accumulator toward the next level, and the fraction of
+/// the next level the skills screen shows.
+/// </summary>
+public sealed record CompanionSkill(
+    string Code,
+    float Level,
+    float Accumulator,
+    float Progress);
 
 /// <summary>
 /// Client to server, sent once when a non-player creature owned by this client dies and the

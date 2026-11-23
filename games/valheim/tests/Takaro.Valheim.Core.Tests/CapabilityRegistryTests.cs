@@ -13,6 +13,7 @@ public sealed class CapabilityRegistryTests
         "getPlayer",
         "getPlayerLocation",
         "getPlayerInventory",
+        "getPlayerProgression",
         "giveItem",
         "sendMessage",
         "executeConsoleCommand",
@@ -89,10 +90,13 @@ public sealed class CapabilityRegistryTests
 
         CollectionAssert.AreEqual(upstreamActionsAt0c63cf1c, TakaroActionNames.All.ToArray());
 
-        // getGameIcon came with Generic Game Protocol v1's game.profile, after 0c63cf1c.
+        // getGameIcon and getPlayerProgression came with Generic Game Protocol v1, after 0c63cf1c.
         using var registry = ReadRegistry();
         CollectionAssert.AreEquivalent(
-            upstreamActionsAt0c63cf1c.Append(TakaroActionNames.GetGameIcon).ToArray(),
+            upstreamActionsAt0c63cf1c
+                .Append(TakaroActionNames.GetGameIcon)
+                .Append(TakaroActionNames.GetPlayerProgression)
+                .ToArray(),
             registry.RootElement.GetProperty("actions").EnumerateObject().Select(entry => entry.Name).ToArray());
     }
 

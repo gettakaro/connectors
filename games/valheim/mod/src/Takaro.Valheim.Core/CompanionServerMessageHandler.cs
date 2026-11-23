@@ -9,6 +9,7 @@ public enum CompanionMessageOutcome
     VersionRejected,
     Heartbeat,
     InventoryAccepted,
+    SkillsAccepted,
     KillVerdictAccepted,
     CommandProbeSubmitted,
     CommandProbeDuplicate,
@@ -22,6 +23,7 @@ public sealed record CompanionMessageHandlingResult(
     int? RemoteMaximumVersion = null,
     string? RemoteProductVersion = null,
     int? InventoryStacks = null,
+    int? Skills = null,
     CompanionKillVerdict? KillVerdict = null,
     CommandProbeInvocation? CommandProbeInvocation = null,
     string? SessionNonce = null)
@@ -42,6 +44,7 @@ public sealed class CompanionServerMessageHandler
     private readonly CompanionRateLimiter killVerdictRateLimiter;
     private readonly CompanionInventoryCache inventory;
     private readonly CompanionKillVerdictStore killVerdicts;
+    private readonly CompanionProgressionCache? progression;
     private readonly CommandProbeServer? commandProbe;
 
     public CompanionServerMessageHandler(
@@ -50,9 +53,11 @@ public sealed class CompanionServerMessageHandler
         CompanionRateLimiter killVerdictRateLimiter,
         CompanionInventoryCache inventory,
         CompanionKillVerdictStore killVerdicts,
-        CommandProbeServer? commandProbe = null)
+        CommandProbeServer? commandProbe = null,
+        CompanionProgressionCache? progression = null)
     {
         this.commandProbe = commandProbe;
+        this.progression = progression;
         this.sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         this.rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
         this.killVerdictRateLimiter = killVerdictRateLimiter ?? throw new ArgumentNullException(nameof(killVerdictRateLimiter));
@@ -92,6 +97,8 @@ public sealed class CompanionServerMessageHandler
                     : CompanionMessageHandlingResult.Ignored;
             case CompanionMessageTypes.InventorySnapshot:
                 return ProcessInventory(peerId, player, envelope, now, receivedAt);
+            case CompanionMessageTypes.SkillsSnapshot:
+                return ProcessSkills(peerId, player, envelope, now);
             case CompanionMessageTypes.KillVerdict:
                 return ProcessKillVerdict(peerId, envelope, now, receivedAt);
             case CompanionMessageTypes.CommandProbeInvoke when commandProbe is { Enabled: true }:
@@ -226,6 +233,31 @@ public sealed class CompanionServerMessageHandler
             CompanionMessageOutcome.InventoryAccepted,
             decision,
             InventoryStacks: report.Stacks.Count);
+    }
+
+    private CompanionMessageHandlingResult ProcessSkills(
+        long peerId,
+        TakaroPlayer player,
+        CompanionEnvelope envelope,
+        DateTimeOffset now)
+    {
+        if (!TryValidateReport(peerId, envelope, now, rateLimiter, CompanionCapability.Skills, out var decision))
+        {
+            return new CompanionMessageHandlingResult(CompanionMessageOutcome.Ignored, decision);
+        }
+
+        if (progression is null
+            || !CompanionEnvelopeCodec.TryDecodePayload<CompanionSkillsReport>(envelope, out var report, out _)
+            || report is null)
+        {
+            return new CompanionMessageHandlingResult(CompanionMessageOutcome.Ignored, decision);
+        }
+
+        progression.Remember(peerId, player, report.Skills);
+        return new CompanionMessageHandlingResult(
+            CompanionMessageOutcome.SkillsAccepted,
+            decision,
+            Skills: report.Skills.Count);
     }
 
     private CompanionMessageHandlingResult ProcessKillVerdict(

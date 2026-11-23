@@ -26,7 +26,10 @@ public sealed class ValheimPlayerResolver
             playerId,
             null,
             null,
-            null));
+            ReadPing(PeerOf(player)))) with
+        {
+            Character = ReadCharacter(player.m_characterID, player.m_name)
+        };
 
         logger.LogDebug($"Takaro Valheim player mapped: name={takaroPlayer.Name}, gameId={takaroPlayer.GameId}, platformId={takaroPlayer.PlatformId ?? "<none>"}.");
         try
@@ -51,7 +54,54 @@ public sealed class ValheimPlayerResolver
             platformId,
             null,
             null,
-            null));
+            ReadPing(peer))) with
+        {
+            Character = ReadCharacter(peer.m_characterID, peer.m_playerName)
+        };
+    }
+
+    private static ZNetPeer? PeerOf(ZNet.PlayerInfo player)
+    {
+        var network = ZNet.instance;
+        return network is null || player.m_characterID.IsNone() ? null : network.GetPeer(player.m_characterID.UserID);
+    }
+
+    /// <summary>
+    /// The round-trip time the transport measures for this peer, in milliseconds;
+    /// null when the socket has no measurement.
+    /// </summary>
+    private static int? ReadPing(ZNetPeer? peer)
+    {
+        try
+        {
+            if (peer?.m_socket is not { } socket)
+            {
+                return null;
+            }
+
+            if (socket is ZSteamSocket)
+            {
+                return SteamServerPing.TryRead(socket);
+            }
+
+            socket.GetConnectionQuality(out _, out _, out var ping, out _, out _);
+            return PlayerMapper.ToPing(ping);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static TakaroCharacter? ReadCharacter(ZDOID characterZdoId, string? fallbackName)
+    {
+        var zdo = characterZdoId.IsNone() ? null : ZDOMan.instance?.GetZDO(characterZdoId);
+        return zdo is null
+            ? null
+            : PlayerMapper.ToCharacter(
+                zdo.GetLong(ZDOVars.s_playerID, 0L),
+                zdo.GetString(ZDOVars.s_playerName, string.Empty),
+                fallbackName ?? string.Empty);
     }
 
     public bool TryResolvePlayer(

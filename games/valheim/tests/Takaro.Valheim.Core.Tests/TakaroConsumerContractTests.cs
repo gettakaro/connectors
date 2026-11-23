@@ -481,6 +481,7 @@ public sealed class TakaroConsumerContractTests
         public Task<TakaroActionResult> GetPlayerAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GetPlayerLocationAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GetPlayerInventoryAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
+        public Task<TakaroActionResult> GetPlayerProgressionAsync(string identifier, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> GiveItemAsync(string identifier, string itemCode, int amount, string? quality, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> SendMessageAsync(string message, string? recipientIdentifier, string? senderNameOverride, CancellationToken cancellationToken = default) => throw Unexpected();
         public Task<TakaroActionResult> ExecuteConsoleCommandAsync(string command, CancellationToken cancellationToken = default) => throw Unexpected();
