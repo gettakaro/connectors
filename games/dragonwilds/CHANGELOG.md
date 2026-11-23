@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.8.0...dragonwilds-v0.9.0) (2026-11-23)
+
+
+### Features
+
+* **dragonwilds:** report player skills as progression ([#799](https://github.com/gettakaro/connectors/issues/799)) ([9f20ce6](https://github.com/gettakaro/connectors/commit/9f20ce606a6733787853261abbf2aa8b7910f700))
+
 ## [0.8.0](https://github.com/gettakaro/connectors/compare/dragonwilds-v0.7.0...dragonwilds-v0.8.0) (2026-11-13)
 
 
