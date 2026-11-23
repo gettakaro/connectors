@@ -72,7 +72,7 @@ public:
     static ActionOutcome ExecuteAction(const PreparedAction& action);
     ApplyResult ApplyOutcome(const PreparedAction& action, ActionOutcome outcome);
     MappedEvent MapEvent(const std::string& ringEventJson) const;
-    bool SuppressRingConnection(const std::string& eventType) const;
+    bool SuppressRingEvent(const std::string& eventType) const;
     NativePersistence::Result ObserveAdmitted(const MappedEvent& event);
     void NoteEventQueued(const std::string& playerId); // refresh 60 s enrichment window on replay
     std::vector<PreparedAction> DueTimedBans(int64_t nowMs);

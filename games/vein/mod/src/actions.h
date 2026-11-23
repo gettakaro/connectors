@@ -26,6 +26,9 @@ Result Players();
 Result Player(const std::string& gameId);
 Result PlayerLocation(const std::string& gameId);
 Result PlayerInventory(const std::string& gameId);
+// Skill levels from the cache the player snapshot keeps; never enters the game thread. 404 when the plugin
+// has neither a reading nor an online row for the player.
+Result PlayerProgression(const std::string& gameId);
 Result Items(const std::string& search);
 Result Entities();
 Result Locations();
@@ -57,6 +60,13 @@ void ForgetConnection(const std::string& gameId);
 // reflection, so it must be called ON THE GAME THREAD; entity-killed uses it to name the weapon
 // the killer swung instead of printing the DamageCauser actor's class.
 std::string EquippedItemName(void* actor);
+
+// The GUID of the character this player is in the world as, or "" on the character screen. Reads
+// UObjects, so it must be called on the game thread.
+std::string InWorldCharacterId(void* playerState, void* controller);
+
+// Records the character the latest getPlayers or getPlayer answer named for this player, or "".
+void NoteReportedCharacter(const std::string& gameId, const std::string& characterId);
 
 // Debug only (TAKARO_PLUGIN_DEBUG=1): kills the nearest AI character to a player through the game's
 // own damage pipeline, with that player as the instigator. It exists so that entity-killed can be

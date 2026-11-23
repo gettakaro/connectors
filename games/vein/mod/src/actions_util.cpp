@@ -1,6 +1,15 @@
 #include "actions_util.h"
 
+#include <netdb.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <cerrno>
+#include <chrono>
+
 #include <cmath>
+#include <cstring>
+#include <set>
 #include <cstdint>
 #include <cstdio>
 #include <cctype>
@@ -264,6 +273,80 @@ std::string ResolveSenderName(const std::string& override, const std::string& co
     return "Server";
 }
 
+bool ParseHttpBase(const std::string& url, std::string& host, int& port) {
+    static const std::string kScheme = "http://";
+    if (url.compare(0, kScheme.size(), kScheme) != 0) return false;
+    std::string rest = url.substr(kScheme.size());
+    rest = rest.substr(0, rest.find('/'));
+    if (rest.empty()) return false;
+    port = 80;
+    size_t colon = rest.rfind(':');
+    if (colon != std::string::npos) {
+        std::string digits = rest.substr(colon + 1);
+        if (digits.empty() || digits.size() > 5 || digits.find_first_not_of("0123456789") != std::string::npos)
+            return false;
+        port = std::stoi(digits);
+        rest = rest.substr(0, colon);
+    }
+    if (rest.empty() || port <= 0 || port > 65535) return false;
+    host = rest;
+    return true;
+}
+
+int PostEmpty(const std::string& host, int port, const std::string& path, int timeoutMs) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    auto left = [&] {
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        return ms > 0 ? static_cast<int>(ms) : 0;
+    };
+    addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0 || !res) return -1;
+    int status = -1;
+    for (addrinfo* a = res; a && status < 0; a = a->ai_next) {
+        int fd = socket(a->ai_family, a->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC, a->ai_protocol);
+        if (fd < 0) continue;
+        pollfd pf{fd, POLLOUT, 0};
+        if (connect(fd, a->ai_addr, a->ai_addrlen) != 0 && !(errno == EINPROGRESS && poll(&pf, 1, left()) == 1)) {
+            close(fd);
+            continue;
+        }
+        int err = 0;
+        socklen_t len = sizeof err;
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) != 0 || err != 0) { close(fd); continue; }
+        status = 0;  // connected: from here on no answer means 0, not -1
+        const std::string req = "POST " + path + " HTTP/1.1\r\nHost: " + host + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        size_t sent = 0;
+        while (sent < req.size() && left() > 0) {
+            ssize_t n = send(fd, req.data() + sent, req.size() - sent, MSG_NOSIGNAL);
+            if (n > 0) { sent += static_cast<size_t>(n); continue; }
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) { pollfd w{fd, POLLOUT, 0}; poll(&w, 1, left()); continue; }
+            break;
+        }
+        std::string head;
+        char buf[512];
+        while (sent == req.size() && head.find("\r\n") == std::string::npos && head.size() < 4096 && left() > 0) {
+            pollfd r{fd, POLLIN, 0};
+            if (poll(&r, 1, left()) != 1) break;
+            ssize_t n = recv(fd, buf, sizeof buf, 0);
+            if (n <= 0) break;
+            head.append(buf, static_cast<size_t>(n));
+        }
+        close(fd);
+        // "HTTP/1.1 204 No Content"
+        if (head.compare(0, 5, "HTTP/") == 0) {
+            size_t sp = head.find(' ');
+            if (sp != std::string::npos && head.size() >= sp + 4) {
+                std::string code = head.substr(sp + 1, 3);
+                if (code.find_first_not_of("0123456789") == std::string::npos) status = std::stoi(code);
+            }
+        }
+    }
+    freeaddrinfo(res);
+    return status;
+}
+
 }  // namespace ActionsUtil
 
 // ---- lane L3e -------------------------------------------------------------------------------
@@ -348,4 +431,59 @@ std::string ActionsUtil::LocationRefusal(bool hasPawn, bool spawned, bool hasLoc
                "), so there is no position in the world";
     if (!hasLoc) return "pawn has no readable root component";
     return "";
+}
+
+std::string ActionsUtil::ProgressionKey(const std::string& code) {
+    std::string s = code;
+    if (s.size() > 2 && s.compare(s.size() - 2, 2, "_C") == 0) s = s.substr(0, s.size() - 2);
+    for (const char* prefix : {"BP_", "ST_"})
+        if (s.rfind(prefix, 0) == 0) s = s.substr(strlen(prefix));
+    std::string key;
+    bool upperNext = false;
+    for (char c : s) {
+        if (!isalnum((unsigned char)c)) {
+            upperNext = !key.empty();
+            continue;
+        }
+        if (key.empty()) key += (char)tolower((unsigned char)c);
+        else key += upperNext ? (char)toupper((unsigned char)c) : c;
+        upperNext = false;
+    }
+    if (key.empty() || !islower((unsigned char)key[0]) || key.size() > 128) return "";
+    return key;
+}
+
+std::string ActionsUtil::ProgressionTracksJson(const std::vector<ProgressionStat>& stats) {
+    std::set<std::string> seen;
+    std::string out = "[";
+    for (const ProgressionStat& s : stats) {
+        if (seen.size() >= 200) break;
+        const std::string key = ProgressionKey(s.code);
+        if (key.empty() || key == "character" || !std::isfinite(s.xp) || !seen.insert(key).second) continue;
+        const std::string fallback = HumaniseCode(s.code.rfind("ST_", 0) == 0 ? s.code.substr(3) : s.code);
+        const std::string name = (s.name.empty() ? fallback : s.name).substr(0, 128);
+        if (out.size() > 1) out += ",";
+        out += "{\"key\":" + JsonStr(key) + ",\"name\":" + JsonStr(name) + ",\"level\":" +
+               std::to_string(s.level) + ",\"experience\":" + JsonNum(s.xp);
+        if (s.xpNext > s.xpFloor) {
+            double progress = (s.xp - s.xpFloor) / (s.xpNext - s.xpFloor);
+            progress = progress < 0 ? 0 : progress > 1 ? 1 : progress;
+            out += ",\"progress\":" + JsonNum(progress);
+        }
+        out += "}";
+    }
+    return out + "]";
+}
+
+std::string ActionsUtil::RefusalHint(const std::string& why, const std::string& serverName) {
+    if (why.find("Internal error identifying") == std::string::npos) return "";
+    return "If this is a new server: Takaro answers this when the name \"" + serverName +
+           "\" is already used in your domain, even by a deleted server. Set another TAKARO_SERVER_NAME.";
+}
+
+std::string ActionsUtil::CharacterJson(const std::string& id, const std::string& name,
+                                       const std::string& fallbackName) {
+    const std::string shown = (name.empty() ? fallbackName : name).substr(0, 255);
+    if (id.empty() || shown.empty()) return "";
+    return "{\"id\":" + JsonStr(id) + ",\"name\":" + JsonStr(shown) + "}";
 }

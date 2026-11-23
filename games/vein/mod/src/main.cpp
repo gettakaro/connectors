@@ -99,9 +99,13 @@ void* InitThread(void*) {
         FlushPluginLogs();
         Sleep(500);
     }
+    // A slow boot (a busy host) can tick for the first time well after this wait. Validation is then
+    // run on the first tick from the housekeeping loop below; without it no game hook ever binds.
+    bool validationDeferred = false;
     if (GameThread::TickCount() == 0) {
-        PluginState::Get().SetCapability("reflection", "degraded", "no engine tick observed; boot validation skipped");
-        PluginLog("gamethread: no tick after 5 minutes - reflection validations skipped");
+        validationDeferred = true;
+        PluginState::Get().SetCapability("reflection", "degraded", "no engine tick yet; boot validation waits for it");
+        PluginLog("gamethread: no tick after 5 minutes - reflection validation deferred to the first tick");
     } else {
         if (!GameThread::Run([] { Reflect::Validate(); }, 20000))
             PluginState::Get().SetCapability("reflection", "degraded", "boot validation job timed out");
@@ -129,6 +133,12 @@ void* InitThread(void*) {
 
     while (!g_stop) {
         Sleep(2000);
+        if (validationDeferred && GameThread::TickCount() > 0) {
+            validationDeferred = false;
+            PluginLog("gamethread: first tick arrived; running the deferred reflection validation");
+            if (!GameThread::Run([] { Reflect::Validate(); }, 20000))
+                PluginState::Get().SetCapability("reflection", "degraded", "boot validation job timed out");
+        }
         try {
             Events::Housekeep();
             Actions::Housekeep();

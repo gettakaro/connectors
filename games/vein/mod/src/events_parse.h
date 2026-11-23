@@ -99,4 +99,18 @@ bool IsNoise(const std::string& line);
 const char* ChatSegmentName(int v);   // "All"/"Local"/"Global"/"Radio", nullptr when unknown
 const char* ChatChannelName(int v);   // "all"/"local"/"global"/"radio", "global" when unknown
 
+// Keeps the forwarded server log under Takaro's limit of 100 lines per 5 s. A server boot writes
+// thousands of lines at once, and past the limit Takaro drops them and records `event-rate-limited`.
+class LogPacer {
+public:
+    bool Take(uint64_t nowMs);
+    // The lines refused since the last call, for one summary line.
+    uint64_t TakeSkipped();
+
+private:
+    static constexpr double kPerSecond = 15, kBurst = 20;
+    double tokens_ = kBurst;
+    uint64_t lastMs_ = 0, skipped_ = 0;
+};
+
 }  // namespace EventsParse
