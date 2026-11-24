@@ -20,11 +20,18 @@ struct PlayerId {
     std::string steam64;  // gameId
     std::string name;     // PlayerState.PlayerNamePrivate (the platform name, as getPlayers reports it)
     std::string ip;       // PlayerState.SavedNetworkAddress, optional
+    // ConanCharacter.CharacterStableId, the row id in the save. Empty until the character is loaded.
+    std::string characterId, characterName;
+    bool connectedWithoutCharacter = false;  // Takaro got this player's connect with no character
     bool Valid() const;   // a 17-digit Steam64 starting 7656
 };
 
 // { gameId, name, steamId, platformId: "steam:<id>", ip? }; name falls back to the Steam64.
 JsonValue PlayerJson(const PlayerId& p);
+
+// Takaro switches a Character only on a connect. True when `now` shows a character Takaro has not
+// been told about: a new id, or the first id after a connect that had none.
+bool NeedsRelog(const PlayerId& before, const PlayerId& now);
 
 // Conan chat channel -> Takaro ChatChannel. Takaro has no local channel: Global and Local map to
 // "global", Clan to "team", anything else to "global".

@@ -81,6 +81,8 @@ Checked on server build 26672347 (Linux and Windows), 2026-11-23. ✅ works, ⚠
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
+| Player levels and skills | ✅ | Character level, experience and the six attributes, read from the server. |
+| Characters | ✅ | Each character on the account is its own Takaro character with its own level. Recreate Character starts a new one; a death does not end it. |
 | Item list | ✅ | |
 | Entity list | ⚠️ | Not compared against the game. |
 | Locations | ✅ | Named places of the Exiled Lands. |

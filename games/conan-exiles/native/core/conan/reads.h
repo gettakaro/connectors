@@ -43,6 +43,9 @@ struct ReadOptions {
     int warmupRetryMs = 3000;
     int listWaitMs = 8000;  // a list action waits this long for a catalogue still building
     int refreshAfterJoinMs = 60000;  // after our own marker table load: rebuild this long after the first join
+    // A joining player whose character is not readable yet is left out of getPlayers for this long,
+    // so Takaro never records the player without the character (it would keep a stray one).
+    int characterWaitMs = 15000;
 };
 
 enum class Check { Pending, Passed, Failed };
@@ -63,6 +66,7 @@ public:
     // One warm-up step (index scan, layout, catalogues, text self-check). True once everything
     // is built. The background thread calls it until it returns true; tests call it directly.
     bool WarmupStep(std::string& status);
+    bool CataloguesReady();  // every list action can be answered at once, with checked names
 
     // giveItem (lane L2b) can resolve item codes once the item catalogue is built.
     int32_t ResolveItemCode(const std::string& code);
@@ -117,6 +121,7 @@ private:
     int markerLoads_ = 0;
     uint64_t nextMarkerLoadMs_ = 0, nextRefreshMs_ = 0;
     int refreshTries_ = 0;
+    std::atomic<bool> cataloguesChecked_{false};
     bool markersForced_ = false;     // the locations came from our own load, not the game's
     bool refreshAfterJoin_ = false;  // rebuild every catalogue once a player has joined
     std::atomic<uint64_t> firstPlayerMs_{0};  // when a snapshot first saw an online player
@@ -139,8 +144,17 @@ private:
         std::string json;
         bool haveLocation = false;
         double loc[3] = {0, 0, 0};
+        std::string progression;  // the last track array answered
     };
     std::map<std::string, Known> known_;  // Steam64 -> last seen
+    struct SessionCharacter {
+        int64_t id = 0;  // 0: none read yet this session
+        std::string name;
+        uint64_t sinceMs = 0;  // first snapshot of this session
+    };
+    std::map<std::string, SessionCharacter> session_;  // Steam64 -> online players of the last snapshot
+    // Fills a missing character from the session, or reports a join still waiting for its character.
+    bool ResolveCharacter(PlayerRecord& p, uint64_t now);
     std::atomic<uint64_t> calls_{0}, errors_{0};
     uint64_t gameThreadJobs_ = 0, gameThreadNs_ = 0, lastSnapshotNs_ = 0;
     uint64_t snapshotReads_ = 0;

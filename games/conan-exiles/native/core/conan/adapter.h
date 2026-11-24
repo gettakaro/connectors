@@ -13,6 +13,9 @@
 
 namespace conan {
 
+// How long the first connection waits for the catalogues. They take about a minute on a busy host.
+constexpr int64_t kCatalogueHoldMs = 240000;
+
 struct AdapterOptions {
     bool ready = false;           // build pinned and the ProcessEvent hook installed
     std::string refusal;          // why not ready (unknown build, scan failure, hook failure)
@@ -61,6 +64,7 @@ public:
     static std::string CapabilityName(const std::string& action);
     // conan-exiles / takaro-conan-exiles / the release version (TAKARO_CONAN_NATIVE_VERSION).
     takaro::ConnectorIdentity Identity() override;
+    bool ReadyToConnect() override;
     void DrainEvents(std::vector<takaro::GameEvent>& out) override;
     std::string HealthJson() override;
     // Any thread: queue an event for Takaro (bounded; the oldest `log` event is dropped first).

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ACTIONS = {'getPlayer', 'getPlayers', 'getPlayerLocation', 'getPlayerInventory', 'giveItem', 'listItems',
            'listEntities', 'listLocations', 'executeConsoleCommand', 'sendMessage', 'teleportPlayer',
            'testReachability', 'kickPlayer', 'banPlayer', 'unbanPlayer', 'listBans', 'shutdown', 'getMapInfo',
-           'getMapTile'}
+           'getMapTile', 'getPlayerProgression'}
 EVENTS = {'log', 'player-connected', 'player-disconnected', 'chat-message', 'player-death', 'entity-killed'}
 STATUSES = {'live-supported', 'schema-fallback', 'unsupported', 'not-requested', 'pending'}
 
@@ -33,7 +33,7 @@ def main():
                     if compiled[key].get(k) != published[key].get(k)}
             failures.append(f'capabilities.json {key} differs from coverage.cpp: {sorted(diff)}')
     if set(published['functions']) != ACTIONS:
-        failures.append(f'functions are not exactly the 19 Takaro actions: {set(published["functions"]) ^ ACTIONS}')
+        failures.append(f'functions are not exactly the 20 Takaro actions: {set(published["functions"]) ^ ACTIONS}')
     if set(published['events']) != EVENTS:
         failures.append(f'events are not exactly the 6 Takaro events: {set(published["events"]) ^ EVENTS}')
     for section in ('functions', 'events'):
@@ -61,7 +61,7 @@ def main():
     for f in failures:
         print('FAIL ' + f)
     if not failures:
-        print('PASS capabilities.json equals the compiled coverage registry (19 actions, 6 events)')
+        print('PASS capabilities.json equals the compiled coverage registry (20 actions, 6 events)')
         print('PASS pins.json equals the compiled signature and build table')
         print('PASS game_icon_png.inc equals assets/icon-256.png')
     return 1 if failures else 0
