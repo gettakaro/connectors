@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.8.0...conan-exiles-v3.9.0) (2026-11-24)
+
+
+### Features
+
+* **conan-exiles:** report character level, experience and attributes as player progression ([#802](https://github.com/gettakaro/connectors/issues/802)) ([064097f](https://github.com/gettakaro/connectors/commit/064097f8fabc8ec4c2a31ff5fbca47eba0879ef7))
+* **conan-exiles:** support Steam build 26672347 ([#949](https://github.com/gettakaro/connectors/issues/949)) ([0bbf2b1](https://github.com/gettakaro/connectors/commit/0bbf2b1ec0ee1be17e3833f1a500edcd2a3f475e))
+
 ## [3.8.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.7.0...conan-exiles-v3.8.0) (2026-11-13)
 
 
