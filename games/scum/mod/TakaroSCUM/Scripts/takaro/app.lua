@@ -16,7 +16,7 @@ local profile = require("takaro.profile")
 
 local M = {}
 
-M.VERSION = "0.4.0" -- x-release-please-version
+M.VERSION = "0.5.0" -- x-release-please-version
 M.MAX_NOTICES_PER_TICK = 500
 M.STATUS_EVERY_MS = 60000
 M.SAVE_KNOWN_EVERY_MS = 30000
