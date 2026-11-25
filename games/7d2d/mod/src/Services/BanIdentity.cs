@@ -21,6 +21,34 @@ namespace Takaro.Services
         public const string AdminBanLabel = "Admin Ban";
 
         /// <summary>
+        /// True for a name Takaro can show for a player. The ban label is not a name, and a
+        /// name of only white space is stored as null by the mirror database, which makes
+        /// Takaro reject the whole ban list.
+        /// </summary>
+        public static bool IsRealName(string name) =>
+            !string.IsNullOrWhiteSpace(name) && name.Trim() != AdminBanLabel;
+
+        /// <summary>
+        /// True when <paramref name="gameId"/> is an EOS product user id (32 hex digits), the
+        /// only form the game accepts as a player id. Anything else, such as a placeholder
+        /// Takaro stored for a player without a known id, is refused before it reaches the
+        /// game, which throws on it.
+        /// </summary>
+        public static bool IsEosGameId(string gameId)
+        {
+            if (gameId == null || gameId.Length != 32)
+                return false;
+            foreach (char c in gameId)
+            {
+                bool hex =
+                    (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!hex)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Returns null when the entry cannot be keyed by an EOS id; the legacy
         /// integration skipped those entries as well.
         /// </summary>
@@ -164,10 +192,8 @@ namespace Takaro.Services
             var names = new Dictionary<string, string>();
             foreach (BanRecord candidate in candidates)
             {
-                bool isRealName =
-                    !string.IsNullOrEmpty(candidate.Name) && candidate.Name != AdminBanLabel;
-                if (isRealName && !names.ContainsKey(candidate.GameId))
-                    names[candidate.GameId] = candidate.Name;
+                if (IsRealName(candidate.Name) && !names.ContainsKey(candidate.GameId))
+                    names[candidate.GameId] = candidate.Name.Trim();
             }
 
             // Takaro rejects the whole list over one entry without a name, and writes any

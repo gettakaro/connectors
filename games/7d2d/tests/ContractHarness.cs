@@ -65,6 +65,9 @@ public static partial class ContractHarness
             AssertUnbanLiftsTheEntriesTheMirrorReports();
             AssertBanCaptureMergesBothStores();
             AssertBanCaptureSendsOnlyRealNames();
+            AssertBanCaptureDropsWhiteSpaceNames();
+            AssertGameIdMustBeAnEosId();
+            AssertGiveItemQualityOnlyForItemsWithQuality();
             AssertConnectDeadline();
             AssertAbandonedSocketCannotTouchTheSession();
             AssertIdentifyAnswerSetsTheNegotiatedVersion();
@@ -1454,6 +1457,102 @@ public static partial class ContractHarness
         );
     }
 
+    private static void AssertBanCaptureDropsWhiteSpaceNames()
+    {
+        var skipped = new List<string>();
+        var blacklist = new[]
+        {
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_space",
+                Name = " ",
+                Reason = "Open a support ticket",
+                ExpiresAt = "2034-10-19T00:13:35.0000000Z",
+            },
+            new Takaro.Services.BanIdentity.BanSource
+            {
+                BanId = "EOS_padded",
+                Name = "  Padded  ",
+                Reason = "griefing",
+            },
+        };
+
+        List<Takaro.Persistence.BanRecord> captured = Takaro.Services.BanIdentity.Capture(
+            blacklist,
+            new Takaro.Services.BanIdentity.BanSource[0],
+            skipped.Add
+        );
+
+        Equal(1, captured.Count, "a ban named only with white space is not sent");
+        Equal("EOS_space", string.Join(",", skipped), "the white-space name is reported skipped");
+        Equal("Padded", captured[0].Name, "a real name is sent without surrounding white space");
+        True(
+            !Takaro.Services.BanIdentity.IsRealName(null)
+                && !Takaro.Services.BanIdentity.IsRealName("\u00a0\t")
+                && !Takaro.Services.BanIdentity.IsRealName(" Admin Ban "),
+            "null, white space and the ban label are not names"
+        );
+    }
+
+    private static void AssertGameIdMustBeAnEosId()
+    {
+        True(
+            Takaro.Services.BanIdentity.IsEosGameId("000213691caa4c17ab8134415efd0889"),
+            "a 32 hex digit EOS id is accepted"
+        );
+        True(
+            Takaro.Services.BanIdentity.IsEosGameId("000213691CAA4C17AB8134415EFD0889"),
+            "upper case hex is accepted"
+        );
+        foreach (
+            string bad in new[]
+            {
+                null,
+                "",
+                "<unknown/none>",
+                "76561198000735875",
+                "000213691caa4c17ab8134415efd088",
+                "000213691caa4c17ab8134415efd088z",
+            }
+        )
+        {
+            True(
+                !Takaro.Services.BanIdentity.IsEosGameId(bad),
+                "a gameId that is not an EOS id is refused: " + (bad ?? "null")
+            );
+        }
+    }
+
+    private static void AssertGiveItemQualityOnlyForItemsWithQuality()
+    {
+        True(
+            Takaro.Services.ItemQuality.TryResolve("250", false, 6, out ushort q1, out string e1)
+                && e1 == null,
+            "an item without quality ignores any requested quality"
+        );
+        Equal(6, (int)q1, "an item without quality gets the default");
+        True(
+            !Takaro.Services.ItemQuality.TryResolve("250", true, 6, out ushort q2, out string e2)
+                && e2 != null
+                && e2.Contains("250"),
+            "an out of range quality is still refused for an item with quality"
+        );
+        True(
+            Takaro.Services.ItemQuality.TryResolve("3", true, 6, out ushort q3, out string e3),
+            "a valid quality is accepted"
+        );
+        Equal(3, (int)q3, "the requested quality is used");
+        True(
+            Takaro.Services.ItemQuality.TryResolve(null, true, 6, out ushort q4, out string e4),
+            "no requested quality is accepted"
+        );
+        Equal(6, (int)q4, "no requested quality gives the default");
+        True(
+            !Takaro.Services.ItemQuality.TryResolve("abc", true, 6, out ushort q5, out string e5),
+            "a quality that is not a number is refused for an item with quality"
+        );
+    }
+
     private const string AcceptedV1 =
         "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs-1\",\"protocolVersion\":1}}";
     private const string AcceptedV0 =
@@ -2199,7 +2298,12 @@ public static partial class ContractHarness
             string name = "give " + (string)giveCase["name"];
             GameManager.Instance.ResetGiveItemFixture();
             AssertGiveItemTerminal(
-                GiveItemArgs("fixture-player", "resourceWood", 2, (string)giveCase["quality"]),
+                GiveItemArgs(
+                    "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+                    "resourceWood",
+                    2,
+                    (string)giveCase["quality"]
+                ),
                 WebSocketMessage.MessageTypes.Response,
                 name
             );
@@ -2219,7 +2323,7 @@ public static partial class ContractHarness
             GameManager.Instance.ResetGiveItemFixture();
             ItemClass.list[42] = new ItemClass { HasSubItems = true };
             AssertGiveItemTerminal(
-                GiveItemArgs("fixture-player", "resourceWood", 1, quality),
+                GiveItemArgs("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "resourceWood", 1, quality),
                 WebSocketMessage.MessageTypes.Response,
                 "give sub-item quality " + (quality ?? "absent")
             );
@@ -2240,7 +2344,10 @@ public static partial class ContractHarness
 
     private static void AssertLegacyParityEntityKilled(JObject legacy)
     {
-        Takaro.TakaroPlayer killer = new Takaro.TakaroPlayer { GameId = "fixture-player" };
+        Takaro.TakaroPlayer killer = new Takaro.TakaroPlayer
+        {
+            GameId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+        };
         foreach (JToken killCase in (JArray)legacy["entityKilled"])
         {
             string className = (string)killCase["entityClassName"];
@@ -2284,11 +2391,11 @@ public static partial class ContractHarness
             {
                 CrossplatformId = new PlatformUserIdentifierAbs
                 {
-                    CombinedString = "EOS_fixture-player",
+                    CombinedString = "EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 },
                 PlatformId = new PlatformUserIdentifierAbs
                 {
-                    CombinedString = "Steam_fixture-player",
+                    CombinedString = "Steam_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 },
                 playerName = "Fixture Player",
             },
@@ -2311,22 +2418,22 @@ public static partial class ContractHarness
             "invalid player"
         );
         AssertGiveItemTerminal(
-            GiveItemArgs("fixture-player", "missing-item", 2, "1"),
+            GiveItemArgs("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "missing-item", 2, "1"),
             WebSocketMessage.MessageTypes.Error,
             "invalid item"
         );
         AssertGiveItemTerminal(
-            GiveItemArgs("fixture-player", "resourceWood", 0, "1"),
+            GiveItemArgs("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "resourceWood", 0, "1"),
             WebSocketMessage.MessageTypes.Error,
             "invalid amount"
         );
         AssertGiveItemTerminal(
-            GiveItemArgs("fixture-player", "resourceWood", 2, "999"),
+            GiveItemArgs("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "resourceWood", 2, "999"),
             WebSocketMessage.MessageTypes.Error,
             "invalid quality"
         );
         AssertGiveItemTerminal(
-            GiveItemArgs("fixture-player", "resourceWood", 2, "1"),
+            GiveItemArgs("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "resourceWood", 2, "1"),
             WebSocketMessage.MessageTypes.Response,
             "valid giveItem"
         );
@@ -2403,11 +2510,11 @@ public static partial class ContractHarness
         Takaro.TakaroPlayer player = Takaro.Shared.TransformPlayerRecordToTakaroPlayer(
             new Takaro.Persistence.PlayerRecord
             {
-                GameId = "fixture-player",
+                GameId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 Name = "Fixture Player",
                 Ping = 42,
-                SteamId = "fixture-player",
-                EpicOnlineServicesId = "fixture-player",
+                SteamId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+                EpicOnlineServicesId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
             }
         );
         JToken playerResponse = JToken.Parse(
@@ -2421,11 +2528,11 @@ public static partial class ContractHarness
             {
                 CrossplatformId = new PlatformUserIdentifierAbs
                 {
-                    CombinedString = "EOS_fixture-player",
+                    CombinedString = "EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 },
                 PlatformId = new PlatformUserIdentifierAbs
                 {
-                    CombinedString = "Steam_fixture-player",
+                    CombinedString = "Steam_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 },
                 playerName = "Fixture Player",
                 ping = 42,
@@ -2445,10 +2552,10 @@ public static partial class ContractHarness
         Takaro.TakaroBan ban = Takaro.Shared.TransformBanRecordToTakaroBan(
             new Takaro.Persistence.BanRecord
             {
-                GameId = "fixture-player",
+                GameId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 Name = "Fixture Player",
-                SteamId = "fixture-player",
-                EpicOnlineServicesId = "fixture-player",
+                SteamId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+                EpicOnlineServicesId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 Reason = "qualification fixture",
                 ExpiresAt = "2030-01-01T00:00:00Z",
             }
@@ -2462,13 +2569,21 @@ public static partial class ContractHarness
         TokenEqual(expectedBanResponse, banResponse, "complete nested ban response fixture");
 
         Equal(
-            "steam:fixture-player",
-            Takaro.Shared.PlatformIdFromIdentifiers("fixture-player", null, "fixture-eos"),
+            "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+            Takaro.Shared.PlatformIdFromIdentifiers(
+                "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+                null,
+                "fixture-eos"
+            ),
             "Steam native identifier has priority"
         );
         Equal(
-            "xbox:fixture-player",
-            Takaro.Shared.PlatformIdFromIdentifiers(null, "fixture-player", "fixture-eos"),
+            "xbox:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+            Takaro.Shared.PlatformIdFromIdentifiers(
+                null,
+                "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+                "fixture-eos"
+            ),
             "Xbox native identifier is normalized"
         );
         Equal(
@@ -2477,14 +2592,14 @@ public static partial class ContractHarness
             "EOS cross-platform identifier is the fallback"
         );
         Equal(
-            "steam:fixture-player",
+            "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
             Takaro
                 .Shared.TransformPlayerRecordToTakaroPlayer(
                     new Takaro.Persistence.PlayerRecord
                     {
-                        GameId = "fixture-player",
+                        GameId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                         Name = "Fixture Player",
-                        SteamId = "fixture-player",
+                        SteamId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                         EpicOnlineServicesId = "fixture-eos",
                     }
                 )
@@ -2492,7 +2607,7 @@ public static partial class ContractHarness
             "PlayerRecord native identifier maps to platformId"
         );
         Equal(
-            "steam:fixture-player",
+            "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
             Takaro
                 .Shared.TransformClientInfoToTakaroPlayer(
                     new ClientInfo
@@ -2503,7 +2618,7 @@ public static partial class ContractHarness
                         },
                         PlatformId = new PlatformUserIdentifierAbs
                         {
-                            CombinedString = "Steam_fixture-player",
+                            CombinedString = "Steam_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                         },
                         playerName = "Fixture Player",
                     }
@@ -2516,26 +2631,33 @@ public static partial class ContractHarness
     private static void AssertNestedArgumentParsing()
     {
         const string giveJson =
-            "{\"player\":{\"gameId\":\"fixture-player\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}";
+            "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}";
         TakaroGiveItemArgs give = WebSocketArgs<TakaroGiveItemArgs>.Parse(giveJson);
-        Equal("fixture-player", give.Player.GameId, "giveItem nested player JSON string");
+        Equal(
+            "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+            give.Player.GameId,
+            "giveItem nested player JSON string"
+        );
         Equal("resourceWood", give.Item, "giveItem item JSON string");
         Equal(2, give.Amount, "giveItem amount JSON string");
 
         JObject messageObject = JObject.Parse(
-            "{\"message\":\"fixture\",\"opts\":{\"recipient\":{\"gameId\":\"fixture-player\"},\"senderNameOverride\":\"Bot\"}}"
+            "{\"message\":\"fixture\",\"opts\":{\"recipient\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"senderNameOverride\":\"Bot\"}}"
         );
         TakaroSendMessageArgs message = WebSocketArgs<TakaroSendMessageArgs>.Parse(messageObject);
         Equal(
-            "fixture-player",
+            "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
             message.Opts.Recipient.GameId,
             "sendMessage nested recipient JObject"
         );
         Equal("Bot", message.Opts.SenderNameOverride, "sendMessage sender override JObject");
 
-        var directUnban = new Dictionary<string, object> { { "gameId", "fixture-player" } };
+        var directUnban = new Dictionary<string, object>
+        {
+            { "gameId", "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0" },
+        };
         TakaroUnbanPlayerArgs unban = WebSocketArgs<TakaroUnbanPlayerArgs>.Parse(directUnban);
-        Equal("fixture-player", unban.GameId, "unban direct gameId dictionary");
+        Equal("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", unban.GameId, "unban direct gameId dictionary");
     }
 
     private static void AssertProductionNotFoundReadSemantics()
@@ -2643,7 +2765,7 @@ public static partial class ContractHarness
                 () =>
                     ReadHandlers.GetPlayerInventory(
                         "fixture-wrong-build-inventory",
-                        "fixture-player"
+                        "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"
                     ),
                 "getPlayerInventory on the wrong build"
             );
@@ -4020,12 +4142,12 @@ namespace Takaro.Services
 
         public Takaro.Persistence.PlayerRecord GetOnlinePlayer(string gameId)
         {
-            return gameId == "fixture-player" ? FixturePlayer() : null;
+            return gameId == "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0" ? FixturePlayer() : null;
         }
 
         public Takaro.Persistence.PlayerRecord GetPlayerLocationRecord(string gameId)
         {
-            return gameId == "fixture-player" ? FixturePlayer() : null;
+            return gameId == "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0" ? FixturePlayer() : null;
         }
 
         public List<Takaro.TakaroItem> GetPlayerInventory(string gameId)
@@ -4046,7 +4168,7 @@ namespace Takaro.Services
         {
             if (gameId == "known-no-tracks")
                 return new List<Takaro.Services.TakaroProgressionTrack>();
-            if (gameId != "fixture-player")
+            if (gameId != "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0")
                 return null;
             return Takaro.Services.PlayerProgression.Build(
                 13,
@@ -4066,7 +4188,7 @@ namespace Takaro.Services
 
         public List<Takaro.TakaroItem> GetItems()
         {
-            return GetPlayerInventory("fixture-player");
+            return GetPlayerInventory("f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0");
         }
 
         public List<Takaro.TakaroEntity> GetEntities()
@@ -4088,11 +4210,11 @@ namespace Takaro.Services
         {
             return new Takaro.Persistence.PlayerRecord
             {
-                GameId = "fixture-player",
+                GameId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 Name = "Fixture Player",
                 Ping = 42,
-                SteamId = "fixture-player",
-                EpicOnlineServicesId = "fixture-player",
+                SteamId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+                EpicOnlineServicesId = "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
                 X = 10.5f,
                 Y = 20.25f,
                 Z = 30.75f,
@@ -4211,7 +4333,7 @@ public sealed class ClientCollection
 
     public ClientInfo ForUserId(PlatformUserIdentifierAbs userId)
     {
-        return userId != null && userId.CombinedString == "EOS_fixture-player"
+        return userId != null && userId.CombinedString == "EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"
             ? FixtureClient
             : null;
     }
@@ -4429,9 +4551,12 @@ public sealed class GameManager
         {
             CrossplatformId = new PlatformUserIdentifierAbs
             {
-                CombinedString = "EOS_fixture-player",
+                CombinedString = "EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
             },
-            PlatformId = new PlatformUserIdentifierAbs { CombinedString = "Steam_fixture-player" },
+            PlatformId = new PlatformUserIdentifierAbs
+            {
+                CombinedString = "Steam_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0",
+            },
             entityId = player.entityId,
             playerName = "Fixture Player",
         };

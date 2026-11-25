@@ -72,25 +72,19 @@ namespace Takaro.WebSocket
                     return;
                 }
 
-                ushort quality = Constants.cItemMaxQuality;
-                if (!string.IsNullOrEmpty(args.Quality))
-                {
-                    if (
-                        ushort.TryParse(args.Quality, out ushort parsedQuality)
-                        && parsedQuality <= Constants.cItemMaxQuality
+                ItemClass itemClass = ItemClass.list[itemValue.type];
+                if (
+                    !ItemQuality.TryResolve(
+                        args.Quality,
+                        itemClass.HasQuality || itemClass.HasSubItems,
+                        Constants.cItemMaxQuality,
+                        out ushort quality,
+                        out string qualityError
                     )
-                    {
-                        quality = parsedQuality;
-                    }
-                    else
-                    {
-                        SendError(
-                            requestId,
-                            "Invalid quality value",
-                            ProtocolErrorCodes.InvalidArgs
-                        );
-                        return;
-                    }
+                )
+                {
+                    SendError(requestId, qualityError, ProtocolErrorCodes.InvalidArgs);
+                    return;
                 }
 
                 ItemValue iv = new ItemValue(itemValue.type, true);

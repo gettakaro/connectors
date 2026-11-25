@@ -118,9 +118,9 @@
     "legacyCommand": "give EOS_${gameId} ${item} ${amount} ${quality ?? ''}",
     "note": "Vanilla give without a quality argument runs 'ushort result2 = 6' (ConsoleCmdGive.Execute, linux-3.3.0.b18; giveself in linux-3.2.0.b10 also defaults to 6), so the legacy default is max quality. A bare new ItemValue(type, true) would instead roll a random 1-6.",
     "cases": [
-      { "name": "empty-quality", "quality": "", "legacyCommand": "give EOS_fixture-player resourceWood 2 ", "expected": 6 },
-      { "name": "absent-quality", "quality": null, "legacyCommand": "give EOS_fixture-player resourceWood 2 ", "expected": 6 },
-      { "name": "explicit-quality", "quality": "4", "legacyCommand": "give EOS_fixture-player resourceWood 2 4", "expected": 4 }
+      { "name": "empty-quality", "quality": "", "legacyCommand": "give EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0 resourceWood 2 ", "expected": 6 },
+      { "name": "absent-quality", "quality": null, "legacyCommand": "give EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0 resourceWood 2 ", "expected": 6 },
+      { "name": "explicit-quality", "quality": "4", "legacyCommand": "give EOS_f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0 resourceWood 2 4", "expected": 4 }
     ]
   },
   "entityKilled": [

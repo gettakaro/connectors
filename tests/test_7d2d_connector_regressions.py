@@ -70,7 +70,9 @@ class SourceRegressionTests(unittest.TestCase):
 
     def test_give_item_keeps_the_vanilla_give_default_quality(self):
         handler = self.source("src/WebSocket/GiveItemHandler.cs")
-        self.assertIn("ushort quality = Constants.cItemMaxQuality;", handler)
+        self.assertIn("Constants.cItemMaxQuality,", handler)
+        resolver = self.source("src/Services/ItemQuality.cs")
+        self.assertIn("quality = max;", resolver)
 
     def test_timed_bans_use_game_local_deadlines_and_persist_before_kick(self):
         actions = self.source("src/WebSocket/ActionHandlers.cs")

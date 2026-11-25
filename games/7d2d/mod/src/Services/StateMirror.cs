@@ -335,7 +335,9 @@ namespace Takaro.Services
             var bans = new List<TakaroBan>();
             foreach (BanRecord record in records)
             {
-                bans.Add(Shared.TransformBanRecordToTakaroBan(record));
+                // Takaro rejects the whole list over one entry without a name.
+                if (BanIdentity.IsRealName(record.Name))
+                    bans.Add(Shared.TransformBanRecordToTakaroBan(record));
             }
             return bans;
         }

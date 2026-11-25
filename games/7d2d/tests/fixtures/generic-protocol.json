@@ -38,34 +38,34 @@
       "args": {},
       "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayers", "args": "{}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "ping": 42}]}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "ping": 42}]}
     },
     {
       "name": "getPlayer",
-      "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": 7}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayer", "args": "{\"gameId\":\"fixture-player\"}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "ping": 42}}
+      "args": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}, {"name": "json-string", "value": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": 7}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayer", "args": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}},
+      "response": {"type": "response", "requestId": "fixture-request", "payload": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "ping": 42}}
     },
     {
       "name": "getPlayerLocation",
-      "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": false}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerLocation", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "args": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}, {"name": "json-string", "value": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": false}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responseType": "error"}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerLocation", "args": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": {"x": 10.5, "y": 20.25, "z": 30.75, "dimension": "main"}}
     },
     {
       "name": "getPlayerInventory",
-      "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": []}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerInventory", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "args": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}, {"name": "json-string", "value": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": []}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerInventory", "args": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": [{"name": "Wood", "code": "resourceWood", "amount": 2, "quality": "1"}]}
     },
     {
       "name": "getPlayerProgression",
-      "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": null}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerProgression", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "args": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}, {"name": "json-string", "value": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": []}}, {"name": "not-found", "value": {"gameId": "missing-player"}, "responsePayload": null}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "getPlayerProgression", "args": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": [{"key": "character", "name": "Level", "level": 13, "experience": 48210, "progress": 0.42}, {"key": "perkminer69r", "name": "Miner 69'r", "level": 2}]}
     },
     {
@@ -77,9 +77,9 @@
     },
     {
       "name": "giveItem",
-      "args": {"player": {"gameId": "fixture-player"}, "item": "resourceWood", "amount": 2, "quality": "1"},
-      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "item": "resourceWood", "amount": 2, "quality": "1"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "amount": -1}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "item": "resourceWood", "amount": 1, "quality": "1"}}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "giveItem", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}"}},
+      "args": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "item": "resourceWood", "amount": 2, "quality": "1"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "item": "resourceWood", "amount": 2, "quality": "1"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "amount": -1}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "item": "resourceWood", "amount": 1, "quality": "1"}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "giveItem", "args": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"item\":\"resourceWood\",\"amount\":2,\"quality\":\"1\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": null}
     },
     {
@@ -98,9 +98,9 @@
     },
     {
       "name": "sendMessage",
-      "args": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "fixture-player"}, "senderNameOverride": "Qualification Bot"}},
-      "argumentCases": [{"name": "object", "value": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "fixture-player"}, "senderNameOverride": "Qualification Bot"}}}, {"name": "json-string", "value": "{\"message\":\"qualification fixture\",\"opts\":{\"recipient\":{\"gameId\":\"fixture-player\"},\"senderNameOverride\":\"Qualification Bot\"}}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"message": 7}}, {"name": "not-found", "value": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "missing-player"}}}}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "sendMessage", "args": "{\"message\":\"qualification fixture\",\"opts\":{\"recipient\":{\"gameId\":\"fixture-player\"},\"senderNameOverride\":\"Qualification Bot\"}}"}},
+      "args": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "senderNameOverride": "Qualification Bot"}},
+      "argumentCases": [{"name": "object", "value": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "senderNameOverride": "Qualification Bot"}}}, {"name": "json-string", "value": "{\"message\":\"qualification fixture\",\"opts\":{\"recipient\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"senderNameOverride\":\"Qualification Bot\"}}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"message": 7}}, {"name": "not-found", "value": {"message": "qualification fixture", "opts": {"recipient": {"gameId": "missing-player"}}}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "sendMessage", "args": "{\"message\":\"qualification fixture\",\"opts\":{\"recipient\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"senderNameOverride\":\"Qualification Bot\"}}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": null}
     },
     {
@@ -112,30 +112,30 @@
     },
     {
       "name": "teleportPlayer",
-      "args": {"player": {"gameId": "fixture-player"}, "x": 10, "y": 20, "z": 30, "dimension": "main"},
-      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "x": 10, "y": 20, "z": 30}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"x\":10,\"y\":20,\"z\":30}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "x": "east"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "x": 10, "y": 20, "z": 30}}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "teleportPlayer", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"x\":10,\"y\":20,\"z\":30}"}},
+      "args": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "x": 10, "y": 20, "z": 30, "dimension": "main"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "x": 10, "y": 20, "z": 30}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"x\":10,\"y\":20,\"z\":30}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "x": "east"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "x": 10, "y": 20, "z": 30}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "teleportPlayer", "args": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"x\":10,\"y\":20,\"z\":30}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": null}
     },
     {
       "name": "kickPlayer",
-      "args": {"player": {"gameId": "fixture-player"}, "reason": "qualification fixture"},
-      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "reason": "qualification fixture"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": "fixture-player"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "reason": "qualification fixture"}}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "kickPlayer", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\"}"}},
+      "args": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "reason": "qualification fixture"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "reason": "qualification fixture"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"reason\":\"qualification fixture\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "reason": "qualification fixture"}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "kickPlayer", "args": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"reason\":\"qualification fixture\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": null}
     },
     {
       "name": "banPlayer",
-      "args": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"},
-      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\",\"expiresAt\":\"2030-01-01T00:00:00Z\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "expiresAt": "never"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "reason": "qualification fixture", "expiresAt": null}}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "banPlayer", "args": "{\"player\":{\"gameId\":\"fixture-player\"},\"reason\":\"qualification fixture\",\"expiresAt\":\"2030-01-01T00:00:00Z\"}"}},
+      "args": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"},
+      "argumentCases": [{"name": "object", "value": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}}, {"name": "json-string", "value": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"reason\":\"qualification fixture\",\"expiresAt\":\"2030-01-01T00:00:00Z\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"player": {}, "expiresAt": "never"}}, {"name": "not-found", "value": {"player": {"gameId": "missing-player"}, "reason": "qualification fixture", "expiresAt": null}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "banPlayer", "args": "{\"player\":{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"},\"reason\":\"qualification fixture\",\"expiresAt\":\"2030-01-01T00:00:00Z\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": null}
     },
     {
       "name": "unbanPlayer",
-      "args": {"gameId": "fixture-player"},
-      "argumentCases": [{"name": "object", "value": {"gameId": "fixture-player"}}, {"name": "json-string", "value": "{\"gameId\":\"fixture-player\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": null}}, {"name": "not-found", "value": {"gameId": "missing-player"}}],
-      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "unbanPlayer", "args": "{\"gameId\":\"fixture-player\"}"}},
+      "args": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"},
+      "argumentCases": [{"name": "object", "value": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}, {"name": "json-string", "value": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}, {"name": "empty", "value": {}}, {"name": "invalid", "value": {"gameId": null}}, {"name": "not-found", "value": {"gameId": "missing-player"}}],
+      "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "unbanPlayer", "args": "{\"gameId\":\"f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0\"}"}},
       "response": {"type": "response", "requestId": "fixture-request", "payload": null}
     },
     {
@@ -143,7 +143,7 @@
       "args": {},
       "argumentCases": [{"name": "object", "value": {}}, {"name": "json-string", "value": "{}"}, {"name": "empty", "value": ""}, {"name": "invalid", "value": "{"}],
       "request": {"type": "request", "requestId": "fixture-request", "payload": {"action": "listBans", "args": "{}"}},
-      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}]}
+      "response": {"type": "response", "requestId": "fixture-request", "payload": [{"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "reason": "qualification fixture", "expiresAt": "2030-01-01T00:00:00Z"}]}
     },
     {
       "name": "shutdown",
@@ -155,11 +155,11 @@
   ],
   "events": [
     {"name": "log", "message": {"type": "gameEvent", "payload": {"type": "log", "data": {"msg": "fixture log line"}}}},
-    {"name": "player-connected", "message": {"type": "gameEvent", "payload": {"type": "player-connected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player", "ping": 42}}}}},
-    {"name": "player-disconnected", "message": {"type": "gameEvent", "payload": {"type": "player-disconnected", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player"}}}}},
-    {"name": "chat-message", "message": {"type": "gameEvent", "payload": {"type": "chat-message", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player"}, "channel": "global", "msg": "qualification fixture"}}}},
-    {"name": "player-death", "message": {"type": "gameEvent", "payload": {"type": "player-death", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player"}, "position": {"x": 10, "y": 20, "z": 30, "dimension": "main"}, "msg": "Fixture Player died"}}}},
-    {"name": "entity-killed", "message": {"type": "gameEvent", "payload": {"type": "entity-killed", "data": {"player": {"gameId": "fixture-player", "name": "Fixture Player", "platformId": "steam:fixture-player", "steamId": "fixture-player"}, "entity": "zombieArlene", "weapon": "clubWood", "msg": "Fixture Player killed zombieArlene"}}}}
+    {"name": "player-connected", "message": {"type": "gameEvent", "payload": {"type": "player-connected", "data": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "ping": 42}}}}},
+    {"name": "player-disconnected", "message": {"type": "gameEvent", "payload": {"type": "player-disconnected", "data": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}}}}},
+    {"name": "chat-message", "message": {"type": "gameEvent", "payload": {"type": "chat-message", "data": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "channel": "global", "msg": "qualification fixture"}}}},
+    {"name": "player-death", "message": {"type": "gameEvent", "payload": {"type": "player-death", "data": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "position": {"x": 10, "y": 20, "z": 30, "dimension": "main"}, "msg": "Fixture Player died"}}}},
+    {"name": "entity-killed", "message": {"type": "gameEvent", "payload": {"type": "entity-killed", "data": {"player": {"gameId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "name": "Fixture Player", "platformId": "steam:f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0", "steamId": "f1c7a2e0f1c7a2e0f1c7a2e0f1c7a2e0"}, "entity": "zombieArlene", "weapon": "clubWood", "msg": "Fixture Player killed zombieArlene"}}}}
   ],
   "protocolV1": {
     "oracle": {

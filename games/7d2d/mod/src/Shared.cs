@@ -207,6 +207,9 @@ namespace Takaro
 
         public static ClientInfo GetClientInfoFromGameId(string gameId)
         {
+            // The game throws on an id that is not an EOS id; no such player is online.
+            if (!BanIdentity.IsEosGameId(gameId))
+                return null;
             PlatformUserIdentifierAbs userId = PlatformUserIdentifierAbs.FromCombinedString(
                 $"EOS_{gameId}"
             );
