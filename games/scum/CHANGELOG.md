@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/gettakaro/connectors/compare/scum-v0.5.0...scum-v0.5.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **scum:** connect to Takaro once the world is loaded and the game thread is steady ([#997](https://github.com/gettakaro/connectors/issues/997)) ([82dda64](https://github.com/gettakaro/connectors/commit/82dda6469782b6ea35f705bfe8d9dde402fdf847))
+
 ## [0.5.0](https://github.com/gettakaro/connectors/compare/scum-v0.4.0...scum-v0.5.0) (2026-11-23)
 
 
