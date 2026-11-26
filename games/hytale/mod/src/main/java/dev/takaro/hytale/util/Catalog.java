@@ -11,6 +11,23 @@ public final class Catalog {
     private Catalog() {
     }
 
+    /**
+     * The player-facing name for an item code, the same name listItems publishes: the game's
+     * translation when there is one, otherwise the code itself. Empty stays empty (no weapon).
+     */
+    public static String itemDisplayName(String code, java.util.function.Function<String, String> translation) {
+        if (code == null || code.isEmpty()) {
+            return "";
+        }
+        String name = null;
+        try {
+            name = translation.apply(code);
+        } catch (RuntimeException ignored) {
+            // fall back to the code
+        }
+        return name == null || name.isBlank() ? code : name;
+    }
+
     /** Code segments that mark an asset as developer scaffolding or an abstract parent. */
     private static final java.util.Set<String> DEVELOPER_TOKENS = java.util.Set.of("debug", "test", "dev", "template");
 

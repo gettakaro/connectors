@@ -73,4 +73,23 @@ class BansTest {
         Map<String, Object> p3 = (Map<String, Object>) Bans.toIBan("abc", "ExamplePlayer", "r", null).get("player");
         assertEquals("ExamplePlayer", p3.get("name"));
     }
+
+    @Test
+    void takaroPermanentSentinelBecomesAPermanentBan() {
+        java.time.Instant now = java.time.Instant.parse("2026-11-26T21:30:00Z");
+        assertNull(Bans.gameExpiry(java.time.Instant.parse("3021-01-01T00:00:00Z"), now));
+        assertNull(Bans.gameExpiry(null, now));
+        java.time.Instant soon = java.time.Instant.parse("2026-11-26T21:35:00Z");
+        assertEquals(soon, Bans.gameExpiry(soon, now));
+        java.time.Instant tenYears = java.time.Instant.parse("2036-11-26T21:30:00Z");
+        assertEquals(tenYears, Bans.gameExpiry(tenYears, now));
+    }
+
+    @Test
+    void banDisconnectTextNamesTheReasonAndExpiry() {
+        assertEquals("You are permanently banned! Reason: griefing", Bans.disconnectText("griefing", null));
+        assertEquals("You are banned until 2026-11-26 21:35 UTC. Reason: spam",
+            Bans.disconnectText("spam", java.time.Instant.parse("2026-11-26T21:35:42Z")));
+        assertEquals("You are permanently banned! Reason: No reason.", Bans.disconnectText(" ", null));
+    }
 }

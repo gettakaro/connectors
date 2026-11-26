@@ -231,6 +231,13 @@ public class TakaroPlugin extends JavaPlugin {
         try {
             requestExecutor.execute(() -> requestHandler.handleRequest(sourceWebSocket, requestId, action, payload));
         } catch (java.util.concurrent.RejectedExecutionException e) {
+            if (requestExecutor.isShutdown()) {
+                // The plugin is shutting down with the server: the pool is closed on purpose and
+                // the world is stopping, so do not run the request inline or report it as saturated.
+                getLogger().at(java.util.logging.Level.INFO).log(
+                    "Shutting down, not handling '" + action + "' (requestId " + requestId + ")");
+                return;
+            }
             getLogger().at(java.util.logging.Level.SEVERE).log(
                 "Request executor is saturated, running '" + action + "' inline: " + e.getMessage());
             requestHandler.handleRequest(sourceWebSocket, requestId, action, payload);

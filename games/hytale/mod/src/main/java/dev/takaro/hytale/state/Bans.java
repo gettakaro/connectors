@@ -38,6 +38,33 @@ public final class Bans {
         }
     }
 
+    /**
+     * Takaro sends a permanent ban as a far-future expiresAt (3021-01-01). Stored as a timed ban
+     * the game shows its timed-ban text, which the 0.7.7 client cannot display, and lists it as
+     * timed. Anything more than 100 years out is treated as permanent (null).
+     */
+    public static Instant gameExpiry(Instant expiresAt, Instant now) {
+        if (expiresAt == null) {
+            return null;
+        }
+        return expiresAt.isAfter(now.plus(java.time.Duration.ofDays(36500))) ? null : expiresAt;
+    }
+
+    /**
+     * The disconnect text a banned online player sees. The 0.7.7 client shows "Lost connection to
+     * the server." for the game's own timed-ban message, so the plugin disconnects with this
+     * plain text before storing the ban.
+     */
+    public static String disconnectText(String reason, Instant expiresOn) {
+        String why = reason == null || reason.isBlank() ? "No reason." : reason;
+        if (expiresOn == null) {
+            return "You are permanently banned! Reason: " + why;
+        }
+        String until = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'")
+            .withZone(java.time.ZoneOffset.UTC).format(expiresOn);
+        return "You are banned until " + until + ". Reason: " + why;
+    }
+
     /** True when the string was non-blank but could not be parsed as a timestamp. */
     public static boolean isUnparseableExpiry(String value) {
         return value != null && !value.trim().isEmpty() && parseExpiresAt(value) == null;

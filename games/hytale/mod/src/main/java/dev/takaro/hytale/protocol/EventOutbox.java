@@ -84,6 +84,20 @@ public final class EventOutbox {
         return new ArrayList<>(pending);
     }
 
+    /** Up to {@code max} unacknowledged events with seq above {@code afterSeq}, oldest first. */
+    public synchronized List<Pending> after(long afterSeq, int max) {
+        List<Pending> out = new ArrayList<>(Math.min(max, pending.size()));
+        for (Pending event : pending) {
+            if (out.size() >= max) {
+                break;
+            }
+            if (event.seq() > afterSeq) {
+                out.add(event);
+            }
+        }
+        return out;
+    }
+
     /** Takes every buffered event: a protocol 0 connection has no acks, so they are sent once. */
     public synchronized List<Pending> drain() {
         List<Pending> all = new ArrayList<>(pending);

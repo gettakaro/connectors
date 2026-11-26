@@ -38,6 +38,14 @@ public class TakaroWebSocket extends WebSocketClient {
 
     /** Every event until Takaro acknowledges it (protocol 1) or it was sent once (protocol 0). */
     private final EventOutbox outbox;
+    /** Highest seq sent on the current connection; events above it wait for the pacer. */
+    private long sentSeq = 0;
+    private final dev.takaro.hytale.util.EventPacer pacer =
+        new dev.takaro.hytale.util.EventPacer(EVENTS_PER_SECOND, EVENT_BURST, System.currentTimeMillis());
+    // At most 90 events per 5 s and 440 per 30 s, under Takaro's per-server limits.
+    private static final double EVENTS_PER_SECOND = 14.0;
+    private static final int EVENT_BURST = 20;
+    private static final long PUMP_INTERVAL_MS = 250;
     private volatile boolean shuttingDown = false;
     private long lastDropLogAt = 0L;
     private long lastDroppedLogged = 0L;
@@ -60,6 +68,7 @@ public class TakaroWebSocket extends WebSocketClient {
         this.gson = new Gson();
         this.outbox = new EventOutbox(config.getEventQueueSize());
         scheduler.scheduleWithFixedDelay(this::checkMapDeclaration, MAP_CHECK_SECONDS, MAP_CHECK_SECONDS, TimeUnit.SECONDS);
+        scheduler.scheduleWithFixedDelay(this::pumpSafely, PUMP_INTERVAL_MS, PUMP_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -230,27 +239,14 @@ public class TakaroWebSocket extends WebSocketClient {
             }
             plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
                 + "Successfully identified (protocol v" + protocol + ")");
-            if (protocol >= 1) {
-                List<EventOutbox.Pending> backlog = outbox.unacknowledged();
-                if (!backlog.isEmpty()) {
-                    plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
-                        + "Resending " + backlog.size() + " event(s) Takaro has not acknowledged"
-                        + (outbox.dropped() > 0 ? " (" + outbox.dropped() + " dropped while full)" : ""));
-                }
-                for (EventOutbox.Pending event : backlog) {
-                    sendEventFrame(event.payload());
-                }
-            } else {
-                List<EventOutbox.Pending> backlog = outbox.drain();
-                if (!backlog.isEmpty()) {
-                    plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
-                        + "Flushing " + backlog.size() + " queued game event(s)"
-                        + (outbox.dropped() > 0 ? " (" + outbox.dropped() + " were dropped while full)" : ""));
-                }
-                for (EventOutbox.Pending event : backlog) {
-                    sendEventFrame(EventOutbox.toV0Payload(event.payload()));
-                }
+            if (outbox.size() > 0) {
+                plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+                    + "Sending " + outbox.size() + " event(s) Takaro has not acknowledged"
+                    + (outbox.dropped() > 0 ? " (" + outbox.dropped() + " dropped while full)" : ""));
             }
+            // Resend everything not acknowledged, oldest first, at the paced rate.
+            sentSeq = 0;
+            pumpEvents();
         }
     }
 
@@ -407,9 +403,24 @@ public class TakaroWebSocket extends WebSocketClient {
             EventOutbox.Pending event = outbox.add(eventType, data);
             logDropsIfAny();
             // Nothing goes out before identifyResponse; the outbox keeps it until then.
-            if (!isIdentified || !isOpen()) {
+            pumpEvents();
+        }
+    }
+
+    /**
+     * Sends waiting events in seq order while the pacer has tokens. Takaro ignores a seq at or
+     * below one it has seen, so nothing may overtake an older event. Caller holds the outbox lock.
+     */
+    private void pumpEvents() {
+        if (!isIdentified || !isOpen() || shuttingDown) {
+            return;
+        }
+        while (true) {
+            List<EventOutbox.Pending> next = outbox.after(sentSeq, 1);
+            if (next.isEmpty() || !pacer.tryAcquire(System.currentTimeMillis())) {
                 return;
             }
+            EventOutbox.Pending event = next.get(0);
             if (isV1()) {
                 sendEventFrame(event.payload());
             } else {
@@ -417,6 +428,17 @@ public class TakaroWebSocket extends WebSocketClient {
                 outbox.acknowledge(outbox.streamId(), event.seq());
                 sendEventFrame(EventOutbox.toV0Payload(event.payload()));
             }
+            sentSeq = event.seq();
+        }
+    }
+
+    private void pumpSafely() {
+        try {
+            synchronized (outbox) {
+                pumpEvents();
+            }
+        } catch (Exception e) {
+            // Keep the scheduler alive; the next tick retries.
         }
     }
 

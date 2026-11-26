@@ -72,4 +72,17 @@ class CatalogTest {
         assertEquals("Bat", Catalog.humanise("Bat"));
         assertEquals("", Catalog.humanise(null));
     }
+
+    @Test
+    void weaponUsesTheItemDisplayName() {
+        java.util.Map<String, String> names = java.util.Map.of("Weapon_Longsword_Adamantite", "Adamantite Longsword");
+        assertEquals("Adamantite Longsword", Catalog.itemDisplayName("Weapon_Longsword_Adamantite", names::get));
+        // No translation: the code, exactly what listItems publishes for the same item.
+        assertEquals("Weapon_Odd_Thing", Catalog.itemDisplayName("Weapon_Odd_Thing", names::get));
+        assertEquals("Weapon_Blank", Catalog.itemDisplayName("Weapon_Blank", code -> " "));
+        assertEquals("Weapon_Throws", Catalog.itemDisplayName("Weapon_Throws", code -> { throw new IllegalStateException(); }));
+        // No weapon stays empty.
+        assertEquals("", Catalog.itemDisplayName("", names::get));
+        assertEquals("", Catalog.itemDisplayName(null, names::get));
+    }
 }

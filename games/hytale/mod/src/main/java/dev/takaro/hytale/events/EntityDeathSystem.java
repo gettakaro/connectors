@@ -18,6 +18,9 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import dev.takaro.hytale.TakaroPlugin;
+import dev.takaro.hytale.util.Catalog;
+import com.hypixel.hytale.server.core.asset.type.item.config.Item;
+import com.hypixel.hytale.server.core.modules.i18n.I18nModule;
 
 import javax.annotation.Nonnull;
 import java.util.HashMap;
@@ -93,7 +96,8 @@ public class EntityDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
             Map<String, Object> eventData = new HashMap<>();
             eventData.put("player", player);
             eventData.put("entity", entityName(ref, commandBuffer));
-            eventData.put("weapon", weaponForKill(deathComponent, commandBuffer));
+            eventData.put("weapon", Catalog.itemDisplayName(weaponForKill(deathComponent, commandBuffer),
+                EntityDeathSystem::translatedItemName));
 
             plugin.sendGameEventToAll("entity-killed", eventData);
         } catch (Exception e) {
@@ -127,6 +131,30 @@ public class EntityDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
             }
         }
         return weaponForDirectHit(deathComponent, commandBuffer);
+    }
+
+    /** English display name of an item id from its translation key, or null when there is none. */
+    static String translatedItemName(String itemId) {
+        Item item = Item.getAssetMap().getAsset(itemId);
+        if (item == null || item.getTranslationKey() == null) {
+            return null;
+        }
+        return I18nModule.get().getMessage("en-US", item.getTranslationKey());
+    }
+
+    /** Display name of the non-player entity that dealt the killing blow, or null. */
+    static String findKillingEntityName(DeathComponent deathComponent, CommandBuffer<EntityStore> commandBuffer) {
+        Damage damage = deathComponent.getDeathInfo();
+        if (damage == null || !(damage.getSource() instanceof Damage.EntitySource source)) {
+            return null;
+        }
+        Ref<EntityStore> attacker = source.getRef();
+        if (attacker == null || !attacker.isValid()
+                || commandBuffer.getComponent(attacker, PlayerRef.getComponentType()) != null) {
+            return null;
+        }
+        String name = entityName(attacker, commandBuffer);
+        return "unknown".equals(name) ? null : name;
     }
 
     /** The player who dealt the killing blow, or null when the killer was not a player. */
@@ -169,7 +197,7 @@ public class EntityDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
     }
 
     /** Best human-readable name for a dead entity. */
-    private String entityName(Ref<EntityStore> ref, CommandBuffer<EntityStore> commandBuffer) {
+    static String entityName(Ref<EntityStore> ref, CommandBuffer<EntityStore> commandBuffer) {
         try {
             Nameplate nameplate = commandBuffer.getComponent(ref, Nameplate.getComponentType());
             if (nameplate != null && nameplate.getText() != null && !nameplate.getText().isEmpty()) {
@@ -181,7 +209,8 @@ public class EntityDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
         try {
             NPCEntity npc = commandBuffer.getComponent(ref, NPCEntity.getComponentType());
             if (npc != null && npc.getRoleName() != null) {
-                return npc.getRoleName();
+                // Same name listEntities publishes for this role, not the role id.
+                return dev.takaro.hytale.util.RoleNames.displayName(npc.getRoleName());
             }
         } catch (Exception ignored) {
             // fall through

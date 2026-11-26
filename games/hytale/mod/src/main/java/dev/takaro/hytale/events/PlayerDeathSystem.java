@@ -110,6 +110,11 @@ public class PlayerDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
             if (killer != null && !killer.getUuid().equals(playerRef.getUuid())) {
                 eventData.put("msg", playerName + " was killed by " + killer.getUsername()
                     + (cause != null ? " (" + cause + ")" : ""));
+            } else if (EntityDeathSystem.findKillingEntityName(deathComponent, commandBuffer) != null) {
+                // Killed by a creature: name it as the game's death screen does.
+                eventData.put("msg", playerName + " was killed by "
+                    + EntityDeathSystem.findKillingEntityName(deathComponent, commandBuffer)
+                    + (cause != null ? " (" + cause + ")" : ""));
             } else if (deathInfo != null && cause != null) {
                 eventData.put("msg", playerName + " died: " + cause);
             } else {

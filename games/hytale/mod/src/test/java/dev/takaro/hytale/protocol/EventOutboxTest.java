@@ -71,6 +71,19 @@ class EventOutboxTest {
     }
 
     @Test
+    void afterPagesThroughUnsentEventsInSeqOrder() {
+        EventOutbox outbox = new EventOutbox("s1", 10);
+        for (String v : List.of("a", "b", "c", "d")) {
+            outbox.add("log", data(v));
+        }
+        assertEquals(List.of(1L), seqs(outbox.after(0, 1)));
+        assertEquals(List.of(3L, 4L), seqs(outbox.after(2, 5)));
+        assertEquals(List.of(), seqs(outbox.after(4, 5)));
+        outbox.acknowledge("s1", 2);
+        assertEquals(List.of(3L), seqs(outbox.after(0, 1)));
+    }
+
+    @Test
     void overflowDropsTheOldestAndCountsIt() {
         EventOutbox outbox = new EventOutbox("s1", 3);
         for (int i = 0; i < 5; i++) {
