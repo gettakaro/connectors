@@ -416,7 +416,13 @@ ActionOutcome Engine::ExecuteAction(const PreparedAction& p){
         }else if(action=="getPlayerLocation"){
             id=ResolveId(p,a);Actions::Result raw=Actions::PlayerLocation(id);
             if(raw.status<400){Json position=Position(Parse(raw.body));out.payloadJson=position.dump();out.effects.push_back({Effect::Kind::RememberLocation,Json{{"gameId",id},{"position",position}}.dump()});}
-            else {auto it=p.view->locationWindowUntilMs.find(id);if(it==p.view->locationWindowUntilMs.end()||it->second<WallMs())call(raw);
+            else {auto it=p.view->locationWindowUntilMs.find(id);
+                if(it==p.view->locationWindowUntilMs.end()||it->second<WallMs()){
+                    // Version 1: a player without a character in the world (409) has no position, so
+                    // the answer is null ("no sample") instead of a failed request every player sync.
+                    if(raw.status==409&&p.protocolVersion==1){out.payloadJson="null";return out;}
+                    call(raw);
+                }
                 // With no cached position, version 1 answers null ("no position"), which Takaro accepts
                 // without storing a sample. Version 0 keeps the (0,0,0) placeholder.
                 auto pos=p.view->lastLocationsJson.find(id);

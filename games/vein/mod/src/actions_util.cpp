@@ -433,6 +433,8 @@ std::string ActionsUtil::LocationRefusal(bool hasPawn, bool spawned, bool hasLoc
     return "";
 }
 
+int ActionsUtil::LocationRefusalStatus(bool hasPawn, bool spawned) { return hasPawn && spawned ? 503 : 409; }
+
 std::string ActionsUtil::ProgressionKey(const std::string& code) {
     std::string s = code;
     if (s.size() > 2 && s.compare(s.size() - 2, 2, "_C") == 0) s = s.substr(0, s.size() - 2);

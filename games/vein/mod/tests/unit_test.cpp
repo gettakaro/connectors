@@ -917,6 +917,9 @@ static void TestLocationRefusal() {
     CHECK(LocationRefusal(true, false, true, "BP_CharacterCreationPawn_C").find("BP_CharacterCreationPawn_C") != std::string::npos, "reason names the pawn");
     EQ(LocationRefusal(false, false, false, ""), std::string("player has no pawn yet"));
     EQ(LocationRefusal(true, true, false, "BP_VeinPlayerCharacter_C"), std::string("pawn has no readable root component"));
+    CHECK(ActionsUtil::LocationRefusalStatus(false, false) == 409, "no pawn: no character in the world (409)");
+    CHECK(ActionsUtil::LocationRefusalStatus(true, false) == 409, "character screen: no character in the world (409)");
+    CHECK(ActionsUtil::LocationRefusalStatus(true, true) == 503, "spawned but unreadable position stays 503");
 }
 
 static void TestKillWeaponName() {

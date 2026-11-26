@@ -2297,7 +2297,7 @@ Actions::Result Actions::PlayerLocation(const std::string& gameId) {
     const PlayerRow* r = FindRow(rows, gameId);
     if (!r) return Fail(404, "player not online");
     const std::string refusal = ActionsUtil::LocationRefusal(r->hasPawn, r->spawned, r->hasLoc, r->pawnClass);
-    if (!refusal.empty()) return Fail(503, refusal);
+    if (!refusal.empty()) return Fail(ActionsUtil::LocationRefusalStatus(r->hasPawn, r->spawned), refusal);
     return {200, "{\"x\":" + JsonNum(r->loc[0]) + ",\"y\":" + JsonNum(r->loc[1]) + ",\"z\":" +
                      JsonNum(r->loc[2]) + ",\"yaw\":" + JsonNum(r->rot[1]) + ",\"pitch\":" +
                      JsonNum(r->rot[0]) + ",\"ageMs\":" + std::to_string(age) + "}"};

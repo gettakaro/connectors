@@ -222,6 +222,9 @@ std::string GuidDigits(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 // character stands in the world: the character-creation pawn sits in a lobby scene far outside
 // the map, and reporting it puts the player off the map and draws a false path on it.
 std::string LocationRefusal(bool hasPawn, bool spawned, bool hasLoc, const std::string& pawnClass);
+// The status for a refusal: 409 when the player has no character in the world (no pawn yet, or the
+// character screen), 503 when a spawned character's position could not be read.
+int LocationRefusalStatus(bool hasPawn, bool spawned);
 
 // Takaro's `character` object, or "" when the id is unknown. Takaro needs a name, so the persona
 // stands in for the seconds before the server log names the character.
