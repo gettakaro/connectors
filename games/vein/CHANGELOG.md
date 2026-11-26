@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/gettakaro/connectors/compare/vein-v0.11.0...vein-v0.11.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **vein:** answer no location instead of an error while a player is on the character screen ([#999](https://github.com/gettakaro/connectors/issues/999)) ([1fab367](https://github.com/gettakaro/connectors/commit/1fab3675b328de8faf3b466b22504cda8aee6e68))
+
 ## [0.11.0](https://github.com/gettakaro/connectors/compare/vein-v0.10.0...vein-v0.11.0) (2026-11-23)
 
 
