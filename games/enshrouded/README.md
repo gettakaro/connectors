@@ -92,7 +92,7 @@ Checked on game build 1287369 (Enshrouded 1.0), 2026-11-22. ✅ works, ⚠️ wo
 | Send a message | ✅ | Shown as a notice with the sender name in front. |
 | Console commands | ✅ | The connector's own set (`help` lists it); the game has no console. |
 | Kick | ✅ | |
-| Ban and unban | ✅ | Ban needs the player online. |
+| Ban and unban | ✅ | A player who is offline is banned the moment they join. |
 | Ban list | ✅ | |
 | Give an item | ✅ | |
 | Shop | ✅ | |

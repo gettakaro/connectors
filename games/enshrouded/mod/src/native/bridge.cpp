@@ -341,7 +341,7 @@ void Bridge::HandleNotice(Notice& n) {
             for (auto it = inflight_.begin(); it != inflight_.end();) {
                 auto& job = it->second;
                 int expected = kQueued;
-                if (!job->expiry && !job->sample && job->epoch == n.epoch &&
+                if (!job->expiry && !job->sample && !job->deferred && job->epoch == n.epoch &&
                     job->state.compare_exchange_strong(expected, kCancelled)) {
                     if (!job->intentId.empty()) {
                         auto& intents = o_.store->BanIntents();
@@ -628,6 +628,7 @@ std::shared_ptr<const ActionView> Bridge::View() {
             v->knownPlayers.push_back(std::move(p));
         }
         v->timedBans = o_.store->TimedBans();
+        v->deferredBans = o_.store->DeferredBans();
         v->banStoreError = o_.store->BanStoreError();
         v->mapDir = o_.config.mapDir;
         v->serverChatName = chatName;
@@ -659,7 +660,28 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
     for (auto& p : out.seenPlayers)
         if (o_.store->Remember(p, wall)) knownDirty_ = viewDirty_ = true;
     auto& bans = o_.store->TimedBans();
-    if (out.ok && out.ban.op != BanChange::None && !o_.store->Fenced("timedBans")) {
+    auto& deferred = o_.store->DeferredBans();
+    if (out.ok && out.ban.op != BanChange::None && !o_.store->Fenced("deferredBans")) {
+        const std::string& gid = out.ban.ban.gameId;
+        bool changed = false;
+        if (out.ban.op == BanChange::Defer) {
+            deferred[gid] = out.ban.ban;
+            changed = true;
+            PluginLog("native: %s is offline; ban deferred until they join (%s)", gid.c_str(),
+                      out.ban.ban.expiresAt.empty() ? "permanent" : ("until " + out.ban.ban.expiresAt).c_str());
+        } else if (!job->expiry && deferred.erase(gid)) {
+            changed = true;
+            if (job->deferred) {
+                appliedDeferredBans_++;
+                PluginLog("native: deferred ban for %s applied", gid.c_str());
+            }
+        }
+        if (changed) {
+            o_.store->SaveDeferredBans();
+            viewDirty_ = true;
+        }
+    }
+    if (out.ok && out.ban.op != BanChange::None && out.ban.op != BanChange::Defer && !o_.store->Fenced("timedBans")) {
         const std::string& gid = out.ban.ban.gameId;
         if (out.ban.op == BanChange::Upsert) {
             bans[gid] = out.ban.ban;
@@ -675,6 +697,19 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
         }
         o_.store->SaveTimedBans();
         viewDirty_ = true;
+    }
+    if (job->deferred) {
+        std::string gid = Str(job->args.get("gameId")).value_or("");
+        deferredInFlight_.erase(gid);
+        auto it = deferred.find(gid);
+        if (!out.ok && it != deferred.end()) {
+            it->second.attempts++;
+            int64_t backoff = std::min<int64_t>(5000LL << std::min(it->second.attempts, 6), 300000);
+            it->second.nextAttemptMs = now + backoff;
+            PluginLog("native: applying the deferred ban for %s failed (attempt %d, retry in %llds): %s", gid.c_str(),
+                      it->second.attempts, (long long)(backoff / 1000), out.error.c_str());
+        }
+        return;
     }
     if (job->expiry) {
         expiryInFlight_.erase(job->expiryGameId);
@@ -760,7 +795,7 @@ void Bridge::Complete(const std::shared_ptr<Job>& job) {
 void Bridge::CheckDeadlines(int64_t now) {
     for (auto it = inflight_.begin(); it != inflight_.end();) {
         auto job = it->second;
-        if (job->expiry || job->sample || job->responded || now <= job->deadlineMs) {
+        if (job->expiry || job->sample || job->deferred || job->responded || now <= job->deadlineMs) {
             ++it;
             continue;
         }
@@ -1116,6 +1151,51 @@ void Bridge::CheckTimedBans(int64_t now) {
     nextBanCheck_ = now + o_.banCheckIntervalMs;
     if (!o_.store->BanStoreError().empty()) return;
     int64_t wall = o_.wallMs();
+    // Deferred bans: drop the ones whose time ran out while the player stayed away; ban the ones whose player is
+    // online now (the game kicks them as it bans them).
+    auto& deferred = o_.store->DeferredBans();
+    bool dropped = false;
+    for (auto it = deferred.begin(); it != deferred.end();) {
+        if (it->second.expiresAtMs > 0 && it->second.expiresAtMs <= wall && !deferredInFlight_.count(it->first)) {
+            PluginLog("native: deferred ban for %s ran out before they joined", it->first.c_str());
+            it = deferred.erase(it);
+            dropped = true;
+        } else {
+            ++it;
+        }
+    }
+    if (dropped) {
+        o_.store->SaveDeferredBans();
+        viewDirty_ = true;
+    }
+    for (auto& kv : deferred) {
+        TimedBan& b = kv.second;
+        if (b.nextAttemptMs > now || deferredInFlight_.count(b.gameId)) continue;
+        bool online = false;
+        for (auto& p : o_.store->Online()) {
+            const std::string* g = GameIdOf(p);
+            online = online || (g && *g == b.gameId);
+        }
+        if (!online) continue;
+        auto job = std::make_shared<Job>();
+        job->id = nextJobId_++;
+        job->deferred = true;
+        job->action = "banPlayer";
+        ObjBuilder args;
+        args.S("gameId", b.gameId);
+        if (!b.reason.empty()) args.S("reason", b.reason);
+        if (!b.expiresAt.empty()) args.S("expiresAt", b.expiresAt);
+        ParseJson(args.Done(), job->args);
+        job->deadlineMs = now + 600000;
+        job->view = View();
+        deferredInFlight_.insert(b.gameId);
+        inflight_[job->id] = job;
+        {
+            std::lock_guard<std::mutex> g(mu_);
+            jobQueue_.push_back(job);
+        }
+        jobCv_.notify_one();
+    }
     for (auto& kv : o_.store->TimedBans()) {
         TimedBan& b = kv.second;
         if (b.expiresAtMs > wall || b.nextAttemptMs > now || expiryInFlight_.count(b.gameId)) continue;
@@ -1295,6 +1375,8 @@ void Bridge::Publish() {
                                               .N("active", (double)o_.store->TimedBans().size())
                                               .N("expired", (double)expiredBans_)
                                               .N("intents", (double)o_.store->BanIntents().size())
+                                              .N("deferred", (double)o_.store->DeferredBans().size())
+                                              .N("deferredApplied", (double)appliedDeferredBans_)
                                               .S("storeError", o_.store->BanStoreError())
                                               .Done())
                         .Raw("logTail", ObjBuilder()

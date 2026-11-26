@@ -69,7 +69,7 @@ new session and forgets the old position. The event itself carries no `position`
 State lives in `<server dir>\takaro\connector-state\` (`TAKARO_STATE_DIR`): `event-outbox.json` (scan and
 confirmed cursors per bootId, pending events), `online-players.json` (the sidecar's format; `TAKARO_ONLINE_FILE`),
 `known-players.json`, `last-positions.json` (disposable: unreadable = start empty), `timed-bans.json`,
-`ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
+`deferred-bans.json` (bans for offline players, applied when they join), `ban-intent.json`. Writes are tmp file, `FlushFileBuffers`, then
 `MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`. A file that exists but does not parse fences its area (never
 overwritten, never read as empty) and turns `connectorState` degraded. On the first start the sidecar's
 `event-cursor.json` (`TAKARO_CURSOR_FILE`) is imported once.
@@ -439,7 +439,7 @@ fetches a revision twice, so a changed icon always has to change its bytes.
 ## Known limitations
 
 - **Player name is the Steam persona name**, not the in-game character name (the server never exposes it). `gameId` = SteamID64.
-- **Kick/ban need the player online**; unban needs the player to have been seen online once (account-hash cache). The game stores no ban reason and no expiry: the connector keeps both (`timed-bans.json`) and lifts a timed ban itself at expiry.
+- **The game kicks and bans only connected accounts.** Kick needs the player online. A ban for an offline player is kept in `deferred-bans.json` and applied within 5 s of that player joining (the game then kicks them as banned); listBans reports it once the player is known by name, unban drops it. Unban of a game ban needs the player to have been seen online once (account-hash cache). The game stores no ban reason and no expiry: the connector keeps both (`timed-bans.json`) and lifts a timed ban itself at expiry.
 - **Whisper isolation is unproven**: whispers reach the recipient, but exclusion of other players was not verified (only one player account; accepted limitation).
 - **Admins cannot be kicked/banned by the game itself**: Enshrouded ignores kick/ban for players whose group has `canKickBan`. Plugin >= 0.4.2 lifts that check for each Takaro kick/ban; older plugins return success while nothing happens.
 - **listLocations** answers with the 808 placements the in-game map shows (game build 1273043), under their in-game map names. A code several placements share (69 fast travel platforms are all `Teleport_Platform_SavePoint_Gameplay`) gets `@<x>_<z>` appended, because Takaro keys locations by code.

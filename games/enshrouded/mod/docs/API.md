@@ -114,7 +114,8 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   - Disconnect fires on `[server] Remove Player '<name>'` or `[online] Removed peer P`, whichever comes first. A player only gets one disconnect.
 
 ### Moderation (v0.3, live-proven 2026-09-13; admin targets v0.4.2, live-proven 2026-09-14)
-- `POST /kick {gameId}` and `POST /ban {gameId}`: player must be online (else `404 player not online`).
+- `POST /kick {gameId}` and `POST /ban {gameId}`: player must be online (else `404 player not online`). The native
+  connector turns that 404 on a ban into a deferred ban (`deferred-bans.json`) and calls `/ban` again once the player is online.
   Success is `{"success":true}`, plus `"adminProtectionBypassed":true` when the target's group has `canKickBan` (see below).
   `409` means the game has no player slot for the account (the action would be a no-op); `503` means the moderation hooks or the admin-protection self-check are unavailable.
 - **Admin protection (v0.4.2).** The game's handler silently skips Kick and Ban for a player whose slot permission mask has bit 0 (`CanKickBan`) set, i.e. any player who joined with a group that has `canKickBan: true` (default "Admins"): `test byte [slot+0x1cb],1; jne return` in the Kick/Ban branch. Plugins up to 0.4.1 therefore returned success while nothing happened (found 2026-09-14). Since 0.4.2 the plugin finds the target slot (session machine handle of the account -> slot `+0x1c4`), clears bit 0 only for the duration of the synchronous handler call on the moderation thread and restores it. The three layout values (flags offset, machine-handle offset, slot stride) are read from the handler's own code (`F6 87 <off32> 01 0F 85 .. 40 80 FE 01`, `8B 97 <off32> 49 8B 4D 10 E8`, `48 81 C7 <stride32> 48 83 FB 10`, each unique in the first 0x1000 bytes); on mismatch kick/ban refuse with 503 instead of silently doing nothing. `/health` `diagnostics.resolved` lists it as `adminProtect`. `reason` and `expiresAt` are accepted but the game has no field for them (bans are permanent until unbanned).
@@ -160,7 +161,9 @@ Returns `[{code,name,amount,inventory,slot,quality?,rarity?}]`:
   `Takaro: <text>` (live-tested on 1273043 under Proton). The plugin uses the recipient's own handle (whisper) or the first
   logged-in player's handle (broadcast). With `recipientGameId`, the queued record is marked as already delivered to
   every other active machine (done bit + pending bytes, mirroring the per-tick flush), so only the recipient receives it.
-  With nobody online, a broadcast succeeds without delivering anything.
+  With nobody online, a broadcast succeeds without delivering anything. The chat history is a 64 KiB pool the game
+  never trims after delivery: once it is full, `addMessage` drops the oldest records before appending, so the record
+  count stays flat. A send is confirmed by the new tail record holding the sent text, not by the count.
 - **command** (Enshrouded has no server console; this is a plugin-defined set): `help`, `version`, `players`,
   `say <text>`, `whisper <player> <text>`, `location <player>`, `teleport <player> <x> <y> <z>`, `tp <player> <toPlayer>`,
   `inventory <player>`, `give <player> <itemCode> [amount] [level]` (level 1-255; omitted, or a level the item cannot have, = the item's default level), `item <search>`, `kick <player>`, `levels`, `level <player>` (character level and experience; needs the gamedata `attributes*` layout), `save-and-shutdown`.

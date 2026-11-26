@@ -514,6 +514,94 @@ void TimedBans() {
     CHECK(t::WaitFor([&] { return r.fake.CallCount("POST /unban") == 2; }));
 }
 
+// The game bans only connected accounts. A ban for an offline player (a dashboard ban, a global ban) succeeds,
+// waits in deferred-bans.json and is applied the moment that player joins (it used to fail with "player not online").
+void DeferredBans() {
+    t::Group("bridge-deferred-bans");
+    Rig r("deferred-bans");
+    const char* NEWBIE = "76561198000009999";
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.neverSeen.push_back(NEWBIE);
+        r.fake.banNeedsOnline = true;
+    }
+    r.Start();
+    r.Connect();
+    r.fake.PushEvent("player-connected", std::string("{\"player\":{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON + "\"}}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/known-players.json").find(LIMON) != std::string::npos; }));
+    // never seen: the ban is kept, not refused
+    JsonValue resp = r.Call("banPlayer", std::string("{\"player\":{\"gameId\":\"") + NEWBIE + "\"},\"reason\":\"grief\",\"expiresAt\":null}");
+    CHECK_MSG(resp.get("payload") && !resp.get("error"), JsonDump(resp));
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json").find(NEWBIE) != std::string::npos; }));
+    // nameless (never seen) entries stay out of listBans: Takaro rejects the whole list over one
+    resp = r.Call("listBans", "{}");
+    CHECK_MSG(resp.get("payload") && resp.get("payload")->arr.empty(), JsonDump(resp));
+    // he joins: banned (the game kicks him) within the ban check, and the deferred record goes away
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players.arr.push_back(t::J(std::string("{\"gameId\":\"") + NEWBIE + "\",\"name\":\"Newbie\",\"steamId\":\"" +
+                                          NEWBIE + "\",\"online\":true}"));
+    }
+    r.fake.PushEvent("player-connected", std::string("{\"player\":{\"gameId\":\"") + NEWBIE + "\",\"name\":\"Newbie\",\"steamId\":\"" + NEWBIE + "\"}}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json") == "[]"; }, 5000));
+    t::RecordedRequest req;
+    CHECK(r.fake.LastRequest("POST", "/ban", req) && req.body.get("gameId")->str == NEWBIE &&
+          req.body.get("reason")->str == "grief" && !req.body.get("expiresAt"));
+    CHECK(t::WaitFor([&] { return r.Health().get("timedBans") && r.Health().get("timedBans")->get("deferredApplied")->num == 1; }));
+    resp = r.Call("listBans", "{}");
+    CHECK_MSG(resp.get("payload") && resp.get("payload")->arr.size() == 1, JsonDump(resp));
+
+    // a known player who is offline: a timed ban waits, listBans reports it with his name and expiry, unban drops it
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.players.arr.erase(r.fake.players.arr.begin());  // Limon leaves
+    }
+    r.fake.PushEvent("player-disconnected", std::string("{\"player\":{\"gameId\":\"") + LIMON + "\",\"name\":\"Limon\",\"steamId\":\"" + LIMON + "\"}}");
+    std::string until = FormatIsoMs(r.wall + 3600000);
+    resp = r.Call("banPlayer", std::string("{\"gameId\":\"") + LIMON + "\",\"reason\":\"afk farm\",\"expiresAt\":\"" + until + "\"}");
+    CHECK_MSG(resp.get("payload") && !resp.get("error"), JsonDump(resp));
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json").find(LIMON) != std::string::npos; }));
+    resp = r.Call("listBans", "{}");
+    bool listed = false;
+    for (auto& b : resp.get("payload") ? resp.get("payload")->arr : std::vector<JsonValue>())
+        if (b.get("player")->get("gameId")->str == LIMON)
+            listed = b.get("player")->get("name")->str == "Limon" && b.get("expiresAt")->str == until &&
+                     b.get("reason")->str == "afk farm";
+    CHECK_MSG(listed, JsonDump(resp));
+    resp = r.Call("unbanPlayer", std::string("{\"gameId\":\"") + LIMON + "\"}");
+    CHECK_MSG(resp.get("payload") && !resp.get("error"), JsonDump(resp));
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json") == "[]"; }));
+
+    // never seen + unban: the game has no ban to lift (404), dropping the deferred one is the unban
+    const char* OTHER = "76561198000008888";
+    {
+        std::lock_guard<std::mutex> g(r.fake.mu);
+        r.fake.neverSeen.push_back(OTHER);
+    }
+    r.Call("banPlayer", std::string("{\"gameId\":\"") + OTHER + "\"}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json").find(OTHER) != std::string::npos; }));
+    resp = r.Call("unbanPlayer", std::string("{\"gameId\":\"") + OTHER + "\"}");
+    CHECK_MSG(resp.get("payload") && !resp.get("error"), JsonDump(resp));
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json") == "[]"; }));
+    // still an error for an unban of someone with no ban at all
+    resp = r.Call("unbanPlayer", std::string("{\"gameId\":\"") + OTHER + "\"}");
+    CHECK(resp.get("error"));
+
+    // a timed ban that runs out before the player ever joins is dropped, and survives a restart until then
+    r.Call("banPlayer", std::string("{\"gameId\":\"") + OTHER + "\",\"expiresAt\":\"" + FormatIsoMs(r.wall + 10000) + "\"}");
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json").find(OTHER) != std::string::npos; }));
+    r.Stop();
+    r.Start();
+    r.Connect();
+    CHECK(t::WaitFor([&] { return r.Health().get("timedBans") && r.Health().get("timedBans")->get("deferred")->num == 1; }));
+    r.wall += 11000;
+    CHECK(t::WaitFor([&] { return File(r.StateDir() + "/deferred-bans.json") == "[]"; }));
+    // an expiry already in the past is nothing to enforce
+    resp = r.Call("banPlayer", std::string("{\"gameId\":\"") + OTHER + "\",\"expiresAt\":\"" + FormatIsoMs(r.wall - 1000) + "\"}");
+    CHECK_MSG(resp.get("payload") && !resp.get("error"), JsonDump(resp));
+    CHECK_EQ(File(r.StateDir() + "/deferred-bans.json"), std::string("[]"));
+}
+
 void CorruptBanStore() {
     t::Group("bridge-corrupt-ban-store");
     Rig r("corrupt-bans");
@@ -1417,6 +1505,7 @@ void RunBridgeTests() {
     Adversarial();
     OverloadAndTimeouts();
     TimedBans();
+    DeferredBans();
     CorruptBanStore();
     BanIntentRecovery();
     ReconcileAndLocationFallback();

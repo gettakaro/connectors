@@ -222,7 +222,12 @@ public:
         if (action == "banPlayer") return Ban(args);
         if (action == "unbanPlayer") {
             std::string pid = ResolvePluginId(PlayerId(args));
-            plugin_.Post("/unban", ObjBuilder().S("gameId", pid).Done());
+            try {
+                plugin_.Post("/unban", ObjBuilder().S("gameId", pid).Done());
+            } catch (const NativeError& e) {
+                // a player banned while offline and never seen since has no game ban yet: dropping the deferred one is the unban
+                if (e.kind != ErrorKind::PluginHttp || e.status != 404 || !view_.deferredBans.count(pid)) throw;
+            }
             out_.ban.op = BanChange::Remove;
             out_.ban.ban.gameId = pid;
             return JObj();
@@ -242,6 +247,24 @@ public:
                 const JsonValue* r = b.get("reason");
                 if (r && r->type == JsonValue::String && r->str.empty() && !it->second.reason.empty())
                     Put(b, "reason", JStr(it->second.reason));
+            }
+            // Bans still waiting for their player to join. A player this connector never saw has no name yet and
+            // Takaro rejects a ban list with a nameless entry, so those stay out until the player is known.
+            for (auto& kv : view_.deferredBans) {
+                bool listed = false;
+                for (auto& b : list.arr) {
+                    const JsonValue* id = b.get("player") ? b.get("player")->get("gameId") : nullptr;
+                    listed = listed || (id && id->type == JsonValue::String && id->str == kv.first);
+                }
+                JsonValue known;
+                if (listed || !FindKnown(kv.first, known)) continue;
+                auto name = Str(known.get("name"));
+                if (!name || name->empty()) continue;
+                JsonValue ban = JObj();
+                Put(ban, "player", MapPlayer(&known));
+                Put(ban, "reason", JStr(kv.second.reason));
+                Put(ban, "expiresAt", kv.second.expiresAt.empty() ? JNull() : JStr(kv.second.expiresAt));
+                list.arr.push_back(std::move(ban));
             }
             return list;
         }
@@ -297,8 +320,24 @@ private:
         b.S("gameId", pid);
         if (reason) b.S("reason", *reason);
         if (expiresAt) b.S("expiresAt", *expiresAt);
-        plugin_.Post("/ban", b.Done());
         out_.ban.ban.gameId = pid;
+        try {
+            plugin_.Post("/ban", b.Done());
+        } catch (const NativeError& e) {
+            // The game bans only connected accounts. An offline player's ban is kept and applied when they join,
+            // so a ban from the dashboard or a global ban never fails just because the player is away.
+            if (e.kind != ErrorKind::PluginHttp || e.status != 404) throw;
+            if (!view_.banStoreError.empty())
+                FailCode("game_error", "banPlayer refused: the player is offline and the ban store is unreadable (" +
+                                           view_.banStoreError + ")");
+            if (expiresAt && expiresMs <= nowMs_) return JObj();  // already over: nothing to enforce
+            out_.ban.op = BanChange::Defer;
+            out_.ban.ban.expiresAt = expiresAt.value_or("");
+            out_.ban.ban.expiresAtMs = expiresAt ? expiresMs : 0;
+            out_.ban.ban.reason = reason.value_or("");
+            out_.ban.ban.createdAtMs = nowMs_;
+            return JObj();
+        }
         if (expiresAt) {
             out_.ban.op = BanChange::Upsert;
             out_.ban.ban.expiresAt = *expiresAt;
