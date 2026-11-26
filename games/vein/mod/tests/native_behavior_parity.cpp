@@ -27,6 +27,7 @@ uint64_t banRevision=1;
 std::string lastSender,lastRecipient,lastMessage,lastGiveCode;
 double lastGiveAmount=0;
 bool noPawn=false;
+bool locationUnavailable=false;
 bool partialUnban=false;
 std::string playersCapability="ok";
 std::string kickCapability="ok";
@@ -67,7 +68,8 @@ namespace Actions {
 Result Players(){return playersDown?Result{503,R"({"error":"reflected player getter unavailable"})"}:
     Result{200,R"([{"gameId":"76561198000000001","name":"A","characterName":"UnseenCharacter","character":{"id":"ABC123","name":"Hector","extra":1},"online":true},{"gameId":"76561198000000002","name":"B","online":false}])"};}
 Result Player(const std::string&){return {404,R"({"error":"player not online"})"};}
-Result PlayerLocation(const std::string&){return noPawn?Result{503,R"({"error":"player has no pawn yet"})"}:Result{200,R"({"x":1,"y":2,"z":3,"yaw":90,"ageMs":10})"};}
+Result PlayerLocation(const std::string&){return locationUnavailable?Result{503,R"({"error":"game thread unavailable"})"}:
+    noPawn?Result{409,R"({"error":"player has no pawn yet"})"}:Result{200,R"({"x":1,"y":2,"z":3,"yaw":90,"ageMs":10})"};}
 Result PlayerInventory(const std::string&){return {200,R"([{"code":"MRE","name":"Meal","amount":1},{"code":"MRE","name":"Meal2","amount":1},{"code":"wood","name":"Wood","amount":3}])"};}
 void NoteReportedCharacter(const std::string& id,const std::string& character){if(id=="76561198000000001")lastReportedCharacter=character;}
 Result PlayerProgression(const std::string& id){
@@ -158,12 +160,27 @@ int main(){
     Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3},{"dimension",NativeMap::kDimensionId}},"location xyz DTO in the map Dimension");
     noPawn=true;
     auto missingLocation=engine.PrepareAction("missing","getPlayerLocation",Json{{"gameId",id}}.dump(),1);
-    Check(!NativeBehavior::Engine::ExecuteAction(missingLocation).errorText.empty(),"outside event window must fail");
+    Check(!NativeBehavior::Engine::ExecuteAction(missingLocation).errorText.empty(),"v0: no character outside the event window fails");
+    {
+        auto v1=engine.PrepareAction("no-character","getPlayerLocation",Json{{"gameId",id}}.dump(),1);v1.protocolVersion=1;
+        auto o=NativeBehavior::Engine::ExecuteAction(v1);
+        Check(o.errorText.empty()&&Parse(o.payloadJson).is_null(),"v1: online player with no character answers null, not a failed request");
+        locationUnavailable=true;
+        auto down=engine.PrepareAction("thread-down","getPlayerLocation",Json{{"gameId",id}}.dump(),1);down.protocolVersion=1;
+        Check(!NativeBehavior::Engine::ExecuteAction(down).errorText.empty(),"v1: game thread unavailable is still an error");
+        locationUnavailable=false;
+    }
     auto join=engine.MapEvent(Json{{"seq",1},{"type","player-connected"},{"data",{{"player",{{"gameId",id},{"name","A"}}}}}}.dump());
     Check(store.AdmitSynthetic(join.frame),"durable join before observe");
     {NativePersistence::Store afterCrash;Check(afterCrash.Load(),"reload before legacy online mirror");NativeBehavior::Engine derived(afterCrash);Check(derived.Load(),"rebuild derived online after crash");Check(Parse(derived.Snapshot()->onlinePlayersJson).size()==1,"admitted join survives crash before mirror");}
     Check(engine.ObserveAdmitted(join),"observe join opens enrichment window");
     Check(run("getPlayerLocation",Json{{"gameId",id}})==Json{{"x",1},{"y",2},{"z",3},{"dimension",NativeMap::kDimensionId}},"cached location during join window");
+    {
+        auto v1=engine.PrepareAction("window-v1","getPlayerLocation",Json{{"gameId",id}}.dump(),1);v1.protocolVersion=1;
+        auto o=NativeBehavior::Engine::ExecuteAction(v1);
+        Check(o.errorText.empty()&&Parse(o.payloadJson)==Json{{"x",1},{"y",2},{"z",3},{"dimension",NativeMap::kDimensionId}},
+              "v1: inside the join window the cached position still wins over no character");
+    }
     {
         const std::string fresh="76561198000000009";
         auto freshJoin=engine.MapEvent(Json{{"seq",2},{"type","player-connected"},{"data",{{"player",{{"gameId",fresh},{"name","F"}}}}}}.dump());
