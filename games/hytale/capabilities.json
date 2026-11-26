@@ -1,0 +1,60 @@
+{
+  "game": "Hytale",
+  "architecture": "in-game mod",
+  "runtime": "Java plugin loaded by the Hytale dedicated server (mods/)",
+  "distribution": "One jar per Hytale server version (takaro-hytale-server-<hytale version>-<version>.jar)",
+  "gameInterfaces": [
+    "Hytale server plugin API (com.hypixel.hytale:Server)",
+    "Hytale ECS systems (deaths, kills)",
+    "Hytale world-map generator",
+    "Hytale server console"
+  ],
+  "takaroConnection": "outbound_websocket",
+  "protocol": {
+    "versions": [0, 1],
+    "manifest": "mod/src/main/java/dev/takaro/hytale/protocol/Capabilities.java"
+  },
+  "statusDefinitions": {
+    "live-supported": "Implemented in the plugin and proven through Takaro with a real Hytale client.",
+    "unsupported": "Not declared in the Capability Manifest; the plugin answers with a structured 'unsupported' error."
+  },
+  "functions": {
+    "getPlayer": "live-supported",
+    "getPlayers": "live-supported",
+    "getPlayerLocation": "live-supported",
+    "getPlayerInventory": "live-supported",
+    "getPlayerProgression": "unsupported",
+    "giveItem": "live-supported",
+    "listItems": "live-supported",
+    "listEntities": "live-supported",
+    "listLocations": "live-supported",
+    "getMapInfo": "live-supported",
+    "getMapTile": "live-supported",
+    "getGameIcon": "live-supported",
+    "executeConsoleCommand": "live-supported",
+    "sendMessage": "live-supported",
+    "teleportPlayer": "live-supported",
+    "testReachability": "live-supported",
+    "kickPlayer": "live-supported",
+    "banPlayer": "live-supported",
+    "unbanPlayer": "live-supported",
+    "listBans": "live-supported",
+    "shutdown": "live-supported"
+  },
+  "events": {
+    "log": "live-supported",
+    "player-connected": "live-supported",
+    "player-disconnected": "live-supported",
+    "chat-message": "live-supported",
+    "player-death": "live-supported",
+    "entity-killed": "live-supported"
+  },
+  "knownGaps": [
+    "Hytale has no level or skill system the server exposes, so players.progression is not declared",
+    "The world map covers only chunks that already exist (explored areas)",
+    "player-death names no weapon: Hytale does not report one",
+    "listLocations returns the server's warps",
+    "The 0.7.7 client sometimes shows 'Lost connection to the server.' instead of a kick or ban reason; the game's own /kick does the same",
+    "Each Hytale server update needs a matching plugin build"
+  ]
+}

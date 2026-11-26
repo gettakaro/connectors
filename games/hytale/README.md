@@ -70,7 +70,7 @@ Checked on Hytale server 0.7.7, 2026-11-26. ✅ works, ⚠️ works with a limit
 | Player inventory | ✅ | |
 | Item list | ✅ | Display names; test and template items left out |
 | Entity list | ✅ | Display names |
-| Locations | ✅ | |
+| Locations | ✅ | The server's warps |
 | World map | ⚠️ | Only areas players have explored |
 | Send a message | ✅ | To everyone or one player |
 | Console commands | ✅ | Returns the command's own output |
@@ -96,5 +96,7 @@ Checked on Hytale server 0.7.7, 2026-11-26. ✅ works, ⚠️ works with a limit
 - Hytale is in early access and its server API changes between updates; use the jar built for
   your server version.
 - Players and levels: Hytale has no level or skill system for Takaro to read.
+- Kick and ban reasons: the Hytale 0.7.7 client sometimes shows "Lost connection to the server."
+  instead of the reason. The game's own `/kick` does the same.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
