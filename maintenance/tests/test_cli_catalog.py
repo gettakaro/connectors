@@ -370,6 +370,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "windows-26515168": "no repinner for platform 'windows'",
         "windows-26564816": "no repinner for platform 'windows'",
         "windows-26749470": "no repinner for platform 'windows'",
+        "server-0.7.7": "no repinner for platform 'server'",
     }
     remaining = sorted(
         json.loads(path.read_text(encoding="utf-8"))["id"] for path in (wired.root / "catalog").glob("*/targets/*.json")
