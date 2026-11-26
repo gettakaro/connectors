@@ -12,7 +12,7 @@ exists, and a Takaro game server of type **Generic** with its registration token
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux-1.0.30` | 1.0.30 | linux | — | None | candidate | contract |
+| `linux-1.0.31` | 1.0.31 | linux | — | None | candidate | contract |
 <!-- takaro-maint:targets:end -->
 
 ### 1. Download
@@ -91,7 +91,7 @@ a token, a banner names the file to fix; a wrong token shows `Takaro rejected th
 
 ## What works, what doesn't
 
-Checked on Valheim 1.0.30 (Steam build 26870897), 2026-11-26. ✅ works, ⚠️ works with a limit, ❌ not supported.
+Checked on Valheim 1.0.31 (Steam build 26949048), 2026-11-26. ✅ works, ⚠️ works with a limit, ❌ not supported.
 
 | What | | Notes |
 |---|---|---|
