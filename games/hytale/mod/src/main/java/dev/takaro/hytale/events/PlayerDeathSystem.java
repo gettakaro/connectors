@@ -86,6 +86,10 @@ public class PlayerDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
                 position.put("x", transform.getPosition().x);
                 position.put("y", transform.getPosition().y);
                 position.put("z", transform.getPosition().z);
+                String dimension = deathWorldDimension(commandBuffer);
+                if (dimension != null) {
+                    position.put("dimension", dimension);
+                }
                 eventData.put("position", position);
             }
 
@@ -118,6 +122,15 @@ public class PlayerDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
         } catch (Exception e) {
             plugin.getLogger().at(java.util.logging.Level.SEVERE).log("Error handling player death: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    /** The declared map Dimension of the world the death happened in, or null. */
+    private String deathWorldDimension(CommandBuffer<EntityStore> commandBuffer) {
+        try {
+            return plugin.mapDimensionFor(commandBuffer.getExternalData().getWorld().getName());
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 

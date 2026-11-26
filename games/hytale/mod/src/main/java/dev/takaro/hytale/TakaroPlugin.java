@@ -28,21 +28,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class TakaroPlugin extends JavaPlugin {
-    private static final String VERSION = readVersion();
-
     /** The version the build stamped into version.properties; "dev" for an unstamped build. */
-    private static String readVersion() {
-        try (java.io.InputStream in = TakaroPlugin.class.getResourceAsStream("version.properties")) {
-            if (in != null) {
-                java.util.Properties p = new java.util.Properties();
-                p.load(in);
-                String v = p.getProperty("version", "").trim();
-                if (!v.isEmpty() && !v.startsWith("${")) return v;
-            }
-        } catch (java.io.IOException ignored) {
-            // fall through
-        }
-        return "dev";
+    private static final String VERSION = stampedVersionOrDev();
+
+    private static String stampedVersionOrDev() {
+        String v = dev.takaro.hytale.protocol.GameProfile.stampedVersion();
+        return v == null ? "dev" : v;
     }
 
     private TakaroConfig config;
@@ -269,6 +260,25 @@ public class TakaroPlugin extends JavaPlugin {
 
     public String getVersion() {
         return VERSION;
+    }
+
+    /** The running Hytale server build, or null when the server does not report one. */
+    public String getServerVersion() {
+        try {
+            String reported = com.hypixel.hytale.common.util.java.ManifestUtil.getVersion();
+            return reported == null || reported.isBlank() ? null : reported.trim();
+        } catch (Exception | LinkageError e) {
+            return null;
+        }
+    }
+
+    /**
+     * The protocol v1 map Dimension a position in {@code worldName} belongs to, or null (protocol
+     * 0, map not declared yet, or a world the map does not draw).
+     */
+    public String mapDimensionFor(String worldName) {
+        TakaroWebSocket ws = webSocket;
+        return ws == null ? null : ws.dimensionFor(worldName);
     }
 
     /**

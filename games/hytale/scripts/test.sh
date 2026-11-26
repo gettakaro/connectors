@@ -15,7 +15,7 @@ rm -rf "$stage"
 mkdir -p "$stage"
 cp -r "$project_root/mod" "$stage/mod"
 rm -rf "$stage/mod/target"
-cp "$project_root/LICENSE" "$project_root/THIRD-PARTY-NOTICES.md" "$stage/"
+cp -r "$project_root/LICENSE" "$project_root/THIRD-PARTY-NOTICES.md" "$project_root/assets" "$stage/"
 args=(-B -ntp -Dhytale.server.version="$server_version" test)
 if [ -n "${MVN:-}" ]; then
     (cd "$stage/mod" && "$MVN" -Dmaven.repo.local="$cache/m2" "${args[@]}")

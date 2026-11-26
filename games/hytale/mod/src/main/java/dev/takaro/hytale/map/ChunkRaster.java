@@ -140,6 +140,24 @@ public final class ChunkRaster {
         return max;
     }
 
+    /**
+     * The inclusive chunk rectangle {@code {minCx, maxCx, minCz, maxCz}} holding every drawn
+     * chunk, or null for an empty raster.
+     */
+    public int[] bounds() {
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+        for (Long k : chunks.keySet()) {
+            int x = keyX(k);
+            int z = keyZ(k);
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minZ = Math.min(minZ, z);
+            maxZ = Math.max(maxZ, z);
+        }
+        return minX == Integer.MAX_VALUE ? null : new int[]{minX, maxX, minZ, maxZ};
+    }
+
     public boolean isDirty() {
         return dirty;
     }

@@ -53,6 +53,8 @@ public final class WorldMapService {
     private volatile boolean running;
     private volatile boolean ready;
     private volatile String status = "starting";
+    private volatile String worldName;
+    private MapPyramid.Frame frame;
     private Thread thread;
 
     public WorldMapService(TakaroPlugin plugin, Path dataDir) {
@@ -96,6 +98,35 @@ public final class WorldMapService {
         return tiles;
     }
 
+    /** Name of the world this map draws, or null until it is ready. */
+    public String worldName() {
+        return worldName;
+    }
+
+    /** The protocol v1 Dimension id of the drawn world, or null until the map is ready. */
+    public String dimensionId() {
+        String name = worldName;
+        return name == null ? null : MapPyramid.dimensionId(name);
+    }
+
+    /**
+     * The current v1 pyramid frame. It only changes when drawn chunks fall outside it, which
+     * then needs a fresh map declaration.
+     */
+    public synchronized MapPyramid.Frame frame() {
+        frame = MapPyramid.frameFor(raster.bounds(), frame);
+        return frame;
+    }
+
+    /** The v1 {@code tiled} Dimension declaration, or null while the map is not ready. */
+    public java.util.Map<String, Object> declaration() {
+        String name = worldName;
+        if (!ready || name == null) {
+            return null;
+        }
+        return MapPyramid.declaration(MapPyramid.dimensionId(name), name, frame());
+    }
+
     private void log(Level level, String message) {
         plugin.getLogger().at(level).log("[Map] " + message);
     }
@@ -132,6 +163,7 @@ public final class WorldMapService {
             log(Level.INFO, "Loaded " + cached + " map chunks from " + file.getFileName());
         }
         int imageSize = Math.max(1, (int) Math.floor(32.0f * world.getWorldMapManager().getWorldMapSettings().getImageScale()));
+        worldName = world.getName();
         ready = true;
         status = "ready";
         log(Level.INFO, "World map ready for '" + world.getName() + "' (" + generator.getClass().getSimpleName()

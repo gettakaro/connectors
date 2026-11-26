@@ -1,16 +1,22 @@
 package dev.takaro.hytale.websocket;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import dev.takaro.hytale.TakaroPlugin;
 import dev.takaro.hytale.config.ConnectionTarget;
 import dev.takaro.hytale.config.TakaroConfig;
-import dev.takaro.hytale.state.BoundedEventQueue;
+import dev.takaro.hytale.protocol.Capabilities;
+import dev.takaro.hytale.protocol.EventOutbox;
+import dev.takaro.hytale.protocol.IdentifyPayload;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,7 +26,7 @@ public class TakaroWebSocket extends WebSocketClient {
     private final TakaroPlugin plugin;
     private final TakaroConfig config;
     private final Gson gson;
-    private boolean isIdentified = false;
+    private volatile boolean isIdentified = false;
     private int reconnectAttempts = 0;
     private static final int MAX_RECONNECT_DELAY = 60000; // 60 seconds
     private static final int BASE_RECONNECT_DELAY = 3000; // 3 seconds
@@ -30,10 +36,21 @@ public class TakaroWebSocket extends WebSocketClient {
         return t;
     });
 
-    /** Events produced while the connection is down or not yet identified. */
-    private final BoundedEventQueue<Map<String, Object>> pendingEvents;
+    /** Every event until Takaro acknowledges it (protocol 1) or it was sent once (protocol 0). */
+    private final EventOutbox outbox;
     private volatile boolean shuttingDown = false;
     private long lastDropLogAt = 0L;
+    private long lastDroppedLogged = 0L;
+    /** The protocol Takaro chose in the last identifyResponse; 0 until then and after a drop. */
+    private volatile int protocol = 0;
+    // The map declared in the pending identify, and the one Takaro holds on this connection.
+    private String offeredMapJson;
+    private String offeredDimension;
+    private String offeredMapWorld;
+    private volatile String declaredMapJson;
+    private volatile String declaredDimension;
+    private volatile String declaredMapWorld;
+    private static final long MAP_CHECK_SECONDS = 15;
     private static final long DROP_LOG_INTERVAL_MS = 30_000L;
 
     public TakaroWebSocket(TakaroPlugin plugin, TakaroConfig config) throws Exception {
@@ -41,13 +58,18 @@ public class TakaroWebSocket extends WebSocketClient {
         this.plugin = plugin;
         this.config = config;
         this.gson = new Gson();
-        this.pendingEvents = new BoundedEventQueue<>(config.getEventQueueSize());
+        this.outbox = new EventOutbox(config.getEventQueueSize());
+        scheduler.scheduleWithFixedDelay(this::checkMapDeclaration, MAP_CHECK_SECONDS, MAP_CHECK_SECONDS, TimeUnit.SECONDS);
     }
 
     @Override
     public void onOpen(ServerHandshake handshake) {
         plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
             + "Socket open - identifying (not yet connected to Takaro)");
+        synchronized (outbox) {
+            isIdentified = false;
+            protocol = 0;
+        }
         sendIdentify();
     }
 
@@ -77,6 +99,27 @@ public class TakaroWebSocket extends WebSocketClient {
                 case "ping":
                     sendPong();
                     break;
+                case "pong":
+                    break;
+                case "eventAck":
+                    handleEventAck(json);
+                    break;
+                case "eventError":
+                    plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix()
+                        + "Takaro rejected an event: " + json.get("payload"));
+                    break;
+                case "capabilitiesResponse":
+                    if (json.has("error") && !json.get("error").isJsonNull()) {
+                        // Positions must not name a dimension Takaro refused.
+                        declaredDimension = null;
+                        declaredMapWorld = null;
+                        plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix()
+                            + "Takaro refused the capability update: " + describeError(json.get("error")));
+                    } else {
+                        plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+                            + "Takaro accepted the capability update");
+                    }
+                    break;
                 case "error":
                     handleError(json);
                     break;
@@ -92,7 +135,13 @@ public class TakaroWebSocket extends WebSocketClient {
     @Override
     public void onClose(int code, String reason, boolean remote) {
         boolean wasIdentified = isIdentified;
-        isIdentified = false;
+        synchronized (outbox) {
+            isIdentified = false;
+            protocol = 0;
+            declaredDimension = null;
+            declaredMapWorld = null;
+            declaredMapJson = null;
+        }
         if (shuttingDown) {
             plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix() + "Connection closed (shutting down)");
             return;
@@ -100,7 +149,7 @@ public class TakaroWebSocket extends WebSocketClient {
         plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix()
             + "Disconnected (code " + code + ", remote=" + remote + "): " + reason
             + (wasIdentified ? " - Takaro now considers this server offline" : "")
-            + " | " + pendingEvents.size() + " event(s) queued");
+            + " | " + outbox.size() + " event(s) waiting for Takaro");
         scheduleReconnect();
     }
 
@@ -119,10 +168,7 @@ public class TakaroWebSocket extends WebSocketClient {
         // have to restart the whole server.
         config.reload();
 
-        Map<String, Object> identify = new HashMap<>();
-        identify.put("type", "identify");
-
-        Map<String, String> payload = new HashMap<>();
+        Map<String, Object> payload = new LinkedHashMap<>();
         ConnectionTarget target = config.getConnectionTarget();
         String identityToken = target.identityToken();
         String registrationToken = target.registrationToken();
@@ -132,17 +178,31 @@ public class TakaroWebSocket extends WebSocketClient {
             payload.put("registrationToken", registrationToken);
         }
 
+        Map<String, Object> mapDeclaration = currentMapDeclaration();
+        offeredMapJson = mapDeclaration == null ? null : gson.toJson(mapDeclaration);
+        offeredDimension = mapDeclaration == null ? null : String.valueOf(mapDeclaration.get("id"));
+        offeredMapWorld = mapDeclaration == null ? null : plugin.getWorldMap().worldName();
+        payload.putAll(IdentifyPayload.build(plugin.getVersion(), plugin.getServerVersion(), mapDeclaration));
+
+        Map<String, Object> identify = new LinkedHashMap<>();
+        identify.put("type", "identify");
         identify.put("payload", payload);
 
-        plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix() + "Sending identify message");
+        plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+            + "Sending identify (protocol versions 0 and 1"
+            + (mapDeclaration != null ? ", map dimension '" + offeredDimension + "'" : ", no map yet") + ")");
         send(gson.toJson(identify));
     }
 
     private void handleIdentifyResponse(JsonObject message) {
-        JsonObject payload = message.getAsJsonObject("payload");
-        if (payload != null && payload.has("error") && !payload.get("error").isJsonNull()) {
+        JsonObject payload = message.has("payload") && message.get("payload").isJsonObject()
+            ? message.getAsJsonObject("payload") : new JsonObject();
+        // Protocol 0 puts the error in the payload; protocol 1 sends a top-level error object.
+        JsonElement errorElement = payload.has("error") && !payload.get("error").isJsonNull() ? payload.get("error")
+            : message.has("error") && !message.get("error").isJsonNull() ? message.get("error") : null;
+        if (errorElement != null) {
             isIdentified = false;
-            String error = payload.get("error").toString();
+            String error = describeError(errorElement);
             // An identification failure used to be logged once and then silently end all
             // reconnect attempts, leaving a server that looked healthy on the console while
             // Takaro saw it as offline. It is retryable: say why, loudly, and keep
@@ -157,10 +217,76 @@ public class TakaroWebSocket extends WebSocketClient {
             return;
         }
 
-        plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix() + "Successfully identified");
-        isIdentified = true;
-        reconnectAttempts = 0;
-        flushPendingEvents();
+        // Switching protocol and resending the backlog under the outbox lock keeps a new event
+        // from leaving ahead of older unacknowledged ones.
+        synchronized (outbox) {
+            protocol = IdentifyPayload.chosenProtocol(payload);
+            isIdentified = true;
+            reconnectAttempts = 0;
+            if (protocol >= 1) {
+                declaredMapJson = offeredMapJson;
+                declaredDimension = offeredDimension;
+                declaredMapWorld = offeredMapWorld;
+            }
+            plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+                + "Successfully identified (protocol v" + protocol + ")");
+            if (protocol >= 1) {
+                List<EventOutbox.Pending> backlog = outbox.unacknowledged();
+                if (!backlog.isEmpty()) {
+                    plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+                        + "Resending " + backlog.size() + " event(s) Takaro has not acknowledged"
+                        + (outbox.dropped() > 0 ? " (" + outbox.dropped() + " dropped while full)" : ""));
+                }
+                for (EventOutbox.Pending event : backlog) {
+                    sendEventFrame(event.payload());
+                }
+            } else {
+                List<EventOutbox.Pending> backlog = outbox.drain();
+                if (!backlog.isEmpty()) {
+                    plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+                        + "Flushing " + backlog.size() + " queued game event(s)"
+                        + (outbox.dropped() > 0 ? " (" + outbox.dropped() + " were dropped while full)" : ""));
+                }
+                for (EventOutbox.Pending event : backlog) {
+                    sendEventFrame(EventOutbox.toV0Payload(event.payload()));
+                }
+            }
+        }
+    }
+
+    /** Only code, name and message: a full identify error can echo Takaro's request headers. */
+    private static String describeError(JsonElement error) {
+        if (error.isJsonObject()) {
+            JsonObject e = error.getAsJsonObject();
+            StringBuilder sb = new StringBuilder();
+            for (String key : new String[]{"code", "name", "message"}) {
+                if (e.has(key) && e.get(key).isJsonPrimitive()) {
+                    if (sb.length() > 0) {
+                        sb.append(": ");
+                    }
+                    sb.append(e.get(key).getAsString());
+                }
+            }
+            return sb.length() == 0 ? "unknown error" : sb.toString();
+        }
+        return error.isJsonPrimitive() ? error.getAsString() : error.toString();
+    }
+
+    private void handleEventAck(JsonObject message) {
+        JsonObject payload = message.has("payload") && message.get("payload").isJsonObject()
+            ? message.getAsJsonObject("payload") : null;
+        if (payload == null || !payload.has("streamId")) {
+            return;
+        }
+        JsonElement upTo = payload.has("upTo") ? payload.get("upTo") : payload.get("seq");
+        if (upTo == null || !upTo.isJsonPrimitive()) {
+            return;
+        }
+        try {
+            outbox.acknowledge(payload.get("streamId").getAsString(), upTo.getAsLong());
+        } catch (RuntimeException e) {
+            plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix() + "Unreadable eventAck: " + payload);
+        }
     }
 
     private void handleTakaroRequest(JsonObject message) {
@@ -227,55 +353,158 @@ public class TakaroWebSocket extends WebSocketClient {
         sendToTakaro(response);
     }
 
-    public void sendGameEvent(String eventType, Map<String, Object> data) {
-        Map<String, Object> event = new HashMap<>();
-        event.put("type", "gameEvent");
+    /** A protocol 1 response; a null payload is sent as an explicit {@code payload: null}. */
+    public void sendV1Response(String requestId, Object payload) {
+        JsonObject frame = new JsonObject();
+        frame.addProperty("type", "response");
+        frame.addProperty("requestId", requestId);
+        frame.add("payload", payload == null ? JsonNull.INSTANCE : gson.toJsonTree(payload));
+        sendFrame(frame, "response", requestId, null);
+    }
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("type", eventType);
-        payload.put("data", data);
-
-        event.put("payload", payload);
-
-        // Takaro must not receive a gameEvent before identifyResponse, and events produced
-        // while the socket is down must not be lost. Park them instead of dropping them.
-        if (!isIdentified || !isOpen()) {
-            if (shuttingDown) {
-                return;
-            }
-            boolean fitted = pendingEvents.offer(event);
-            if (!fitted) {
-                long now = System.currentTimeMillis();
-                if (now - lastDropLogAt > DROP_LOG_INTERVAL_MS) {
-                    lastDropLogAt = now;
-                    plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix()
-                        + "Event queue full (" + pendingEvents.capacity() + "), dropping oldest events - "
-                        + pendingEvents.droppedCount() + " dropped in total since startup");
-                }
-            }
+    /**
+     * A failed request: on protocol 1 the error envelope {@code {error: {code, message}}}, on
+     * protocol 0 the old {@code payload: {error: message}}.
+     */
+    public void sendError(String requestId, String code, String message) {
+        String text = message == null || message.isBlank() ? code : message;
+        if (!isV1()) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", text);
+            sendResponse(requestId, error);
             return;
         }
+        JsonObject frame = new JsonObject();
+        frame.addProperty("type", "response");
+        frame.addProperty("requestId", requestId);
+        JsonObject error = new JsonObject();
+        error.addProperty("code", code);
+        error.addProperty("message", text);
+        frame.add("error", error);
+        sendFrame(frame, "response", requestId, null);
+    }
 
+    private void sendFrame(JsonObject frame, String type, String requestId, String action) {
+        if (!isOpen()) {
+            plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix() + "Cannot send - not connected");
+            return;
+        }
+        try {
+            WireLogger.frame(config.isDebug(), getLogPrefix(), WireLogger.OUT, type, requestId, action);
+            send(frame.toString());
+        } catch (Exception e) {
+            plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix() + "Send failed: " + e.getMessage());
+        }
+    }
+
+    public void sendGameEvent(String eventType, Map<String, Object> data) {
+        if (shuttingDown) {
+            return;
+        }
+        // Events come from several threads, and Takaro ignores a seq at or below one it has
+        // already seen, so numbering and sending share one lock and leave in seq order.
+        synchronized (outbox) {
+            EventOutbox.Pending event = outbox.add(eventType, data);
+            logDropsIfAny();
+            // Nothing goes out before identifyResponse; the outbox keeps it until then.
+            if (!isIdentified || !isOpen()) {
+                return;
+            }
+            if (isV1()) {
+                sendEventFrame(event.payload());
+            } else {
+                // Protocol 0 has no acks: send it once, in the old shape.
+                outbox.acknowledge(outbox.streamId(), event.seq());
+                sendEventFrame(EventOutbox.toV0Payload(event.payload()));
+            }
+        }
+    }
+
+    private void sendEventFrame(Map<String, Object> payload) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("type", "gameEvent");
+        event.put("payload", payload);
         sendToTakaro(event);
     }
 
-    /** Send everything that was parked while the connection was unusable. */
-    private void flushPendingEvents() {
-        if (pendingEvents.isEmpty()) {
+    private void logDropsIfAny() {
+        long dropped = outbox.dropped();
+        if (dropped == lastDroppedLogged) {
             return;
         }
-        java.util.List<Map<String, Object>> queued = pendingEvents.drain();
-        plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
-            + "Flushing " + queued.size() + " queued game event(s)"
-            + (pendingEvents.droppedCount() > 0 ? " (" + pendingEvents.droppedCount() + " were dropped while full)" : ""));
-        for (Map<String, Object> event : queued) {
-            if (!isOpen()) {
-                // Connection died mid-flush; keep what is left rather than losing it.
-                pendingEvents.offer(event);
-                continue;
-            }
-            sendToTakaro(event);
+        long now = System.currentTimeMillis();
+        if (now - lastDropLogAt > DROP_LOG_INTERVAL_MS) {
+            lastDropLogAt = now;
+            lastDroppedLogged = dropped;
+            plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix()
+                + "Event buffer full (" + outbox.capacity() + "), dropping oldest events - "
+                + dropped + " dropped in total since startup");
         }
+    }
+
+    /** The map Dimension to declare now, or null while the map is off or not ready. */
+    private Map<String, Object> currentMapDeclaration() {
+        try {
+            dev.takaro.hytale.map.WorldMapService map = plugin.getWorldMap();
+            return map == null ? null : map.declaration();
+        } catch (RuntimeException e) {
+            plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix()
+                + "Could not build the map declaration: " + e);
+            return null;
+        }
+    }
+
+    /**
+     * Declares the map once it is ready, and again when its frame grew, with a full
+     * {@code capabilities} replacement: Takaro only takes the whole manifest.
+     */
+    void checkMapDeclaration() {
+        try {
+            if (!isV1() || !isIdentified || !isOpen() || shuttingDown) {
+                return;
+            }
+            Map<String, Object> declaration = currentMapDeclaration();
+            String json = declaration == null ? null : gson.toJson(declaration);
+            if (java.util.Objects.equals(json, declaredMapJson)) {
+                return;
+            }
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("capabilities", Capabilities.manifest(plugin.getServerVersion(), declaration));
+            Map<String, Object> frame = new LinkedHashMap<>();
+            frame.put("type", "capabilities");
+            frame.put("requestId", java.util.UUID.randomUUID().toString());
+            frame.put("payload", payload);
+            declaredMapJson = json;
+            declaredDimension = declaration == null ? null : String.valueOf(declaration.get("id"));
+            declaredMapWorld = declaration == null ? null : plugin.getWorldMap().worldName();
+            plugin.getLogger().at(java.util.logging.Level.INFO).log(getLogPrefix()
+                + "Sending capability update (map dimension " + (declaredDimension == null ? "none" : "'" + declaredDimension + "'") + ")");
+            sendToTakaro(frame);
+        } catch (RuntimeException e) {
+            plugin.getLogger().at(java.util.logging.Level.WARNING).log(getLogPrefix() + "Map declaration check failed: " + e);
+        }
+    }
+
+    /** True once Takaro chose protocol 1 on the current connection. */
+    public boolean isV1() {
+        return protocol >= 1;
+    }
+
+    public int protocolVersion() {
+        return protocol;
+    }
+
+    /**
+     * The declared map Dimension id for a position in {@code worldName}, or null: on protocol 0,
+     * before the map is declared, and for any other world than the one the map draws.
+     */
+    public String dimensionFor(String worldName) {
+        String world = declaredMapWorld;
+        String dimension = declaredDimension;
+        if (!isV1() || world == null || dimension == null || worldName == null) {
+            return null;
+        }
+        return world.equals(worldName) ? dimension : null;
     }
 
     @SuppressWarnings("unchecked")
@@ -288,14 +517,14 @@ public class TakaroWebSocket extends WebSocketClient {
         return null;
     }
 
-    /** Number of events currently waiting to be sent (for /takarodebug). */
+    /** Number of events not yet acknowledged by Takaro (for /takarodebug). */
     public int getPendingEventCount() {
-        return pendingEvents.size();
+        return outbox.size();
     }
 
-    /** Total events discarded because the queue was full. */
+    /** Total events discarded because the buffer was full. */
     public long getDroppedEventCount() {
-        return pendingEvents.droppedCount();
+        return outbox.dropped();
     }
 
     /**
@@ -336,7 +565,7 @@ public class TakaroWebSocket extends WebSocketClient {
     public void shutdown() {
         shuttingDown = true;
         scheduler.shutdownNow();
-        pendingEvents.clear();
+        outbox.clear();
         close();
     }
 }

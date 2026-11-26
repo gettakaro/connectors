@@ -20,6 +20,9 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import dev.takaro.hytale.TakaroPlugin;
+import dev.takaro.hytale.protocol.GameProfile;
+import dev.takaro.hytale.protocol.ProtocolException;
+import dev.takaro.hytale.protocol.V1Results;
 import static dev.takaro.hytale.util.Responses.commandResult;
 import static dev.takaro.hytale.util.Responses.commandName;
 import dev.takaro.hytale.util.CommandOutput;
@@ -51,96 +54,36 @@ public class TakaroRequestHandler {
         this.plugin = plugin;
     }
 
+    /** Set while a request runs, so handlers can shape positions for the connection's protocol. */
+    private final ThreadLocal<dev.takaro.hytale.websocket.TakaroWebSocket> currentSocket = new ThreadLocal<>();
+
+    /** Returned by {@link #dispatch} for an action this plugin does not know. */
+    private static final Object UNKNOWN_ACTION = new Object();
+
     public void handleRequest(dev.takaro.hytale.websocket.TakaroWebSocket sourceWebSocket, String requestId, String action, JsonObject payload) {
+        currentSocket.set(sourceWebSocket);
+        try {
+            if (sourceWebSocket.isV1()) {
+                handleV1Request(sourceWebSocket, requestId, action, payload);
+            } else {
+                handleV0Request(sourceWebSocket, requestId, action, payload);
+            }
+        } finally {
+            currentSocket.remove();
+        }
+    }
+
+    /** Protocol 0: the answers Takaro has always had, errors inside the payload. */
+    private void handleV0Request(dev.takaro.hytale.websocket.TakaroWebSocket sourceWebSocket, String requestId, String action, JsonObject payload) {
         Object responsePayload;
 
         try {
-            switch (action) {
-                case "testReachability":
-                    responsePayload = handleTestReachability();
-                    break;
-                case "getPlayers":
-                    responsePayload = handleGetPlayers();
-                    break;
-                case "getPlayer":
-                    responsePayload = handleGetPlayer(payload);
-                    break;
-                case "getServerInfo":
-                    responsePayload = handleGetServerInfo();
-                    break;
-                case "sendMessage":
-                    responsePayload = handleSendMessage(payload);
-                    break;
-                case "setPlayerNameColor":
-                    responsePayload = handleSetPlayerNameColor(payload);
-                    break;
-                case "executeCommand":
-                case "executeConsoleCommand":
-                    responsePayload = handleExecuteCommand(payload);
-                    break;
-                case "giveItem":
-                    responsePayload = handleGiveItem(payload);
-                    break;
-                case "kickPlayer":
-                    responsePayload = handleKickPlayer(payload);
-                    break;
-                case "banPlayer":
-                    responsePayload = handleBanPlayer(payload);
-                    break;
-                case "unbanPlayer":
-                    responsePayload = handleUnbanPlayer(payload);
-                    break;
-                case "getPlayerLocation":
-                    responsePayload = handleGetPlayerLocation(payload);
-                    break;
-                case "teleportPlayer":
-                    responsePayload = handleTeleportPlayer(payload);
-                    break;
-                case "teleportPlayerToPlayer":
-                    responsePayload = handleTeleportPlayerToPlayer(payload);
-                    break;
-                case "listCommands":
-                    responsePayload = handleListCommands();
-                    break;
-                case "getAvailableActions":
-                    responsePayload = handleGetAvailableActions();
-                    break;
-                case "help":
-                    responsePayload = buildHelpResponse();
-                    break;
-                case "getPlayerInventory":
-                    responsePayload = handleGetPlayerInventory(payload);
-                    break;
-                case "listItems":
-                    responsePayload = handleListItems();
-                    break;
-                case "getPlayerBedLocation":
-                case "getPlayerBeds":
-                    responsePayload = handleGetPlayerBedLocation(payload);
-                    break;
-                case "shutdown":
-                    responsePayload = handleShutdown();
-                    break;
-                case "listBans":
-                    responsePayload = handleListBans();
-                    break;
-                case "listEntities":
-                    responsePayload = handleListEntities();
-                    break;
-                case "listLocations":
-                    responsePayload = handleListLocations();
-                    break;
-                case "getMapInfo":
-                    responsePayload = handleGetMapInfo();
-                    break;
-                case "getMapTile":
-                    responsePayload = handleGetMapTile(payload);
-                    break;
-                default:
-                    plugin.getLogger().at(java.util.logging.Level.WARNING).log("Unknown action: " + action);
-                    Map<String, String> error = new HashMap<>();
-                    error.put("error", "Unknown action: " + action);
-                    responsePayload = error;
+            responsePayload = dispatch(action, payload);
+            if (responsePayload == UNKNOWN_ACTION) {
+                plugin.getLogger().at(java.util.logging.Level.WARNING).log("Unknown action: " + action);
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "Unknown action: " + action);
+                responsePayload = error;
             }
         } catch (Exception e) {
             plugin.getLogger().at(java.util.logging.Level.SEVERE).log("Error handling " + action + ": " + e.getMessage());
@@ -152,6 +95,155 @@ public class TakaroRequestHandler {
 
         // Send response back to the WebSocket that sent the request
         sourceWebSocket.sendResponse(requestId, responsePayload);
+    }
+
+    /**
+     * Protocol 1: the same handlers, with their answers converted by {@link V1Results} into
+     * the v1 shapes (error envelope with a code, {@code payload: null} for void actions and
+     * missing players), plus the v1-only actions.
+     */
+    private void handleV1Request(dev.takaro.hytale.websocket.TakaroWebSocket ws, String requestId, String action, JsonObject payload) {
+        try {
+            Object result;
+            switch (action) {
+                case "getGameIcon":
+                    result = handleGetGameIcon();
+                    break;
+                case "getMapTile":
+                    result = handleGetMapTileV1(payload);
+                    break;
+                default:
+                    result = dispatch(action, payload);
+                    if (result == UNKNOWN_ACTION) {
+                        throw new ProtocolException(ProtocolException.UNSUPPORTED, "Action not implemented: " + action);
+                    }
+                    result = V1Results.adapt(action, result);
+            }
+            ws.sendV1Response(requestId, result);
+        } catch (Exception e) {
+            String code = ProtocolException.codeFor(e);
+            if (!(e instanceof ProtocolException)) {
+                plugin.getLogger().at(java.util.logging.Level.SEVERE).log("Error handling " + action + ": " + e);
+                e.printStackTrace();
+            }
+            ws.sendError(requestId, code, e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+    }
+
+    /** Runs one action handler; {@link #UNKNOWN_ACTION} when there is none. */
+    private Object dispatch(String action, JsonObject payload) throws Exception {
+        switch (action) {
+            case "testReachability":
+                return handleTestReachability();
+            case "getPlayers":
+                return handleGetPlayers();
+            case "getPlayer":
+                return handleGetPlayer(payload);
+            case "getServerInfo":
+                return handleGetServerInfo();
+            case "sendMessage":
+                return handleSendMessage(payload);
+            case "setPlayerNameColor":
+                return handleSetPlayerNameColor(payload);
+            case "executeCommand":
+            case "executeConsoleCommand":
+                return handleExecuteCommand(payload);
+            case "giveItem":
+                return handleGiveItem(payload);
+            case "kickPlayer":
+                return handleKickPlayer(payload);
+            case "banPlayer":
+                return handleBanPlayer(payload);
+            case "unbanPlayer":
+                return handleUnbanPlayer(payload);
+            case "getPlayerLocation":
+                return handleGetPlayerLocation(payload);
+            case "teleportPlayer":
+                return handleTeleportPlayer(payload);
+            case "teleportPlayerToPlayer":
+                return handleTeleportPlayerToPlayer(payload);
+            case "listCommands":
+                return handleListCommands();
+            case "getAvailableActions":
+                return handleGetAvailableActions();
+            case "help":
+                return buildHelpResponse();
+            case "getPlayerInventory":
+                return handleGetPlayerInventory(payload);
+            case "listItems":
+                return handleListItems();
+            case "getPlayerBedLocation":
+            case "getPlayerBeds":
+                return handleGetPlayerBedLocation(payload);
+            case "shutdown":
+                return handleShutdown();
+            case "listBans":
+                return handleListBans();
+            case "listEntities":
+                return handleListEntities();
+            case "listLocations":
+                return handleListLocations();
+            case "getMapInfo":
+                return handleGetMapInfo();
+            case "getMapTile":
+                return handleGetMapTile(payload);
+            default:
+                return UNKNOWN_ACTION;
+        }
+    }
+
+    /** The whole declared icon in one response; Takaro checks it against the declared size. */
+    private Object handleGetGameIcon() {
+        GameProfile.Icon icon = GameProfile.icon();
+        if (icon == null) {
+            throw new ProtocolException(ProtocolException.GAME_ERROR, "the game icon could not be read from the plugin jar");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("revision", icon.revision());
+        out.put("data", Base64.getEncoder().encodeToString(icon.png()));
+        return out;
+    }
+
+    /** One tile of Takaro's v1 pyramid for the declared world (see MapPyramid). */
+    private Object handleGetMapTileV1(JsonObject payload) {
+        dev.takaro.hytale.map.WorldMapService map = plugin.getWorldMap();
+        if (map == null) {
+            throw new ProtocolException(ProtocolException.UNSUPPORTED, "the world map is switched off (MAP_ENABLED=false)");
+        }
+        if (!map.isReady()) {
+            throw new ProtocolException(ProtocolException.NOT_FOUND, "the world map is not ready: " + map.status());
+        }
+        TakaroArgs args = TakaroArgs.of(payload);
+        String dimension = args.str("dimension");
+        if (dimension == null || !args.hasNumber("zoom") || !args.hasNumber("x") || !args.hasNumber("y")) {
+            throw new ProtocolException(ProtocolException.INVALID_ARGS, "getMapTile needs dimension, zoom, x and y");
+        }
+        if (!dimension.equals(map.dimensionId())) {
+            throw new ProtocolException(ProtocolException.NOT_FOUND, "unknown map dimension " + dimension);
+        }
+        int zoom = args.intVal("zoom", -1);
+        int x = args.intVal("x", -1);
+        int y = args.intVal("y", -1);
+        dev.takaro.hytale.map.MapPyramid.Frame frame = map.frame();
+        if (!frame.isValidTile(zoom, x, y)) {
+            throw new ProtocolException(ProtocolException.INVALID_ARGS, "tile " + zoom + "/" + x + "/" + y
+                + " is outside the map (zoom 0.." + frame.maxZoom() + ")");
+        }
+        Map<String, Object> tile = new LinkedHashMap<>();
+        tile.put("mimeType", "image/png");
+        tile.put("data", Base64.getEncoder().encodeToString(map.tiles().pyramidTilePng(frame, zoom, x, y)));
+        return tile;
+    }
+
+    /** The declared map Dimension for a position in {@code worldName} on this request's connection. */
+    private String dimensionFor(String worldName) {
+        dev.takaro.hytale.websocket.TakaroWebSocket ws = currentSocket.get();
+        return ws == null ? null : ws.dimensionFor(worldName);
+    }
+
+    private boolean isV1Request() {
+        dev.takaro.hytale.websocket.TakaroWebSocket ws = currentSocket.get();
+        return ws != null && ws.isV1();
     }
 
     /** Map info for the default world; {@code enabled:false} when the map is off or not ready. */
@@ -287,6 +379,11 @@ public class TakaroRequestHandler {
                     Map<String, Object> offline = plugin.getKnownPlayers().toGamePlayer(known.gameId);
                     offline.put("online", false);
                     return offline;
+                }
+
+                // Protocol 1 has a proper answer for a player the server does not know: null.
+                if (isV1Request()) {
+                    return null;
                 }
 
                 // never answer getPlayer with an error or an empty object. Takaro rejects
@@ -1130,6 +1227,9 @@ public class TakaroRequestHandler {
 
             Store<EntityStore> store = ref.getStore();
             World world = store.getExternalData().getWorld();
+            // On protocol 1 the position names the declared map Dimension when the player is in
+            // the world the map draws, so Takaro shows the player on that map.
+            String dimension = dimensionFor(world.getName());
 
             CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
 
@@ -1147,6 +1247,9 @@ public class TakaroRequestHandler {
                     result.put("x", position.x);
                     result.put("y", position.y);
                     result.put("z", position.z);
+                    if (dimension != null) {
+                        result.put("dimension", dimension);
+                    }
                     plugin.getPlayerListener().rememberPosition(gameId, position.x, position.y, position.z);
                     future.complete(result);
                 } catch (Exception e) {
@@ -2784,7 +2887,13 @@ public class TakaroRequestHandler {
                     position.put("y", transform.getPosition().y);
                     position.put("z", transform.getPosition().z);
                 }
-                if (warp.getWorld() != null) {
+                if (isV1Request()) {
+                    // Protocol 1 only takes declared Dimension ids: the map's world, or none.
+                    String dimension = dimensionFor(warp.getWorld());
+                    if (dimension != null) {
+                        position.put("dimension", dimension);
+                    }
+                } else if (warp.getWorld() != null) {
                     position.put("dimension", warp.getWorld());
                 }
 

@@ -68,6 +68,15 @@
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>
             </resource>
+            <!-- The game icon Takaro shows (game.profile, getGameIcon). Binary: never filtered. -->
+            <resource>
+                <directory>${project.basedir}/../assets</directory>
+                <targetPath>dev/takaro/hytale</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>icon-256.png</include>
+                </includes>
+            </resource>
             <resource>
                 <directory>${project.basedir}/..</directory>
                 <targetPath>META-INF</targetPath>
@@ -93,6 +102,13 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.3</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- Lets the tests check the stamped version and the shipped icon. -->
+                        <takaro.expectedVersion>${project.version}</takaro.expectedVersion>
+                        <takaro.iconSource>${project.basedir}/../assets/icon-256.png</takaro.iconSource>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

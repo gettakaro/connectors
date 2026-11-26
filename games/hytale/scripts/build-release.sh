@@ -47,7 +47,7 @@ rm -rf "$stage"
 mkdir -p "$stage"
 cp -r "$project_root/mod" "$stage/mod"
 rm -rf "$stage/mod/target"
-cp "$project_root/LICENSE" "$project_root/THIRD-PARTY-NOTICES.md" "$stage/"
+cp -r "$project_root/LICENSE" "$project_root/THIRD-PARTY-NOTICES.md" "$project_root/assets" "$stage/"
 
 mvn_args=(-B -ntp -Drevision="$version" -Dproject.build.outputTimestamp="$stamp_iso" -Dhytale.server.version="$server_version" package)
 echo "== takaro-hytale $version (Maven, Hytale Server $server_version)"
@@ -90,7 +90,7 @@ with zipfile.ZipFile(source) as built:
     entries = {i.filename: built.read(i) for i in built.infolist() if not i.is_dir()}
 entries.pop("META-INF/MANIFEST.MF", None)
 for required in ("manifest.json", "dev/takaro/hytale/TakaroPlugin.class", "dev/takaro/hytale/version.properties",
-                 "META-INF/LICENSE", "META-INF/THIRD-PARTY-NOTICES.md"):
+                 "META-INF/LICENSE", "META-INF/THIRD-PARTY-NOTICES.md", "dev/takaro/hytale/icon-256.png"):
     if required not in entries:
         sys.exit(f"the built jar has no {required}")
 if json.loads(entries["manifest.json"])["Version"] != identity["connectorVersion"]:
