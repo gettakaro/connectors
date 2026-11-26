@@ -221,6 +221,11 @@ the behaviour above: `runtime_depot_cache` (the verify leg caches the pinned Ste
 under `<connector>-depots-<fp16>`, and the build leg skips its server install), `runtime_negative`
 (adds `--negative`) and `startup_timeout` (default 600). Rust uses all three.
 
+`runtime_large_server` (default false) is for a depot set larger than the repository's whole
+Actions cache (7 Days to Die's is 17.7 GB): the build leg never installs it, the verify leg downloads
+it once per run, uncached, and the job gets 60 minutes instead of 40. The download and the throwaway
+install's copy of it both fit on the hosted runner's disk.
+
 ## What this does not prove
 
 This harness exercises startup and the Generic Connector Protocol. It does not play the

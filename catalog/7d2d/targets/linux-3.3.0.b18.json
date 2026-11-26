@@ -107,7 +107,7 @@
     }
   ],
   "verification": {
-    "required": "contract",
+    "required": "startup",
     "separate": [
       "startup",
       "action",
