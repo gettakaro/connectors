@@ -22,7 +22,7 @@ local function install(native, dir)
   _G.ExecuteInGameThread = function(fn) fn() end
   _G.RegisterHook = function() end
   _G.FindAllOf = function() return nil end
-  _G.FindFirstOf = function() return nil end
+  _G.FindFirstOf = function(name) return _G.TEST_FIND_FIRST and _G.TEST_FIND_FIRST(name) end
   _G.StaticFindObject = function() return nil end
   _G.takaro_list_dir = function() return "" end
   _G.takaro_now_us = function() return 0 end
@@ -42,6 +42,19 @@ t.test("main.lua starts the app, connects, identifies and answers through the UE
   dofile(MAIN)
   t.eq(#loops, 1, "one game-thread loop")
   t.ok(loops[1].gt and loops[1].ms == 100, "LoopInGameThreadWithDelay(100)")
+  local function tick(ms)
+    native.clock = native.clock + ms
+    loops[1].fn()
+  end
+  for _ = 1, 30 do tick(100) end
+  t.eq(native.connected, nil, "no connection before the world is loaded")
+  local gm = { IsValid = function() return true end }
+  _G.TEST_FIND_FIRST = function(name) if name == "ConZGameMode" then return gm end end
+  tick(100)
+  tick(60000) -- the game thread stalls right after the world appears
+  for _ = 1, 99 do tick(100) end
+  t.eq(native.connected, nil, "still settling after the stall")
+  tick(100)
   t.eq(native.connected.url, "wss://connect.example.test/")
   native.open()
   loops[1].fn()
@@ -51,10 +64,11 @@ t.test("main.lua starts the app, connects, identifies and answers through the UE
   t.eq(#native.frames("identify"), 1)
   t.ok(TAKARO_SCUM_APP.client.identified)
   t.deep(native.frames("response")[1].msg.payload,
-    { connectable = false, reason = "SCUM world is not loaded (no ConZGameMode)" })
+    { connectable = false, reason = "MiscStatics not found" })
   local logs = table.concat(native.logs, "\n")
   t.ok(logs:find("TakaroSCUM %d+%.%d+%.%d+[%w.+-]* starting"))
   t.eq(logs:find(F.REG_TOKEN, 1, true), nil)
+  _G.TEST_FIND_FIRST = nil
   os.execute("rm -rf '" .. dir .. "'")
 end)
 

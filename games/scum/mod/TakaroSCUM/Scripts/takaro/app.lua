@@ -26,6 +26,12 @@ M.FIRST_CONNECT_WAIT_MS = 15 * 60 * 1000 -- a catalogue that never finishes must
 M.KNOWN_FILE = "known-players.json"
 M.WORLD_BOUNDS_RETRY_MS = 10000
 M.GAME_VERSION_RETRY_MS = 10000
+-- SCUM's game thread stalls for about a minute right after the world appears (measured 57-74 s), and all of this mod's
+-- Lua runs on it. A connector that identified before the stall leaves Takaro waiting on every request until they time
+-- out, so it connects only once the world is loaded and the game thread has ticked steadily for READY_SETTLE_MS.
+M.READY_SETTLE_MS = 10000
+M.READY_STALL_MS = 2000 -- a longer gap between two ticks is a stall and restarts the settle window
+M.READY_MAX_WAIT_MS = 10 * 60 * 1000 -- a world that never reports loaded must not keep the server off Takaro
 
 local App = {}
 App.__index = App
@@ -163,12 +169,52 @@ function App:start()
   -- registers once they are ready, or it stays without items for up to an hour.
   local marker = self.fs.read(self.dir .. "/" .. M.REGISTERED_FILE)
   self.registered = marker ~= nil and util.trim(marker) == self:registration_digest()
+  local now = self:now()
   if self.game.catalogs_done and not self.registered then
     self.log:info("not registered yet: connecting to Takaro once the item catalogue is ready")
-    self.connectBy = self:now() + M.FIRST_CONNECT_WAIT_MS
-  else
-    self:connect()
+    self.connectBy = now + M.FIRST_CONNECT_WAIT_MS
   end
+  self.readyBy = now + M.READY_MAX_WAIT_MS
+  self.pendingConnect = true
+  if self.game.world_loaded then self.log:info("connecting to Takaro once the world is loaded and the game thread is steady") end
+  self:maybe_connect(now)
+end
+
+-- Whether the game can answer Takaro: the world is loaded and the game thread has not stalled for READY_SETTLE_MS.
+-- Called once per tick, so the gap since the previous call is the gap between two game-thread ticks.
+function App:game_ready(now)
+  if self.readyAt or not self.game.world_loaded then return true end
+  local okW, loaded = pcall(self.game.world_loaded, self.game)
+  loaded = okW and loaded == true
+  local last = self.lastReadyCheck
+  self.lastReadyCheck = now
+  if loaded and last and now - last > M.READY_STALL_MS and self.settleFrom then
+    self.log:info("game thread stalled %d ms after the world loaded; waiting until it is steady", now - last)
+    self.settleFrom = nil
+  end
+  if not loaded then
+    self.settleFrom = nil
+  elseif not self.settleFrom then
+    self.settleFrom = now
+  end
+  if self.settleFrom and now - self.settleFrom >= M.READY_SETTLE_MS then
+    self.readyAt = now
+    self.log:info("world loaded and game thread steady for %d s", math.floor((now - self.settleFrom) / 1000))
+    return true
+  end
+  if now >= self.readyBy then
+    self.readyAt = now
+    self.log:warn("world not reported ready after %d s; connecting anyway", math.floor(M.READY_MAX_WAIT_MS / 1000))
+    return true
+  end
+  return false
+end
+
+function App:maybe_connect(now)
+  if not self.pendingConnect or not self:game_ready(now) then return end
+  if self.connectBy and now < self.connectBy and not self.game:catalogs_done() then return end
+  self.pendingConnect, self.connectBy = nil, nil
+  self:connect()
 end
 
 -- The registration marker holds a digest of the Takaro URL and identity, so a server pointed at another Takaro or
@@ -195,10 +241,7 @@ function App:tick()
     local okg, errg = pcall(self.game.tick, self.game, now)
     if not okg then self.log:error("game tick failed: %s", tostring(errg)) end
   end
-  if self.connectBy and (now >= self.connectBy or self.game:catalogs_done()) then
-    self.connectBy = nil
-    self:connect()
-  end
+  self:maybe_connect(now)
   if self.client.identified and not self.registered then
     self.registered = self.fs.write(self.dir .. "/" .. M.REGISTERED_FILE, self:registration_digest() .. "\n") == true
   end

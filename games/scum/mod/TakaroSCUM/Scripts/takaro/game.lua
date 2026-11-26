@@ -307,6 +307,11 @@ function Game:get_player_progression(params)
   return { ok = false, reason = "no reading yet" }
 end
 
+-- The world is loaded once ConZGameMode exists (the same object reachability checks for).
+function Game:world_loaded()
+  return self:game_mode() ~= nil
+end
+
 function Game:reachability()
   local gm = self:game_mode()
   if not gm then return { ok = true, value = { connectable = false, reason = "SCUM world is not loaded (no ConZGameMode)" } } end
