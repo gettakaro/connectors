@@ -12,7 +12,7 @@ exists, and a Takaro game server of type **Generic** with its registration token
 <!-- takaro-maint:targets:begin -->
 | Target | Game version | Platform | Loader / API | Java | Support | Verified level |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux-1.0.21` | 1.0.21 | linux | — | None | candidate | contract |
+| `linux-1.0.30` | 1.0.30 | linux | — | None | candidate | contract |
 <!-- takaro-maint:targets:end -->
 
 ### 1. Download
