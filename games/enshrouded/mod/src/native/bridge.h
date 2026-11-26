@@ -102,6 +102,7 @@ private:
         uint64_t epoch = 0;
         int64_t deadlineMs = 0;
         bool expiry = false;  // internal timed-ban expiry
+        bool deferred = false;  // internal: applies a deferred ban now that its player is online (no response)
         bool sample = false;  // internal position read (getPlayerLocation of an online player, no response)
         std::string expiryGameId;
         std::string intentId;
@@ -182,7 +183,7 @@ private:
     int64_t lastPositionsSave_ = 0, nextSample_ = 0;
     std::map<std::string, int> missingStrikes_;
     bool reconcilePending_ = true;
-    std::set<std::string> expiryInFlight_;
+    std::set<std::string> expiryInFlight_, deferredInFlight_;
     LogTailer tailer_;
     bool tailActive_ = false;
     bool healthKnown_ = false;
@@ -199,7 +200,7 @@ private:
     uint64_t requests_ = 0, responses_ = 0, errorResponses_ = 0, duplicates_ = 0, malformed_ = 0, overloads_ = 0,
              timeouts_ = 0, lateResults_ = 0, droppedResponses_ = 0, oversizeIds_ = 0, identifyErrors_ = 0,
              eventsAdmitted_ = 0, eventsQueued_ = 0, eventsMalformed_ = 0, ringGaps_ = 0, reconciled_ = 0,
-             tailEvents_ = 0, expiredBans_ = 0, noticeOverflows_ = 0, eventAcks_ = 0, eventErrors_ = 0;
+             tailEvents_ = 0, expiredBans_ = 0, appliedDeferredBans_ = 0, noticeOverflows_ = 0, eventAcks_ = 0, eventErrors_ = 0;
     int64_t maxRequestLatencyMs_ = 0;
     std::string lastError_, lastIdentifyError_, lastRequestAction_, lastEventError_;
     std::vector<std::string> oldSecrets_;  // tokens used before a Reconfigure, still redacted

@@ -20,6 +20,7 @@ StatePaths ResolveStatePaths(const std::string& baseDir, const EnvFn& env) {
     p.known = JoinPath(p.dir, "known-players.json");
     p.positions = JoinPath(p.dir, "last-positions.json");
     p.timedBans = JoinPath(p.dir, "timed-bans.json");
+    p.deferredBans = JoinPath(p.dir, "deferred-bans.json");
     p.banIntent = JoinPath(p.dir, "ban-intent.json");
     std::string cursor = env("TAKARO_CURSOR_FILE");
     p.legacyCursor = cursor.empty() ? JoinPath(p.dir, "event-cursor.json") : ResolvePath(baseDir, cursor);
@@ -250,6 +251,30 @@ LoadReport Store::Load() {
         else timedBans_ = std::move(bans);
     }
 
+    if (read("deferredBans", paths_.deferredBans, text)) {
+        JsonValue v;
+        bool ok = ParseJson(text, v) && v.type == JsonValue::Array;
+        std::map<std::string, TimedBan> bans;
+        for (size_t i = 0; ok && i < v.arr.size(); i++) {
+            const JsonValue& b = v.arr[i];
+            const JsonValue* g = b.get("gameId");
+            auto e = Str(b.get("expiresAt"));
+            TimedBan t;
+            if (!g || g->type != JsonValue::String || g->str.empty() ||
+                (e && !e->empty() && !ParseIsoMs(*e, t.expiresAtMs))) {
+                ok = false;
+                break;
+            }
+            t.gameId = g->str;
+            t.expiresAt = e.value_or("");
+            if (auto r = Str(b.get("reason"))) t.reason = *r;
+            if (auto c = Num(b.get("createdAtMs"))) t.createdAtMs = (int64_t)*c;
+            bans[t.gameId] = t;
+        }
+        if (!ok) LoadError("deferredBans", paths_.deferredBans + ": corrupt (expected [{gameId, expiresAt}])");
+        else deferredBans_ = std::move(bans);
+    }
+
     if (read("banIntent", paths_.banIntent, text)) {
         JsonValue v;
         if (!ParseJson(text, v) || v.type != JsonValue::Array) LoadError("banIntent", paths_.banIntent + ": corrupt");
@@ -330,10 +355,11 @@ bool Store::Remember(const JsonValue& player, int64_t nowMs) {
     return true;
 }
 
-bool Store::SaveTimedBans() {
+namespace {
+std::string BansJson(const std::map<std::string, TimedBan>& bans) {
     std::string o = "[";
     bool first = true;
-    for (auto& kv : timedBans_) {
+    for (auto& kv : bans) {
         auto& t = kv.second;
         o += (first ? "" : ",") + ObjBuilder()
                                       .S("gameId", t.gameId)
@@ -343,13 +369,17 @@ bool Store::SaveTimedBans() {
                                       .Done();
         first = false;
     }
-    return Write("timedBans", paths_.timedBans, o + "]");
+    return o + "]";
 }
+}  // namespace
+
+bool Store::SaveTimedBans() { return Write("timedBans", paths_.timedBans, BansJson(timedBans_)); }
+bool Store::SaveDeferredBans() { return Write("deferredBans", paths_.deferredBans, BansJson(deferredBans_)); }
 
 bool Store::SaveBanIntents() { return Write("banIntent", paths_.banIntent, PlayersJson(banIntents_)); }
 
 std::string Store::BanStoreError() const {
-    for (auto* area : {"timedBans", "banIntent"})
+    for (auto* area : {"timedBans", "deferredBans", "banIntent"})
         if (Fenced(area)) return errors_.at(area);
     return "";
 }

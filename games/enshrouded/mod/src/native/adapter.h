@@ -27,6 +27,7 @@ struct TimedBan {
 struct ActionView {
     std::vector<JsonValue> knownPlayers;  // Takaro-shaped players this connector has seen
     std::map<std::string, TimedBan> timedBans;
+    std::map<std::string, TimedBan> deferredBans;  // bans waiting for an offline player to join
     std::string mapDir;         // map tile pack directory (maptiles.h)
     std::string serverChatName;  // plugin.json "serverChatName" / TAKARO_SERVER_CHAT_NAME; "" = none
     std::string banStoreError;  // non-empty: the timed-ban store is unreadable; timed bans and listBans refuse
@@ -35,7 +36,9 @@ struct ActionView {
 };
 
 struct BanChange {
-    enum Op { None, Upsert, Remove } op = None;
+    // Upsert/Remove: the game applied a ban (timed record kept) or an unban/permanent ban; both settle any deferred ban.
+    // Defer: the player is offline, so the ban waits in the deferred store until that player joins.
+    enum Op { None, Upsert, Remove, Defer } op = None;
     TimedBan ban;
 };
 

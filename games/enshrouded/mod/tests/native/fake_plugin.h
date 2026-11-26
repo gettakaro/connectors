@@ -7,6 +7,7 @@
 
 #include <condition_variable>
 #include <map>
+#include <algorithm>
 #include <mutex>
 #include <set>
 
@@ -34,6 +35,8 @@ public:
         entities = J(R"([{"code":"Scavenger","name":"Scavenger","type":"enemy"},{"code":"Blacksmith","name":"Blacksmith","type":"npc"},{"code":"Wolf","name":"Wolf","type":"animal"}])");
         locationsList = J(R"([{"code":"cradle","name":"Cradle","position":{"x":0,"y":100,"z":0},"radius":50}])");
         bans = J("[]");
+        neverSeen.clear();
+        banNeedsOnline = false;
         commandResult = JsonValue();
         unimplemented.clear();
         requests.clear();
@@ -126,6 +129,8 @@ public:
     std::set<std::string> gated;
     int waiting = 0;
     JsonValue health, players, locations, inventories, items, entities, locationsList, bans, commandResult;
+    std::vector<std::string> neverSeen;  // SteamIDs whose /unban fails like the game's (no account hash)
+    bool banNeedsOnline = false;          // POST /ban refuses players not in `players`, as the game does
     std::set<std::string> unimplemented;
     std::vector<RecordedRequest> requests;
     std::map<std::string, int> delays, calls;
@@ -261,6 +266,9 @@ private:
         if (k == "POST /ban") {
             std::string id = bstr("gameId");
             JsonValue* p = FindPlayer(id, true);
+            // like the game (opt-in; the sidecar parity fixtures ban offline ids): only a connected account can be banned
+            const JsonValue* on = p ? p->get("online") : nullptr;
+            if (banNeedsOnline && (!p || (on && on->type == JsonValue::Bool && !on->b))) return Err(404, "player not online");
             JsonValue row = native::JObj();
             native::Put(row, "gameId", native::JStr(p ? p->get("gameId")->str : id));
             native::Put(row, "steamId", native::JStr(p && p->get("steamId") ? p->get("steamId")->str : id));
@@ -273,6 +281,8 @@ private:
         }
         if (k == "POST /unban") {
             std::string id = bstr("gameId");
+            if (std::count(neverSeen.begin(), neverSeen.end(), id))
+                return Err(404, "account hash for this SteamID is unknown (player never seen online by the plugin)");
             std::vector<JsonValue> kept;
             for (auto& b : bans.arr) {
                 const JsonValue* g = b.get("gameId");

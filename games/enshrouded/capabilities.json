@@ -65,11 +65,11 @@
     },
     "banPlayer": {
       "status": "proven",
-      "note": "online players only (game rule). Timed bans: the connector records expiresAt and lifts the ban itself at expiry (proven 2026-09-29, lifted 3.7 s after expiry); permanent bans too"
+      "note": "the game bans connected accounts only; a ban for an offline player is kept by the connector (deferred-bans.json) and applied within 5 s of that player joining (proven 2026-11-26 on staging: ban while offline, join -> banned 2.6 s later, unban -> rejoin). Timed bans: the connector records expiresAt and lifts the ban itself at expiry (proven 2026-09-29, lifted 3.7 s after expiry); permanent bans too"
     },
     "unbanPlayer": {
       "status": "proven",
-      "note": "requires the player to have been seen online once (hash cache); re-proven 2026-09-29 on the native connector"
+      "note": "requires the player to have been seen online once (hash cache), except for a ban still deferred (player offline since the ban), which unban simply drops; re-proven 2026-09-29 on the native connector"
     },
     "listBans": {
       "status": "proven",

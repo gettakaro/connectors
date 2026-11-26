@@ -1382,14 +1382,23 @@ bool WorldSendMessage(const std::string& text, const std::string& recipientMachi
                 uint64_t account = 0;
                 if (L.chatArg8Value && L.sessVerStride && handle) account = SessionAccount(server, handle);
                 if (!handle) return std::string(target >= 0 ? "!recipient has no logged-in player slot" : "=nobody online");
-                uint64_t countBefore = *(uint64_t*)(chat + L.chatCount);
+                // The chat history is a 64 KiB pool that is never trimmed after delivery: once it is full, addMessage
+                // drops the oldest records to make room, so the record count stays flat (or falls) on a busy server.
+                // Our record is the new tail holding our text, whatever the count did.
+                uint64_t tailBefore = *(uint64_t*)(chat + L.chatTail);
                 StringView sv{text.data(), text.size()};
                 Opt64 o1{}, o2{};
                 uint8_t e[16] = {0};
                 g_origAddMsg(e, chat, msgType, &sv, 0, 0, handle, L.chatArg8Value ? account : (uint64_t)&o1, &o2);
                 if (e[0]) return "!addMessage error " + std::to_string(e[0]);
                 uint64_t rec = *(uint64_t*)(chat + L.chatTail);
-                if (*(uint64_t*)(chat + L.chatCount) != countBefore + 1 || !rec) return "!message was not queued";
+                if (!rec || rec == tailBefore || !Readable(rec, 8) || *(uint32_t*)(rec + L.chatRecLen) != text.size())
+                    return "!message was not queued";
+                int32_t textRel = *(int32_t*)(rec + 4);  // the record's offset from +4 to its text
+                uint64_t recText = rec + 4 + (int64_t)textRel;
+                if (textRel <= 0 || textRel > 0x100 || !Readable(recText, text.size()) ||
+                    memcmp((const void*)recText, text.data(), text.size()) != 0)
+                    return "!message was not queued";
                 int excluded = 0;
                 if (target >= 0) {
                     // whisper: mark the record as already delivered to every other active machine (mirrors the flush's

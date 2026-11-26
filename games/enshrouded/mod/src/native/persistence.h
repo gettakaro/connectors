@@ -1,6 +1,6 @@
 // Durable connector state: the event outbox (scan/confirmed cursors per plugin bootId plus the
-// events Takaro has not yet confirmed), online players, known players, timed bans and the
-// ban-intent journal.
+// events Takaro has not yet confirmed), online players, known players, timed bans, deferred bans and
+// the ban-intent journal.
 //
 // Single owner: only the bridge thread calls a Store. Every write is tmp -> flush -> atomic
 // replace (fileio.h). A file that exists but does not parse is an error: that area is fenced
@@ -20,7 +20,7 @@ namespace native {
 using EnvFn = std::function<std::string(const char*)>;
 
 struct StatePaths {
-    std::string dir, outbox, online, known, positions, timedBans, banIntent, legacyCursor;
+    std::string dir, outbox, online, known, positions, timedBans, deferredBans, banIntent, legacyCursor;
 };
 // Default dir <baseDir>\takaro\connector-state; TAKARO_STATE_DIR moves it. TAKARO_ONLINE_FILE
 // points the online-players store (same format as the sidecar's) elsewhere; TAKARO_CURSOR_FILE
@@ -93,6 +93,10 @@ public:
     // ---- timed bans + ban-intent journal ----
     std::map<std::string, TimedBan>& TimedBans() { return timedBans_; }
     bool SaveTimedBans();
+    // Bans Takaro asked for while the player was offline (the game only bans connected accounts). The bridge
+    // applies each one when that player joins. expiresAt "" = permanent.
+    std::map<std::string, TimedBan>& DeferredBans() { return deferredBans_; }
+    bool SaveDeferredBans();
     std::vector<JsonValue>& BanIntents() { return banIntents_; }
     bool SaveBanIntents();
     // Non-empty when timed bans cannot be trusted (store or journal unreadable).
@@ -110,7 +114,7 @@ private:
     StatePaths paths_;
     OutboxState outbox_;
     std::vector<JsonValue> online_, known_, banIntents_;
-    std::map<std::string, TimedBan> timedBans_;
+    std::map<std::string, TimedBan> timedBans_, deferredBans_;
     std::map<std::string, JsonValue> positions_;
     std::map<std::string, std::string> errors_;
     std::map<std::string, bool> fenced_;
