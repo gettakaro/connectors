@@ -211,6 +211,11 @@ ALLOWLIST: tuple[Allow, ...] = (
         r"production_build",
         "the input is fetched by its asset id; the tag is informational (games/rust/DEVELOPMENT.md)",
     ),
+    Allow(
+        "catalog/rust/targets/carbon-26921919.json",
+        r"production_build",
+        "the input is fetched by its asset id; the tag is informational (games/rust/DEVELOPMENT.md)",
+    ),
 )
 
 

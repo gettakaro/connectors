@@ -183,6 +183,7 @@ jobs:
         if: inputs.runtime && !inputs.runtime_depot_cache && !inputs.runtime_large_server
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           maintenance/bin/takaro-maint install \
             --game "$IN_CONNECTOR" \
@@ -200,6 +201,7 @@ jobs:
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
           IN_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           maintenance/bin/takaro-maint build \
             --game "$IN_CONNECTOR" \
@@ -228,6 +230,7 @@ jobs:
         env:
           IN_CONNECTOR: ${{ inputs.connector }}
           IN_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           maintenance/bin/takaro-maint build \
             --game "$IN_CONNECTOR" \
@@ -346,6 +349,7 @@ jobs:
           IN_CONNECTOR: ${{ inputs.connector }}
           IN_STARTUP_TIMEOUT: ${{ inputs.startup_timeout }}
           IN_NEGATIVE: ${{ inputs.runtime_negative && '--negative' || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p reports
           maintenance/bin/takaro-maint verify \

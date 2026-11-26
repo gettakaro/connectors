@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "id": "carbon-26921919",
+  "game": "rust",
+  "platform": "carbon",
+  "revision": "26921919",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-26",
+    "evidence": [],
+    "notes": "Rust Dedicated Server public build 26921919 (2026-11-25 16:17 UTC hotfix) with Carbon production build v2.0.267 (commit d918fc8, GitHub release asset id 783397591, uploaded 2026-11-23 15:09 UTC; Carbon published no newer production build for this hotfix). The Carbon bytes are fetched by that asset id, which GitHub never re-points: when Carbon re-uploads production_build the id stops resolving instead of serving different bytes."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 258550,
+      "branch": "public",
+      "buildid": 26921919,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "258552": {
+          "manifest": "1198055723653111326",
+          "size": 769969948,
+          "files": 739
+        },
+        "258554": {
+          "manifest": "6085639424350162022",
+          "size": 4942915239,
+          "files": 1329
+        }
+      },
+      "files": {
+        "Bundles/shared/items.preload.bundle": {
+          "sha256": "8f2d993e145857bd6c8d903030b0baef7c4cd69be69ed9c59d444f28654869a4",
+          "size": 8737200
+        },
+        "RustDedicated": {
+          "sha256": "2d5dfd1ce678d78d7bdcb80d457f1284511b3740837e3e059b385c48e537f3a9",
+          "size": 4952
+        },
+        "RustDedicated_Data/Managed/Assembly-CSharp.dll": {
+          "sha256": "a03332c5be9cd91d029a0a419414092a45e522a3dff2ff73c506f1b68bd55996",
+          "size": 10391376
+        },
+        "RustDedicated_Data/Managed/Facepunch.Network.dll": {
+          "sha256": "3ed6e33162370ba899c2dd50a4f1a3a5797cffc8749f4fa2d55243650accf811",
+          "size": 123728
+        },
+        "RustDedicated_Data/Managed/Rust.Data.dll": {
+          "sha256": "60b3ca124209f5ab638c92ac72ebb73de259b1a8bb444b599e7d593acc8ec0c6",
+          "size": 2177360
+        },
+        "RustDedicated_Data/Managed/Rust.Global.dll": {
+          "sha256": "278acf24bce5c031d6cad38ed612b2e9a27de654d9173da03d477610b5e80989",
+          "size": 125768
+        },
+        "steam_appid.txt": {
+          "sha256": "1fa5d1a35b57a9d3f59f87403c1e9cd7f737b292b5b2b8d3e4b126cc0f04cb66",
+          "size": 6
+        }
+      },
+      "credentials": null
+    },
+    "carbon": {
+      "kind": "github-release-asset",
+      "source": "carbon-api",
+      "hashOrigin": "upstream",
+      "repo": "CarbonCommunity/Carbon",
+      "tag": "production_build",
+      "asset": "Carbon.Linux.Release.tar.gz",
+      "assetId": 783397591,
+      "sha256": "c3350f9280068cda05eec062656546988fa891d998faae248b071fbc1b725a38",
+      "size": 21488357,
+      "updatedAt": "2026-11-23T15:09:55Z",
+      "installPath": "takaro/Carbon.Linux.Release.tar.gz"
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "mcr.microsoft.com/dotnet/runtime-deps",
+      "tag": "8.0.31-noble",
+      "digest": "sha256:55cde4ac72e935f8a1ac5bd34f900127e6983d420be979a4b407d59ae17f883e",
+      "env": {
+        "RUST_SERVER_IDENTITY": "takaro",
+        "RUST_SERVER_WORLDSIZE": "1000",
+        "RUST_SERVER_SEED": "12345",
+        "RUST_SERVER_MAXPLAYERS": "10",
+        "RUST_SERVER_PORT": "28015",
+        "RUST_RCON_PORT": "28016"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/rust/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "mcr.microsoft.com/dotnet/sdk",
+      "tag": "8.0.425-noble",
+      "digest": "sha256:0aa5a155ba075ad0effc3f60b3af6a696c2a498703519748e09e7eba8c5586f7"
+    },
+    "references": [
+      "regex:^RustDedicated_Data/Managed/.*\\.dll$"
+    ],
+    "deps": {
+      "BepInEx.AssemblyPublicizer.MSBuild": {
+        "coordinate": "nuget:BepInEx.AssemblyPublicizer.MSBuild:0.4.2",
+        "sha256": "4354c682fdcd9b543a413ab0f1af7a28b924f575208e94f189a04766c8f66839",
+        "resolvedCoordinate": "https://globalcdn.nuget.org/packages/bepinex.assemblypublicizer.msbuild.0.4.2.nupkg"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-rust-plugin-carbon-26921919-{version}.cs",
+      "installDir": "takaro"
+    }
+  ],
+  "verification": {
+    "required": "startup",
+    "separate": [
+      "startup",
+      "carbon-compile",
+      "identify",
+      "heartbeat",
+      "players",
+      "items",
+      "entities",
+      "console-command",
+      "action",
+      "reconnect",
+      "stop"
+    ]
+  },
+  "preserve": [
+    "server/",
+    "carbon/plugins/",
+    "carbon/configs/",
+    "carbon/data/",
+    "carbon/logs/",
+    "carbon/config.json",
+    "takaro/",
+    ".takaro/"
+  ],
+  "devServers": {
+    "gameId": "rust"
+  }
+}

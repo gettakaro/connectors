@@ -39,7 +39,7 @@ from takaro_maint.steam import vdf
 from takaro_maint.tracker import identity
 
 GAME = "rust"
-TARGET = "carbon-26864795"
+TARGET = "carbon-26921919"
 APP = 258550
 VERSION = "0.0.6-dev.abc1234"
 ARTIFACT = f"takaro-rust-plugin-{TARGET}-{VERSION}.cs"
@@ -260,9 +260,9 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     env = payload["env"]
     assert env["RUST_STEAM_APP"] == "258550"
     assert env["RUST_STEAM_BRANCH"] == "public"
-    assert env["RUST_STEAM_BUILDID"] == "26864795"
-    assert env["RUST_STEAM_DEPOTS"] == "258552:827065827490299880;258554:7172960469086779083"
-    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26864795-{version}.cs"
+    assert env["RUST_STEAM_BUILDID"] == "26921919"
+    assert env["RUST_STEAM_DEPOTS"] == "258552:1198055723653111326;258554:6085639424350162022"
+    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26921919-{version}.cs"
     assert env["RUST_CARBON_ASSET"] == "Carbon.Linux.Release.tar.gz"
     assert env["RUST_CARBON_TAG"] == "production_build"
     assert env["RUST_CARBON_SHA256"] == "c3350f9280068cda05eec062656546988fa891d998faae248b071fbc1b725a38"
@@ -276,9 +276,9 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     assert not any(key.endswith("_JAVA") for key in env)
 
     assert payload["resolvedUrls"]["server"].startswith(
-        "steam://app/258550/branch/public/build/26864795/depot/258552/manifest/827065827490299880"
+        "steam://app/258550/branch/public/build/26921919/depot/258552/manifest/1198055723653111326"
     )
-    assert "258554/manifest/7172960469086779083" in payload["resolvedUrls"]["server"]
+    assert "258554/manifest/6085639424350162022" in payload["resolvedUrls"]["server"]
     # The Carbon asset is addressed by its asset id, which GitHub never re-points; every
     # fetcher sends the Accept header that makes that URL answer with the bytes.
     assert payload["resolvedUrls"]["carbon"] == env["RUST_CARBON_DOWNLOAD_URL"]

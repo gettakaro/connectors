@@ -57,4 +57,8 @@ jobs:
         run: maintenance/bin/takaro-maint catalog validate
 
       - name: The catalog still matches upstream
+        # Asset-id inputs are fetched from api.github.com; anonymous calls from a shared
+        # runner hit the API rate limit (403), so the read-only job token is passed.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: maintenance/bin/takaro-maint catalog validate --online

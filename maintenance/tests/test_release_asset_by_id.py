@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import http.server
 import io
 import json
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,7 @@ from takaro_maint.catalog.validate import validate_catalog
 from takaro_maint.providers.github_release import GitHubReleaseProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TARGET = "carbon-26864795"
+TARGET = "carbon-26921919"
 SPEC = {
     "kind": "github-release-asset",
     "repo": "CarbonCommunity/Carbon",
@@ -130,3 +132,68 @@ def test_a_mutable_channel_without_an_exact_tag_still_guards_its_inputs(tmp_path
     rows = _rows(loader.load(root))
 
     assert [row["status"] for row in rows] == ["fail"]
+
+
+@pytest.mark.parametrize(
+    ("url", "authorized"),
+    [
+        ("https://api.github.com/repos/CarbonCommunity/Carbon/releases/assets/783397591", True),
+        ("http://127.0.0.1:8080/repos/CarbonCommunity/Carbon/releases/assets/783397591", False),
+        ("https://github.com/CarbonCommunity/Carbon/releases/download/production_build/x.tar.gz", False),
+    ],
+)
+def test_gh_token_authenticates_only_github_asset_id_requests(
+    transport: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, authorized: bool
+) -> None:
+    monkeypatch.setenv("GH_TOKEN", "token-for-tests")
+    expect = net.Expectation(sha256=hashlib.sha256(b"carbon bytes").hexdigest())
+    net.fetch(url, tmp_path / "blob", expect)
+    assert transport.headers[0].get("Authorization") == ("Bearer token-for-tests" if authorized else None)
+
+
+def test_the_token_reaches_the_first_host_and_never_the_redirect_target() -> None:
+    seen: dict[str, str | None] = {}
+
+    class Target(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            seen["target"] = self.headers.get("Authorization")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"bytes")
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    target = http.server.HTTPServer(("127.0.0.1", 0), Target)
+
+    class Api(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            seen["api"] = self.headers.get("Authorization")
+            self.send_response(302)
+            # A different host name for the same loopback server: a cross-host redirect.
+            self.send_header("Location", f"http://localhost:{target.server_port}/blob")
+            self.end_headers()
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    api = http.server.HTTPServer(("127.0.0.1", 0), Api)
+    servers = [api, target]
+    threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in servers]
+    for thread in threads:
+        thread.start()
+    try:
+        url = f"http://127.0.0.1:{api.server_port}/repos/a/b/releases/assets/1"
+        with net.UrllibTransport().open(url, {"Authorization": "Bearer t"}) as response:
+            assert response.read() == b"bytes"
+    finally:
+        for server in servers:
+            server.shutdown()
+            server.server_close()
+    assert seen == {"api": "Bearer t", "target": None}
+
+
+def test_the_token_is_never_sent_over_plain_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GH_TOKEN", "token-for-tests")
+    headers = net._url_headers("http://api.github.com/repos/a/b/releases/assets/1")
+    assert "Authorization" not in headers

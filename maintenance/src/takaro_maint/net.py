@@ -12,6 +12,7 @@ import socket
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
@@ -101,7 +102,12 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 
 class UrllibTransport:
     def open(self, url: str, headers: dict[str, str]) -> IO[bytes]:
+        headers = dict(headers)
+        authorization = headers.pop("Authorization", None)
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **headers})
+        if authorization:
+            # Only for this host: a redirect (GitHub's signed download URL) must not carry it.
+            request.add_unredirected_header("Authorization", authorization)
         return urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS)  # noqa: S310
 
     def open_no_redirect(self, url: str, headers: dict[str, str], addresses: tuple[PinnedAddress, ...]) -> IO[bytes]:
@@ -190,10 +196,21 @@ _GITHUB_ASSET_ID_URL = re.compile(r"^https?://[^/]+/repos/[^/]+/[^/]+/releases/a
 
 
 def _url_headers(url: str) -> dict[str, str]:
-    """Headers a URL's own grammar requires, whoever is fetching it."""
-    if _GITHUB_ASSET_ID_URL.match(url):
-        return {"Accept": "application/octet-stream"}
-    return {}
+    """Headers a URL's own grammar requires, whoever is fetching it.
+
+    An asset-id URL on api.github.com counts against the API rate limit, which an
+    anonymous caller on a shared CI runner exhausts (HTTP 403). ``GH_TOKEN``, when set,
+    authenticates that one request; the transport sends it unredirected, so it never
+    reaches the download host the API redirects to.
+    """
+    if not _GITHUB_ASSET_ID_URL.match(url):
+        return {}
+    headers = {"Accept": "application/octet-stream"}
+    token = os.environ.get("GH_TOKEN")
+    parts = urllib.parse.urlsplit(url)
+    if token and parts.scheme == "https" and parts.hostname == "api.github.com":
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _fetch_to(url: str, target: Path, headers: dict[str, str]) -> dict[str, Any]:
