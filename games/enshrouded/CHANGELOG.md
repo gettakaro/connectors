@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/gettakaro/connectors/compare/enshrouded-v0.12.0...enshrouded-v0.12.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **enshrouded:** ban offline players on join, confirm chat sends on a full chat history ([#998](https://github.com/gettakaro/connectors/issues/998)) ([382443c](https://github.com/gettakaro/connectors/commit/382443cdbc121909e668212a9de7766362e5777c))
+
 ## [0.12.0](https://github.com/gettakaro/connectors/compare/enshrouded-v0.11.1...enshrouded-v0.12.0) (2026-11-23)
 
 

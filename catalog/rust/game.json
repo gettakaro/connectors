@@ -30,13 +30,15 @@
         "component": "carbon",
         "repo": "CarbonCommunity/Carbon",
         "window": 10,
+        "game": {"provider": "steam", "component": "rust"},
         "channels": {
           "production": {
             "branch": "release",
             "tag": "production_build",
             "asset": "^Carbon\\.Linux\\.Release\\.tar\\.gz$",
             "versionPattern": "v([0-9][0-9.]*)",
-            "mutable": true
+            "mutable": true,
+            "gameBranch": "public"
           }
         }
       }

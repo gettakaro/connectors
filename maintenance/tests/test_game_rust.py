@@ -932,10 +932,88 @@ def test_scan_covers_the_pinned_head_and_files_a_moved_head_as_blocked_upstream(
         assert f"component={GAME}" in body.splitlines()[0]
         assert "branch=public" in body.splitlines()[0]
         assert "| Build id | 25500000 |" in body
-        # Carbon publishes nothing that says which Rust build it targets, so the framework
-        # row cannot be anything but `missing` — and that is the blocked state.
-        assert re.search(r"^\| carbon \| missing \|", body, re.MULTILINE), body
-        assert "<!-- takaro-maint:state=blocked-upstream -->" in body
+        # Carbon names no Rust build; its production channel tracks the public branch, so
+        # the current production build is what a target for this build is made against.
+        assert re.search(r"^\| carbon \| ready \| `2\.0\.259\.bfc3cf3d` \|", body, re.MULTILINE), body
+        assert "<!-- takaro-maint:state=ready-for-agent -->" in body
+
+
+def _set_game_branch(repo: Path, value: str | None) -> None:
+    path = repo / "catalog" / GAME / "game.json"
+    game = json.loads(path.read_text(encoding="utf-8"))
+    channel = game["sources"]["carbon-api"]["watch"]["channels"]["production"]
+    if value is None:
+        channel.pop("gameBranch", None)
+    else:
+        channel["gameBranch"] = value
+    path.write_text(json.dumps(game, indent=2) + "\n", encoding="utf-8")
+
+
+def test_a_carbon_build_seen_before_the_rust_build_still_makes_its_issue_ready(
+    run: Any, repo: Path, upstream: Any, steam: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Carbon cut before the Rust build, an issue filed blocked-upstream, then re-evaluated.
+
+    The Carbon head is checkpointed by a scan that runs before the Rust build exists, so on
+    the run that files the Rust issue nothing about Carbon is new. A catalog without
+    ``gameBranch`` files that issue with Carbon ``missing``; the next scan with it rewrites
+    the same issue to ``ready`` without filing another, although neither head moved.
+    """
+    from takaro_maint import readiness
+
+    current = json.loads((REPO_ROOT / "catalog/rust/targets" / f"{TARGET}.json").read_text())
+    write_target(repo, current)
+    server = current["inputs"]["server"]
+    steam.document = fake_steamcmd.move_head(
+        steam.document,
+        "public",
+        server["buildid"],
+        {depot: row["manifest"] for depot, row in server["depots"].items()},
+        timeupdated=1790074315,
+    )
+    steam.serve()
+    monkeypatch.setenv("GH_TOKEN", TOKEN)
+    _set_game_branch(repo, None)
+
+    with FakeGitHub() as tracker:
+        readiness.reset_registry()
+        code, payload, err = scan(run, repo, tracker, "--bootstrap", "--publish")
+        assert code == 0, err
+        assert support_issues(tracker) == []
+
+        steam.document = fake_steamcmd.move_head(
+            steam.document,
+            "public",
+            25500000,
+            {"258552": HEADS["258552"], "258554": HEADS["258554"]},
+            timeupdated=1790100000,
+        )
+        steam.serve()
+        readiness.reset_registry()
+        code, payload, err = scan(run, repo, tracker, "--publish")
+        assert code == 0, err
+        [filed] = support_issues(tracker)
+        assert re.search(r"^\| carbon \| missing \|", str(filed["body"]), re.MULTILINE), filed["body"]
+        assert "<!-- takaro-maint:state=blocked-upstream -->" in str(filed["body"])
+
+        _set_game_branch(repo, "public")
+        readiness.reset_registry()
+        code, payload, err = scan(run, repo, tracker, "--publish")
+        assert code == 0, err
+        assert [entry["action"] for entry in payload["plan"]].count("create-issue") == 0, payload["plan"]
+        [updated] = support_issues(tracker)
+        assert updated["number"] == filed["number"]
+        body = str(updated["body"])
+        assert re.search(r"^\| carbon \| ready \| `2\.0\.259\.bfc3cf3d` \|", body, re.MULTILINE), body
+        assert "<!-- takaro-maint:state=ready-for-agent -->" in body
+
+        # Nothing moved since: the next scan writes nothing to the issue.
+        readiness.reset_registry()
+        before = str(updated["body"])
+        code, payload, err = scan(run, repo, tracker, "--publish")
+        assert code == 0, err
+        assert str(support_issues(tracker)[0]["body"]) == before
+        assert not [e for e in payload["plan"] if e["action"] in ("create-issue", "update-issue")], payload["plan"]
 
 
 def test_scan_treats_declared_disabled_known_and_unknown_branches_apart(
