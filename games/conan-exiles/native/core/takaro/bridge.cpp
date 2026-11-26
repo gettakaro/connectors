@@ -199,6 +199,10 @@ void Bridge::HandleNotice(Notice& n) {
             identified_ = false;
             opens_++;
             lastQueuedId_ = 0;  // everything unconfirmed goes out again on this connection
+            // Unconfirmed log events are queued again below and take a new slot then.
+            logSlots_.erase(std::remove_if(logSlots_.begin(), logSlots_.end(),
+                                           [](const LogSlot& l) { return l.confirmedAt == 0; }),
+                            logSlots_.end());
             pendingIds_.clear();
             recentIds_.clear();
             recentIdSet_.clear();
@@ -514,10 +518,15 @@ void Bridge::DeliverEvents() {
                                [](uint64_t id, const PendingEvent& e) { return id < e.id; });
     size_t queued = 0;
     const int64_t now = o_.steadyMs();
-    while (!logSentAt_.empty() && now - logSentAt_.front() >= o_.logWindowMs) logSentAt_.pop_front();
+    // Everything below the oldest pending event is confirmed (eventAck or pong); slots free up logWindowMs later.
+    const uint64_t firstPending = pending.empty() ? UINT64_MAX : pending.front().id;
+    for (auto& slot : logSlots_)
+        if (!slot.confirmedAt && slot.outboxId < firstPending) slot.confirmedAt = now;
+    while (!logSlots_.empty() && logSlots_.front().confirmedAt && now - logSlots_.front().confirmedAt >= o_.logWindowMs)
+        logSlots_.pop_front();
     for (; it != pending.end() && queued < kNoticeBatch; ++it) {
         const bool log = it->type == "log";
-        if (log && logSentAt_.size() >= o_.logBudget) {
+        if (log && logSlots_.size() >= o_.logBudget) {
             logWaits_++;  // later events keep their order and wait behind it
             break;
         }
@@ -532,7 +541,7 @@ void Bridge::DeliverEvents() {
             break;
         }
         lastQueuedId_ = it->id;
-        if (log) logSentAt_.push_back(now);
+        if (log) logSlots_.push_back({it->id, 0});
         queued++;
         eventsQueued_++;
     }

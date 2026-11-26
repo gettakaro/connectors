@@ -1273,12 +1273,25 @@ static void TestLogPacing() {
     id.epoch = 1;
     id.text = "{\"type\":\"identifyResponse\",\"payload\":{\"gameServerId\":\"gs\"}}";
     transport.sink(std::move(id));
+    auto confirm = [&](uint64_t through) {  // protocol 0: Takaro confirmed every event up to this outbox id
+        takaro::Notice c;
+        c.type = takaro::NoticeType::Confirmed;
+        c.epoch = 1;
+        c.outboxId = through;
+        transport.sink(std::move(c));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));  // the bridge stamps it at this clock
+    };
+    // Outbox ids: chat 1, logs 2..201, death 202.
     CHECK(WaitCount(transport, "log", 80), "first window: 80 log events, got %zu", transport.Count("log"));
     CHECK(transport.Count("other") == 1, "the event ahead of the backlog went out, the one behind waits");
+    clock += 60000;  // a send stall: nothing confirmed, so no slot frees up however long it takes
+    CHECK(WaitCount(transport, "log", 80), "unconfirmed logs keep their slots: %zu", transport.Count("log"));
+    confirm(81);
     clock += 4999;
-    CHECK(WaitCount(transport, "log", 80), "no more inside the window: %zu", transport.Count("log"));
+    CHECK(WaitCount(transport, "log", 80), "confirmed, still inside the window: %zu", transport.Count("log"));
     clock += 1;
-    CHECK(WaitCount(transport, "log", 160), "next window: 160, got %zu", transport.Count("log"));
+    CHECK(WaitCount(transport, "log", 160), "next window after the confirmation: 160, got %zu", transport.Count("log"));
+    confirm(161);
     clock += 5000;
     CHECK(WaitCount(transport, "log", 200), "rest of the backlog: %zu", transport.Count("log"));
     CHECK(WaitCount(transport, "other", 2), "the event behind the backlog follows it in order");
