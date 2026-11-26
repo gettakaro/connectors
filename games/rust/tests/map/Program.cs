@@ -1,6 +1,8 @@
 // Runs the connector's world-map region (lifted out of mod/TakaroConnector.cs by run.sh)
 // against the tile layout Takaro's player map draws.
 using System;
+using System.IO;
+using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
@@ -255,5 +257,78 @@ internal static class Program
         Check(v0Unknown != null && (float)v0Unknown["x"] == 0f && (float)v0Unknown["y"] == 0f && (float)v0Unknown["z"] == 0f
             && v0Unknown["dimension"] == null, "getPlayerLocation v0, unknown player: (0, 0, 0) as before");
         Check(Map.UnknownPlayerLocation(1) == null, "getPlayerLocation v1, unknown player: null, no fake position");
+    
+
+        CheckPng(quad);
+    }
+
+    private static uint Be32(byte[] b, int o) { return (uint)(b[o] << 24 | b[o + 1] << 16 | b[o + 2] << 8 | b[o + 3]); }
+
+    private static uint Crc(byte[] b, int offset, int count)
+    {
+        var c = 0xFFFFFFFFu;
+        for (var i = offset; i < offset + count; i++)
+        {
+            c ^= b[i];
+            for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+        }
+        return c ^ 0xFFFFFFFFu;
+    }
+
+    // Decodes the connector's PNG with an independent reader: signature, chunk CRCs, IHDR,
+    // zlib stream with its Adler-32, filter bytes, and north-up row order.
+    private static void CheckPng(Map.MapRaster quad)
+    {
+        var rgb = Map.RenderMapTileRgb(quad, 3, -1, 0);
+        var png = Map.EncodePngRgb(rgb, Map.MapTilePixels, Map.MapTilePixels);
+        var signature = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+        var ok = png.Length > 8;
+        for (var i = 0; ok && i < 8; i++) ok = png[i] == signature[i];
+        Check(ok, "png: signature");
+
+        var offset = 8;
+        var crcOk = true;
+        byte[] header = null;
+        var idat = new MemoryStream();
+        var sawEnd = false;
+        while (offset + 12 <= png.Length)
+        {
+            var length = (int)Be32(png, offset);
+            var type = System.Text.Encoding.ASCII.GetString(png, offset + 4, 4);
+            crcOk &= Crc(png, offset + 4, length + 4) == Be32(png, offset + 8 + length);
+            if (type == "IHDR") { header = new byte[length]; Buffer.BlockCopy(png, offset + 8, header, 0, length); }
+            if (type == "IDAT") idat.Write(png, offset + 8, length);
+            if (type == "IEND") sawEnd = true;
+            offset += 12 + length;
+        }
+        Check(crcOk, "png: every chunk CRC matches");
+        Check(sawEnd && offset == png.Length, "png: ends with IEND");
+        Check(header != null && Be32(header, 0) == 128 && Be32(header, 4) == 128 && header[8] == 8 && header[9] == 2
+            && header[10] == 0 && header[11] == 0 && header[12] == 0, "png: IHDR is 128x128 8-bit RGB");
+
+        var zlib = idat.ToArray();
+        byte[] raw;
+        using (var input = new ZLibStream(new MemoryStream(zlib), CompressionMode.Decompress))
+        using (var output = new MemoryStream())
+        {
+            input.CopyTo(output);
+            raw = output.ToArray();
+        }
+        Check(raw.Length == (128 * 3 + 1) * 128, "png: inflated size is 128 rows of filter byte + RGB");
+        uint a = 1, b = 0;
+        foreach (var v in raw) { a = (a + v) % 65521; b = (b + a) % 65521; }
+        Check(Be32(zlib, zlib.Length - 4) == ((b << 16) | a), "png: zlib Adler-32 matches");
+
+        var same = raw.Length == (128 * 3 + 1) * 128;
+        for (var row = 0; same && row < 128; row++)
+        {
+            same = raw[row * 385] == 0;
+            for (var i = 0; same && i < 384; i++) same = raw[row * 385 + 1 + i] == rgb[(127 - row) * 384 + i];
+        }
+        Check(same, "png: pixels match the tile, north row first (as Unity EncodeToPNG wrote it)");
+
+        var problem = "";
+        try { Map.EncodePngRgb(new byte[5], 2, 2); } catch (ArgumentException) { problem = "refused"; }
+        Check(problem == "refused", "png: pixel count that does not match the size is refused");
     }
 }

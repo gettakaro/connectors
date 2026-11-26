@@ -259,7 +259,13 @@ drawn once per world on the main thread a moment after `OnServerInitialized` (3.
 render and older renders are deleted; later starts and reloads only decode the PNG. Tiles use the
 7 Days to Die web-map layout the Takaro player map draws: 128 px tiles, signed indices centred on the
 world origin, x east, y north, one metre per pixel at `maxZoom` 4, served out to 512 m of ocean past
-the world edge. Errors start with `invalid_args`, `map_not_ready` or `tile_out_of_range`. The pure
+the world edge. Errors start with `invalid_args`, `map_not_ready` or `tile_out_of_range`.
+Once the raster exists, `getMapTile` never touches the game thread: tiles are cut from the
+immutable raster and PNG-encoded in managed code (`EncodePngRgb`) on at most two worker threads,
+and cached (1024 tiles) under a lock. Only a request that arrives before the raster is built goes to
+the main thread, where it builds the raster first. A dashboard opening the map sends dozens of tile
+requests at once; queued on the game thread they stalled frames and every other action behind them.
+The pure
 part lives between `takaro:map-begin` / `takaro:map-end`; `tests/map/run.sh` runs it the same way
 as the config harness.
 
