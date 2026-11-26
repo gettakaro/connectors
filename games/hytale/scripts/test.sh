@@ -16,7 +16,10 @@ mkdir -p "$stage"
 cp -r "$project_root/mod" "$stage/mod"
 rm -rf "$stage/mod/target"
 cp -r "$project_root/LICENSE" "$project_root/THIRD-PARTY-NOTICES.md" "$project_root/assets" "$stage/"
-args=(-B -ntp -Dhytale.server.version="$server_version" test)
+# Maven Central rate-limits shared CI runners (HTTP 429): retry with a pause instead of failing.
+retry_args=(-Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
+    -Daether.connector.http.retryHandler.serviceUnavailable=429,503)
+args=(-B -ntp "${retry_args[@]}" -Dhytale.server.version="$server_version" test)
 if [ -n "${MVN:-}" ]; then
     (cd "$stage/mod" && "$MVN" -Dmaven.repo.local="$cache/m2" "${args[@]}")
 else
