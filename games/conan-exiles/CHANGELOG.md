@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.1](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.9.0...conan-exiles-v3.9.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **conan-exiles:** free a log pacing slot only after Takaro confirmed the event ([#992](https://github.com/gettakaro/connectors/issues/992)) ([4daa292](https://github.com/gettakaro/connectors/commit/4daa292fb5a7309c1b94d891fec707db8551d178))
+* **conan-exiles:** keep the stream position on events sent while the Linux server exits ([#1000](https://github.com/gettakaro/connectors/issues/1000)) ([1e26e60](https://github.com/gettakaro/connectors/commit/1e26e605fff4b71b6a6ba3869a87ac919d2f8da0))
+
 ## [3.9.0](https://github.com/gettakaro/connectors/compare/conan-exiles-v3.8.0...conan-exiles-v3.9.0) (2026-11-24)
 
 
