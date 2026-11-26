@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.8.0](https://github.com/gettakaro/connectors/compare/valheim-v4.7.0...valheim-v4.8.0) (2026-11-26)
+
+
+### Features
+
+* **valheim:** add target for Steam build 26870897 (Valheim 1.0.30) ([#1006](https://github.com/gettakaro/connectors/issues/1006)) ([8a9cf34](https://github.com/gettakaro/connectors/commit/8a9cf3412ad4733d0743b34c00be58abb70e9ad2))
+
+
+### Bug Fixes
+
+* **valheim:** target Steam build 26949048 (Valheim 1.0.31) ([#1015](https://github.com/gettakaro/connectors/issues/1015)) ([37d9f60](https://github.com/gettakaro/connectors/commit/37d9f60cc76017d497805eef427f2169d9b7bf30))
+
 ## [4.7.0](https://github.com/gettakaro/connectors/compare/valheim-v4.6.1...valheim-v4.7.0) (2026-11-23)
 
 
