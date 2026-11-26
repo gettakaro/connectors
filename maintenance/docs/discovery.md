@@ -265,6 +265,17 @@ platform, followed by a hidden line the next run reads back:
   explicitly enabled. It is reported and never counts as ready.
 - `missing` — nothing, or nothing this run could stand behind.
 
+**A framework that names no game version.** Carbon's `production_build` says nothing about
+which Rust build it is for: it tracks Rust's `public` branch and is re-cut when Rust needs
+it. Its channel declares that with `"gameBranch": "public"` (and the watch block names the
+game with `"game": {"provider": "steam", "component": "rust"}`). The current production
+build is then the row for every open support issue on that branch — `ready` when it carries
+the named artifact, whether it was cut before or after the game build — and whether the two
+actually work together is what the target's `verify` proves, not this table. Because the
+issue such a head answers for can be filed after the head was first seen, its head is
+reconciled on every scan, not only when it is new; a row that has not changed keeps its
+`Observed` time and writes nothing.
+
 A row also carries the artifact's name and its published sha256, because a framework
 release is mutable: a new Paper build for the same game version replaces the row, build
 number and digest together. (A digest changing *under the same build id* cannot be observed

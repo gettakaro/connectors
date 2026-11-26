@@ -250,6 +250,17 @@ def _observe_one(
             o for o in result.observations if not checkpoints.is_seen(checkpoint, o.rev, str(o.facts["releaseTime"]))
         ]
 
+    # A framework head that names no game version answers for whichever game issues are
+    # open on the branch it tracks, and those can be filed after the head was first seen.
+    # It is reconciled on every run, so an issue filed blocked-upstream is re-evaluated;
+    # reconciling a row that is already current is a no-op that writes nothing.
+    heads = set(result.heads.values())
+    unseen += [
+        o
+        for o in result.observations
+        if o.kind == "framework" and o.facts.get("gameBranch") and o.rev in heads and o not in unseen
+    ]
+
     advanced: list[Entry] = []
     work: list[tuple[str, int]] = []
     targets = _game_targets(source.game)

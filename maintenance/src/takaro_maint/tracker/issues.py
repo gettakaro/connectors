@@ -87,6 +87,11 @@ def _index(client: GitHub, cache: LookupCache) -> dict[str, dict[str, Any]]:
     return cache.index
 
 
+def issue_index(client: GitHub, cache: LookupCache) -> dict[str, dict[str, Any]]:
+    """Every maintenance issue by its rendered marker, listed at most once per run."""
+    return _index(client, cache)
+
+
 def find(client: GitHub, marker: dict[str, str], cache: LookupCache) -> dict[str, Any] | None:
     """Search pre-filter, exact marker parse, then a paginated open+closed listing.
 
