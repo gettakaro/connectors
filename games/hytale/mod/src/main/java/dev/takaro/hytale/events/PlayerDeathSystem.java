@@ -83,16 +83,31 @@ public class PlayerDeathSystem extends RefChangeSystem<EntityStore, DeathCompone
             // Add position if available
             if (transform != null) {
                 Map<String, Object> position = new HashMap<>();
-                position.put("x", transform.getPosition().getX());
-                position.put("y", transform.getPosition().getY());
-                position.put("z", transform.getPosition().getZ());
+                position.put("x", transform.getPosition().x);
+                position.put("y", transform.getPosition().y);
+                position.put("z", transform.getPosition().z);
                 eventData.put("position", position);
+            }
+
+            // Attribute the kill where the API allows it: DeathComponent -> Damage ->
+            // Damage.EntitySource carries the attacker's Ref, from which a PlayerRef can be read.
+            PlayerRef killer = EntityDeathSystem.findKillingPlayer(deathComponent, commandBuffer);
+            if (killer != null && !killer.getUuid().equals(playerRef.getUuid())) {
+                Map<String, Object> attacker = new HashMap<>();
+                attacker.put("name", killer.getUsername());
+                attacker.put("gameId", killer.getUuid().toString());
+                attacker.put("platformId", "hytale:" + killer.getUuid());
+                eventData.put("attacker", attacker);
             }
 
             // Add death cause as message if available
             Damage deathInfo = deathComponent.getDeathInfo();
-            if (deathInfo != null && deathComponent.getDeathCause() != null) {
-                eventData.put("msg", playerName + " died: " + deathComponent.getDeathCause().getId());
+            String cause = deathComponent.getDeathCause() != null ? deathComponent.getDeathCause().getId() : null;
+            if (killer != null && !killer.getUuid().equals(playerRef.getUuid())) {
+                eventData.put("msg", playerName + " was killed by " + killer.getUsername()
+                    + (cause != null ? " (" + cause + ")" : ""));
+            } else if (deathInfo != null && cause != null) {
+                eventData.put("msg", playerName + " died: " + cause);
             } else {
                 eventData.put("msg", playerName + " died");
             }

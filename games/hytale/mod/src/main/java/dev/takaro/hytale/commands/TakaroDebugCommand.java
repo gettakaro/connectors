@@ -76,7 +76,7 @@ public class TakaroDebugCommand extends CommandBase {
         context.sendMessage(Message.raw("§7Plugin Version: §e" + plugin.getVersion()));
         context.sendMessage(Message.raw("§7Takaro WS URL: §e" + plugin.getConfig().getWsUrl()));
 
-        boolean hasTakaroToken = !plugin.getConfig().getIdentityToken().isEmpty();
+        boolean hasTakaroToken = !plugin.getConfig().getConnectionTarget().identityToken().isEmpty();
         boolean hasHytaleToken = !plugin.getConfig().getHytaleApiToken().isEmpty();
 
         context.sendMessage(Message.raw("§7Identity Token: " + (hasTakaroToken ? "§aConfigured" : "§cMissing")));

@@ -1,8 +1,11 @@
 package dev.takaro.hytale.events;
 
 import dev.takaro.hytale.TakaroPlugin;
+import dev.takaro.hytale.util.LogForwardFilter;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -20,6 +23,13 @@ public class TakaroLogHandler {
     private final ScheduledExecutorService scheduler;
     private static final int BATCH_SIZE = 50; // Send max 50 logs per batch
     private static final long SEND_INTERVAL_MS = 2000; // Send every 2 seconds
+    private static final int MAX_BUFFERED_RECORDS = 2000; // Hard cap on the ingest backlog
+    private static final long DROP_LOG_INTERVAL_MS = 30_000L;
+
+    private LogForwardFilter filter;
+    private boolean forwardingDisabled = false;
+    private long droppedRecords = 0;
+    private long lastDropLogAt = 0L;
 
     public TakaroLogHandler(TakaroPlugin plugin) {
         this.plugin = plugin;
@@ -31,6 +41,18 @@ public class TakaroLogHandler {
      * Start capturing and forwarding logs
      */
     public void start() {
+        java.util.logging.Level min = LogForwardFilter.parseLevel(
+            plugin.getConfig().getLogForwardLevel(), java.util.logging.Level.INFO);
+        this.forwardingDisabled = java.util.logging.Level.OFF.equals(min);
+        this.filter = new LogForwardFilter(min, plugin.getConfig().getLogForwardMaxPerMin());
+        if (forwardingDisabled) {
+            plugin.getLogger().at(java.util.logging.Level.INFO).log(
+                "Takaro log forwarding is disabled (LOG_FORWARD_LEVEL=OFF)");
+            return;
+        }
+        plugin.getLogger().at(java.util.logging.Level.INFO).log(
+            "Takaro log forwarding: level >= " + min.getName()
+                + ", max " + plugin.getConfig().getLogForwardMaxPerMin() + "/min");
         // Start periodic log forwarding
         scheduler.scheduleAtFixedRate(this::forwardLogs, SEND_INTERVAL_MS, SEND_INTERVAL_MS, TimeUnit.MILLISECONDS);
         plugin.getLogger().at(java.util.logging.Level.INFO).log("Started Takaro log forwarding");
@@ -56,15 +78,46 @@ public class TakaroLogHandler {
      * Forward accumulated logs to Takaro
      */
     private void forwardLogs() {
+        if (forwardingDisabled) {
+            logBuffer.clear();
+            return;
+        }
         if (logBuffer.isEmpty()) {
             return;
         }
 
         try {
-            // Take up to BATCH_SIZE logs
-            int count = Math.min(BATCH_SIZE, logBuffer.size());
+            // The ingest list must stay a CopyOnWriteArrayList because that is what
+            // HytaleLoggerBackend.subscribe() takes. Draining it with remove(0) copied the
+            // whole backing array once per record - quadratic, and on a server logging faster
+            // than the drain rate the list grew without bound. Take a snapshot and clear the
+            // drained prefix in ONE structural modification instead.
+            List<LogRecord> batch = new ArrayList<>(logBuffer);
+            int count = Math.min(BATCH_SIZE, batch.size());
+            logBuffer.subList(0, count).clear();
+
+            // Whatever is still queued beyond the cap is a real backlog: bound it and say so.
+            int overflow = logBuffer.size() - MAX_BUFFERED_RECORDS;
+            if (overflow > 0) {
+                logBuffer.subList(0, overflow).clear();
+                droppedRecords += overflow;
+                long now = System.currentTimeMillis();
+                if (now - lastDropLogAt > DROP_LOG_INTERVAL_MS) {
+                    lastDropLogAt = now;
+                    plugin.getLogger().at(java.util.logging.Level.WARNING).log(
+                        "Log forwarding cannot keep up - dropped " + droppedRecords
+                            + " record(s) in total (buffer cap " + MAX_BUFFERED_RECORDS + ")");
+                }
+            }
+
+            long now = System.currentTimeMillis();
             for (int i = 0; i < count; i++) {
-                LogRecord record = logBuffer.remove(0);
+                LogRecord record = batch.get(i);
+                // Records from the wire logger are never forwarded - that is what stops the
+                // log -> gameEvent -> log amplification loop.
+                if (filter != null && !filter.shouldForward(record.getLoggerName(), record.getLevel(), now)) {
+                    continue;
+                }
                 sendLogToTakaro(record);
             }
         } catch (Exception e) {
