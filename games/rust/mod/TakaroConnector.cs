@@ -562,6 +562,95 @@ namespace Oxide.Plugins
             return null;
         }
 
+        /// <summary>
+        /// PNG (8-bit RGB, no interlace) of a raster whose row 0 is the southern edge, written
+        /// north-up the way Unity's EncodeToPNG writes a texture. Plain managed code, so tiles
+        /// are encoded on a worker thread instead of the game thread.
+        /// </summary>
+        internal static byte[] EncodePngRgb(byte[] rgb, int width, int height)
+        {
+            if (rgb == null || width <= 0 || height <= 0 || rgb.Length != width * height * 3)
+                throw new ArgumentException("PNG pixels do not match the size");
+            var stride = width * 3;
+            var raw = new byte[(stride + 1) * height];
+            for (var row = 0; row < height; row++)
+            {
+                // Filter byte 0 (None), then the row; PNG row 0 is the top (northern) row.
+                Buffer.BlockCopy(rgb, (height - 1 - row) * stride, raw, row * (stride + 1) + 1, stride);
+            }
+
+            byte[] deflated;
+            using (var packed = new System.IO.MemoryStream())
+            {
+                using (var deflate = new System.IO.Compression.DeflateStream(packed, System.IO.Compression.CompressionLevel.Fastest, true))
+                    deflate.Write(raw, 0, raw.Length);
+                deflated = packed.ToArray();
+            }
+            uint a = 1, b = 0;
+            foreach (var value in raw)
+            {
+                a = (a + value) % 65521;
+                b = (b + a) % 65521;
+            }
+            var zlib = new byte[deflated.Length + 6];
+            zlib[0] = 0x78;
+            zlib[1] = 0x01;
+            Buffer.BlockCopy(deflated, 0, zlib, 2, deflated.Length);
+            PngPutUInt32(zlib, zlib.Length - 4, (b << 16) | a);
+
+            var header = new byte[13];
+            PngPutUInt32(header, 0, (uint)width);
+            PngPutUInt32(header, 4, (uint)height);
+            header[8] = 8;  // bit depth
+            header[9] = 2;  // colour type RGB
+
+            using (var png = new System.IO.MemoryStream())
+            {
+                png.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, 0, 8);
+                PngChunk(png, "IHDR", header);
+                PngChunk(png, "IDAT", zlib);
+                PngChunk(png, "IEND", new byte[0]);
+                return png.ToArray();
+            }
+        }
+
+        private static readonly uint[] PngCrcTable = BuildPngCrcTable();
+
+        private static uint[] BuildPngCrcTable()
+        {
+            var table = new uint[256];
+            for (uint n = 0; n < 256; n++)
+            {
+                var c = n;
+                for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+                table[n] = c;
+            }
+            return table;
+        }
+
+        private static void PngPutUInt32(byte[] buffer, int offset, uint value)
+        {
+            buffer[offset] = (byte)(value >> 24);
+            buffer[offset + 1] = (byte)(value >> 16);
+            buffer[offset + 2] = (byte)(value >> 8);
+            buffer[offset + 3] = (byte)value;
+        }
+
+        private static void PngChunk(System.IO.Stream png, string type, byte[] data)
+        {
+            var head = new byte[8];
+            PngPutUInt32(head, 0, (uint)data.Length);
+            for (var i = 0; i < 4; i++) head[4 + i] = (byte)type[i];
+            var crc = 0xFFFFFFFFu;
+            for (var i = 4; i < 8; i++) crc = PngCrcTable[(crc ^ head[i]) & 0xFF] ^ (crc >> 8);
+            foreach (var value in data) crc = PngCrcTable[(crc ^ value) & 0xFF] ^ (crc >> 8);
+            var tail = new byte[4];
+            PngPutUInt32(tail, 0, crc ^ 0xFFFFFFFFu);
+            png.Write(head, 0, 8);
+            png.Write(data, 0, data.Length);
+            png.Write(tail, 0, 4);
+        }
+
         /// <summary>A v1 tile as RGB, row 0 = the tile's southern edge like RenderMapTileRgb.</summary>
         internal static byte[] RenderMapTileV1Rgb(MapRaster raster, int zoom, int x, int y)
         {
@@ -1876,6 +1965,13 @@ namespace Oxide.Plugins
                 return;
             }
 
+            var raster = _mapRaster;
+            if (action == "getMapTile" && raster != null)
+            {
+                ServeMapTileOffThread(ws, generation, protocol, requestId, args, raster);
+                return;
+            }
+
             RunOnMainThread(ws, generation, protocol, requestId, action, args);
         }
 
@@ -2296,7 +2392,8 @@ namespace Oxide.Plugins
         private const string MapCachePrefix = "TakaroConnector_map_";
         private const int MapTileCacheSize = 1024;
 
-        private MapRaster _mapRaster;
+        // Written once on the main thread, then read by tile workers.
+        private volatile MapRaster _mapRaster;
         private string _mapStatus = "the world has not loaded yet";
         private readonly Dictionary<long, string> _mapTiles = new Dictionary<long, string>();
         private readonly Queue<long> _mapTileOrder = new Queue<long>();
@@ -2385,8 +2482,11 @@ namespace Oxide.Plugins
                 UnityEngine.Object.Destroy(texture);
             }
 
-            _mapTiles.Clear();
-            _mapTileOrder.Clear();
+            lock (_mapTiles)
+            {
+                _mapTiles.Clear();
+                _mapTileOrder.Clear();
+            }
             _mapStatus = "ready";
             LogInfo($"World map ready: {_mapRaster.Width}x{_mapRaster.Height} px for a {terrainSize:0} m world ({source}, key {key})");
             _mapCapability = MapCapability(_mapRaster);
@@ -2400,14 +2500,29 @@ namespace Oxide.Plugins
             return MapInfo(raster != null, raster?.WorldSize ?? global::World.Size);
         }
 
+        // Main thread: the first request may have to build the raster.
         private JToken HandleGetMapTile(JObject args)
         {
-            var problem = ParseMapTileArgs(args, out var x, out var y, out var zoom);
+            var problem = ParseMapTileArgs(args, out _, out _, out _);
             if (problem != null) throw new ProtocolError(ErrorInvalidArgs, problem, $"invalid_args: {problem}");
-
             var raster = EnsureMapRaster();
             if (raster == null)
                 throw new ProtocolError(ErrorNotFound, $"the Rust world map is not ready: {_mapStatus}", $"map_not_ready: the Rust world map is not ready: {_mapStatus}");
+            return MapTileV0(raster, args);
+        }
+
+        private JToken HandleGetMapTileV1(JObject args)
+        {
+            var raster = EnsureMapRaster();
+            if (raster == null) throw new ProtocolError(ErrorNotFound, $"the Rust world map is not ready: {_mapStatus}");
+            return MapTileV1(raster, args);
+        }
+
+        // Any thread: reads only the immutable raster and the locked tile cache.
+        private JToken MapTileV0(MapRaster raster, JObject args)
+        {
+            var problem = ParseMapTileArgs(args, out var x, out var y, out var zoom);
+            if (problem != null) throw new ProtocolError(ErrorInvalidArgs, problem, $"invalid_args: {problem}");
             if (!MapTileInRange(raster.WorldSize, zoom, x, y))
                 throw new ProtocolError(ErrorNotFound, $"map tile {zoom}/{x}/{y} lies outside the Rust world", $"tile_out_of_range: map tile {zoom}/{x}/{y} lies outside the Rust world");
 
@@ -2416,10 +2531,8 @@ namespace Oxide.Plugins
             return new JValue(MapTilePng(cacheKey, () => RenderMapTileRgb(raster, zoom, x, y)));
         }
 
-        private JToken HandleGetMapTileV1(JObject args)
+        private JToken MapTileV1(MapRaster raster, JObject args)
         {
-            var raster = EnsureMapRaster();
-            if (raster == null) throw new ProtocolError(ErrorNotFound, $"the Rust world map is not ready: {_mapStatus}");
             var problem = ParseMapTileV1Args(args, MapV1Side(raster), out var zoom, out var x, out var y);
             if (problem != null) throw new ProtocolError(ErrorInvalidArgs, problem);
 
@@ -2431,30 +2544,59 @@ namespace Oxide.Plugins
             };
         }
 
-        // Base64 PNG of one tile, from the cache or rendered now.
+        // Base64 PNG of one tile, from the cache or rendered now. Pure managed work on an
+        // immutable raster, so it runs on worker threads; the cache is shared under a lock.
         private string MapTilePng(long cacheKey, Func<byte[]> render)
         {
-            if (_mapTiles.TryGetValue(cacheKey, out var cached)) return cached;
-
-            var rgb = render();
-            var texture = new Texture2D(MapTilePixels, MapTilePixels, TextureFormat.RGB24, false);
-            string encoded;
-            try
+            lock (_mapTiles)
             {
-                texture.LoadRawTextureData(rgb);
-                texture.Apply(false);
-                encoded = Convert.ToBase64String(texture.EncodeToPNG());
-            }
-            finally
-            {
-                UnityEngine.Object.Destroy(texture);
+                if (_mapTiles.TryGetValue(cacheKey, out var cached)) return cached;
             }
 
-            _mapTiles[cacheKey] = encoded;
-            _mapTileOrder.Enqueue(cacheKey);
-            while (_mapTileOrder.Count > MapTileCacheSize)
-                _mapTiles.Remove(_mapTileOrder.Dequeue());
+            var encoded = Convert.ToBase64String(EncodePngRgb(render(), MapTilePixels, MapTilePixels));
+
+            lock (_mapTiles)
+            {
+                if (_mapTiles.ContainsKey(cacheKey)) return _mapTiles[cacheKey];
+                _mapTiles[cacheKey] = encoded;
+                _mapTileOrder.Enqueue(cacheKey);
+                while (_mapTileOrder.Count > MapTileCacheSize)
+                    _mapTiles.Remove(_mapTileOrder.Dequeue());
+            }
             return encoded;
+        }
+
+        // A dashboard map asks for dozens of tiles at once. Once the raster exists they are cut
+        // and encoded here, at most this many at a time, so they never queue on the game thread
+        // in front of every other action.
+        private const int MapTileWorkers = 2;
+        private readonly SemaphoreSlim _mapTileSlots = new SemaphoreSlim(MapTileWorkers, MapTileWorkers);
+
+        private void ServeMapTileOffThread(ClientWebSocket ws, int generation, int protocol, string requestId, JObject args, MapRaster raster)
+        {
+            _ = Task.Run(async () =>
+            {
+                await _mapTileSlots.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    if (!IsCurrent(generation)) return;
+                    var result = protocol >= 1 ? MapTileV1(raster, args) : MapTileV0(raster, args);
+                    SendResponse(ws, protocol, requestId, result, null);
+                }
+                catch (ProtocolError ex)
+                {
+                    SendResponse(ws, protocol, requestId, null, ex);
+                }
+                catch (Exception ex)
+                {
+                    LogWarning($"Action getMapTile failed: {ex.Message}");
+                    SendResponse(ws, protocol, requestId, null, new ProtocolError(ErrorGameError, ex.Message));
+                }
+                finally
+                {
+                    _mapTileSlots.Release();
+                }
+            });
         }
 
         private JToken HandleListLocations()
