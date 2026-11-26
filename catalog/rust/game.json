@@ -50,6 +50,6 @@
       "artifactPattern": "takaro-rust-plugin-{target}-{version}.cs"
     }
   },
-  "legacyAssetAliases": {"TakaroConnector.cs": "carbon-26864795/plugin"},
+  "legacyAssetAliases": {"TakaroConnector.cs": "carbon-26921919/plugin"},
   "devServers": {"composeFile": "rust.yml"}
 }

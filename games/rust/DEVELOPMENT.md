@@ -41,7 +41,7 @@ and Carbon serve today". The record is `catalog/rust/targets/carbon-25454815.jso
 | Half | Pinned by |
 |---|---|
 | The server | Steam app 258550, branch `public`, build id 25454815, os `linux`, and the **manifest id of each of the two depots** (258552 linux binaries, 258554 shared content) — plus a self-recorded sha256 for seven declared files |
-| Carbon | The GitHub release asset `Carbon.Linux.Release.tar.gz` by **asset id**, sha256 and size, fetched from `https://api.github.com/repos/CarbonCommunity/Carbon/releases/assets/<assetId>` with `Accept: application/octet-stream`. Carbon's `production_build` tag is re-uploaded in place; GitHub never re-points an asset id, so a re-upload makes the pin unresolvable instead of serving other bytes. `catalog validate` refuses a non-retired target that pins a re-uploaded tag without `assetId` (`release-asset-by-id`) |
+| Carbon | The GitHub release asset `Carbon.Linux.Release.tar.gz` by **asset id**, sha256 and size, fetched from `https://api.github.com/repos/CarbonCommunity/Carbon/releases/assets/<assetId>` with `Accept: application/octet-stream`. Carbon's `production_build` tag is re-uploaded in place; GitHub never re-points an asset id, so a re-upload makes the pin unresolvable instead of serving other bytes. `catalog validate` refuses a non-retired target that pins a re-uploaded tag without `assetId` (`release-asset-by-id`). The API rate-limits anonymous callers, so `GH_TOKEN` (CI: the job token) is sent with that request only, never across the redirect |
 | The runtime | `mcr.microsoft.com/dotnet/runtime-deps:8.0.31-noble` by index digest |
 | The toolchain | `mcr.microsoft.com/dotnet/sdk:8.0.425-noble` by index digest |
 | The build dependency | `BepInEx.AssemblyPublicizer.MSBuild` 0.4.2 by nupkg sha256, restored with `--locked-mode` against a committed `packages.lock.json` |
@@ -416,7 +416,7 @@ maintenance/bin/takaro-maint verify --game rust --artifacts dist --out reports \
   --negative --startup-timeout 1200 --cleanup-orphans
 ```
 
-- **Required check:** `Rust Connector / release / verify (carbon-26864795, …)`, one leg per
+- **Required check:** `Rust Connector / release / verify (carbon-26921919, …)`, one leg per
   candidate or maintained target. `publish` needs every leg to pass, so nothing is released (stable,
   rolling `rust-dev` or a PR build) that did not boot.
 - **Trigger policy:** every push to `main`, every release or recovery run, and every pull request that
@@ -452,5 +452,5 @@ maintenance/bin/takaro-maint verify --game rust --artifacts dist --out reports \
 ## Testing status
 
 The rows the README marks ✅ are proven by `takaro-maint verify` with no client, on every CI run of
-the current target (build 26864795 with Carbon 2.0.267; see **Runtime CI**). Everything a client is
+the current target (build 26921919 with Carbon 2.0.267; see **Runtime CI**). Everything a client is
 needed for is still ⚠️ and unproven; see **Verification coverage** above.
