@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "id": "server-0.7.7",
+  "game": "hytale",
+  "platform": "server",
+  "revision": "0.7.7",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-26",
+    "evidence": [
+      "games/hytale/README.md (What works, what doesn't: Hytale server 0.7.7, with a real Hytale client through hosted Takaro)",
+      "games/hytale/scripts/test.sh (contract level, every build: the plugin's unit tests over argument handling, bans, catalogues, map tiles and reconnect)"
+    ],
+    "notes": "The connector is one Java plugin jar in the server's mods/ folder; it holds the Takaro connection itself, no sidecar. It compiles against com.hypixel.hytale:Server 0.7.7 from Hypixel's Maven repository and is never shipped with it. The Hytale server needs its Assets.zip and a Hytale account login, neither of which a hosted runner can have, so release verification is contract level and every server version needs a live retest before it is declared."
+  },
+  "inputs": {
+    "server": {
+      "kind": "http-file",
+      "source": "hytale-maven",
+      "hashOrigin": "self-recorded",
+      "path": "/release/com/hypixel/hytale/Server/0.7.7/Server-0.7.7.jar",
+      "sha256": "6f87420b524162d27dc7cd734e5575850e5dbf5eb94b659f17d6cac4df932d4d",
+      "size": 112456755,
+      "installPath": "HytaleServer.jar"
+    }
+  },
+  "runtime": {
+    "java": 25,
+    "container": {
+      "kind": "container-image",
+      "image": "eclipse-temurin",
+      "tag": "25.0.4_7-jre-noble",
+      "digest": "sha256:b573af9e331196fbc42e246da4df24df9b6c556c73e7efddfde0511f1c9508c5"
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/hytale/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "maven",
+      "tag": "3.10.0-eclipse-temurin-25",
+      "digest": "sha256:84bd96155bf37d1be2858433aee89320f487c2d21faf06406640e7dc2b82d686"
+    },
+    "deps": {
+      "hytale-server": {
+        "coordinate": "com.hypixel.hytale:Server:0.7.7",
+        "sha256": "6f87420b524162d27dc7cd734e5575850e5dbf5eb94b659f17d6cac4df932d4d",
+        "resolvedCoordinate": "https://maven.hytale.com/release/com/hypixel/hytale/Server/0.7.7/Server-0.7.7.jar"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "plugin",
+      "artifact": "takaro-hytale-server-0.7.7-{version}.jar",
+      "installDir": "mods"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": []
+  },
+  "preserve": [
+    "mods/HytaleTakaroMod/TakaroConfig.properties",
+    "mods/HytaleTakaroMod/known-players.json",
+    "bans.json"
+  ],
+  "notes": "The plugin is compiled once with Maven inside the pinned Temurin 25 image (the 0.7.7 server is Java 25 bytecode). The Hytale server jar is fetched by SHA-256 for compilation only and is never part of a release."
+}

@@ -1,0 +1,125 @@
+name: Hytale Connector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'games/hytale/**'
+      - 'catalog/hytale/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/hytale.yml'
+      - '.github/workflows/connector-release.yml'
+  pull_request:
+    paths:
+      - 'games/hytale/**'
+      - 'catalog/hytale/**'
+      - 'maintenance/**'
+      - 'scripts/**'
+      - '.github/workflows/hytale.yml'
+      - '.github/workflows/connector-release.yml'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+  # Manual re-run to (re)attach assets to an existing release tag, for recovering a
+  # release that release-please published without them.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed in the built artifact (e.g. 0.1.0)
+        required: true
+        type: string
+      tag:
+        description: Existing release tag to upload the assets to (e.g. hytale-v0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: hytale-${{ github.ref }}-${{ inputs.tag || 'ci' }}
+  # A push during a release run queues behind it; only ordinary CI runs are cancelled.
+  cancel-in-progress: ${{ inputs.tag == '' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The same commit the release job builds: a recovery run for an older tag is
+          # gated on that tag's sources, never on whatever main has become.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.15"
+
+      - run: uv python install
+      - run: uv sync --frozen --project maintenance
+
+      - name: Resolve the target
+        id: target
+        run: |
+          maintenance/bin/takaro-maint targets resolve \
+            --game hytale \
+            --format gha >> "$GITHUB_OUTPUT"
+
+      # Keyed on the fingerprint: a re-pinned target never compiles against the previous
+      # target's server jar.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/takaro-maint/hytale/m2
+          key: hytale-m2-${{ steps.target.outputs.fp16 }}
+
+      # The plugin's unit tests (argument handling, bans, catalogues, map tiles, reconnect),
+      # compiled against the pinned Hytale server API inside the pinned Maven image.
+      - name: Unit tests
+        run: games/hytale/scripts/test.sh
+
+  params:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      tag: ${{ steps.params.outputs.tag }}
+      publish: ${{ steps.params.outputs.publish }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release params
+        id: params
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEV_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/release-params.sh hytale >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, params]
+    uses: ./.github/workflows/connector-release.yml
+    secrets: inherit
+    with:
+      connector: hytale
+      version: ${{ needs.params.outputs.version }}
+      tag: ${{ needs.params.outputs.tag }}
+      publish: ${{ needs.params.outputs.publish }}
+      pr_number: ${{ github.event.pull_request.number }}
+      # A Hytale server needs its Assets.zip and a Hytale account login, neither of which a
+      # hosted runner can have, so no runner boots it. The release claims contract
+      # verification: the unit tests above and the reproducible Maven build. Live proof comes
+      # from a real server with a real client.
+      runtime: false

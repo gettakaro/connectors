@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "hytale",
+  "name": "Hytale",
+  "connector": "hytale",
+  "platforms": [
+    "server"
+  ],
+  "defaultPlatform": "server",
+  "sources": {
+    "hytale-maven": {
+      "provider": "maven",
+      "baseUrl": "https://maven.hytale.com",
+      "watch": {
+        "kind": "game",
+        "component": "hytale",
+        "group": "com.hypixel.hytale",
+        "artifact": "Server",
+        "channels": {
+          "release": {
+            "branch": "release",
+            "metadataPath": "/release/com/hypixel/hytale/Server/maven-metadata.xml"
+          },
+          "pre-release": {
+            "branch": "pre-release",
+            "metadataPath": "/pre-release/com/hypixel/hytale/Server/maven-metadata.xml",
+            "enabled": false
+          }
+        },
+        "readinessNote": "Hypixel publishes every Hytale server build as com.hypixel.hytale:Server in its own Maven repository; the release repository carries the builds players get. The connector is a Java plugin built against that server API, and the API still changes between Hytale updates, so every new server version needs a rebuild and a live retest before it is declared."
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "projectDir": "games/hytale"
+  },
+  "componentRoles": {
+    "plugin": {
+      "description": "The Takaro plugin jar, copied into the server's mods/ folder. It holds the Takaro connection itself; no sidecar",
+      "artifactPattern": "takaro-hytale-{target}-{version}.jar"
+    }
+  },
+  "legacyAssetAliases": {}
+}

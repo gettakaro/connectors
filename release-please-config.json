@@ -7,18 +7,66 @@
   "draft": true,
   "force-tag-creation": true,
   "changelog-sections": [
-    { "type": "feat", "section": "Features", "hidden": false },
-    { "type": "fix", "section": "Bug Fixes", "hidden": false },
-    { "type": "deps", "section": "Dependencies", "hidden": false },
-    { "type": "chore", "section": "Miscellaneous Chores", "hidden": false },
-    { "type": "perf", "section": "Performance", "hidden": false },
-    { "type": "refactor", "section": "Code Refactoring", "hidden": false },
-    { "type": "revert", "section": "Reverts", "hidden": false },
-    { "type": "build", "section": "Build System", "hidden": false },
-    { "type": "docs", "section": "Documentation", "hidden": false },
-    { "type": "style", "section": "Styles", "hidden": false },
-    { "type": "test", "section": "Tests", "hidden": false },
-    { "type": "ci", "section": "Continuous Integration", "hidden": false }
+    {
+      "type": "feat",
+      "section": "Features",
+      "hidden": false
+    },
+    {
+      "type": "fix",
+      "section": "Bug Fixes",
+      "hidden": false
+    },
+    {
+      "type": "deps",
+      "section": "Dependencies",
+      "hidden": false
+    },
+    {
+      "type": "chore",
+      "section": "Miscellaneous Chores",
+      "hidden": false
+    },
+    {
+      "type": "perf",
+      "section": "Performance",
+      "hidden": false
+    },
+    {
+      "type": "refactor",
+      "section": "Code Refactoring",
+      "hidden": false
+    },
+    {
+      "type": "revert",
+      "section": "Reverts",
+      "hidden": false
+    },
+    {
+      "type": "build",
+      "section": "Build System",
+      "hidden": false
+    },
+    {
+      "type": "docs",
+      "section": "Documentation",
+      "hidden": false
+    },
+    {
+      "type": "style",
+      "section": "Styles",
+      "hidden": false
+    },
+    {
+      "type": "test",
+      "section": "Tests",
+      "hidden": false
+    },
+    {
+      "type": "ci",
+      "section": "Continuous Integration",
+      "hidden": false
+    }
   ],
   "packages": {
     "games/ark": {
@@ -26,7 +74,10 @@
       "component": "ark",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/version.hpp" }
+        {
+          "type": "generic",
+          "path": "mod/src/version.hpp"
+        }
       ]
     },
     "games/rust": {
@@ -34,7 +85,10 @@
       "component": "rust",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/TakaroConnector.cs" }
+        {
+          "type": "generic",
+          "path": "mod/TakaroConnector.cs"
+        }
       ]
     },
     "games/minecraft": {
@@ -47,8 +101,14 @@
       "component": "7d2d",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/ModInfo.xml" },
-        { "type": "generic", "path": "README.md" }
+        {
+          "type": "generic",
+          "path": "mod/ModInfo.xml"
+        },
+        {
+          "type": "generic",
+          "path": "README.md"
+        }
       ]
     },
     "games/zomboid": {
@@ -77,7 +137,10 @@
       "component": "enshrouded",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/common.h" }
+        {
+          "type": "generic",
+          "path": "mod/src/common.h"
+        }
       ]
     },
     "games/dragonwilds": {
@@ -85,7 +148,10 @@
       "component": "dragonwilds",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/common.h" }
+        {
+          "type": "generic",
+          "path": "mod/src/common.h"
+        }
       ]
     },
     "games/dune": {
@@ -93,8 +159,14 @@
       "component": "dune",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/common.h" },
-        { "type": "generic", "path": "sidecar/src/version.ts" }
+        {
+          "type": "generic",
+          "path": "mod/src/common.h"
+        },
+        {
+          "type": "generic",
+          "path": "sidecar/src/version.ts"
+        }
       ]
     },
     "games/vein": {
@@ -102,8 +174,15 @@
       "component": "vein",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/common.h" },
-        { "type": "json", "path": "sidecar/package.json", "jsonpath": "$.version" }
+        {
+          "type": "generic",
+          "path": "mod/src/common.h"
+        },
+        {
+          "type": "json",
+          "path": "sidecar/package.json",
+          "jsonpath": "$.version"
+        }
       ]
     },
     "games/terraria": {
@@ -116,8 +195,14 @@
       "component": "scum",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "native/src/version.h" },
-        { "type": "generic", "path": "mod/TakaroSCUM/Scripts/takaro/app.lua" }
+        {
+          "type": "generic",
+          "path": "native/src/version.h"
+        },
+        {
+          "type": "generic",
+          "path": "mod/TakaroSCUM/Scripts/takaro/app.lua"
+        }
       ]
     },
     "games/tf2": {
@@ -125,7 +210,10 @@
       "component": "tf2",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/addons/sourcemod/scripting/takaro_tf2.sp" }
+        {
+          "type": "generic",
+          "path": "mod/addons/sourcemod/scripting/takaro_tf2.sp"
+        }
       ]
     },
     "games/empyrion": {
@@ -133,8 +221,14 @@
       "component": "empyrion",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "mod/src/TakaroMod.cs" },
-        { "type": "generic", "path": "mod/TakaroEmpyrion_Info.yaml" }
+        {
+          "type": "generic",
+          "path": "mod/src/TakaroMod.cs"
+        },
+        {
+          "type": "generic",
+          "path": "mod/TakaroEmpyrion_Info.yaml"
+        }
       ]
     },
     "games/ark-ascended": {
@@ -142,8 +236,16 @@
       "component": "ark-ascended",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "generic", "path": "native/src/version.h" }
+        {
+          "type": "generic",
+          "path": "native/src/version.h"
+        }
       ]
+    },
+    "games/hytale": {
+      "release-type": "simple",
+      "component": "hytale",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
