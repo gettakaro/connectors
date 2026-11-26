@@ -20,7 +20,6 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import dev.takaro.hytale.TakaroPlugin;
-import dev.takaro.hytale.api.HytaleApiClient;
 import static dev.takaro.hytale.util.Responses.commandResult;
 import static dev.takaro.hytale.util.Responses.commandName;
 import dev.takaro.hytale.util.CommandOutput;
@@ -43,15 +42,13 @@ import java.util.stream.Collectors;
 
 public class TakaroRequestHandler {
     private final TakaroPlugin plugin;
-    private final HytaleApiClient hytaleApi;
     private final Gson gson = new Gson();
     private static final int COMMAND_TIMEOUT_SECONDS = 15;
     private static final int WORLD_TIMEOUT_SECONDS = 5;
     private static final long SHUTDOWN_GRACE_MS = 1000L;
 
-    public TakaroRequestHandler(TakaroPlugin plugin, HytaleApiClient hytaleApi) {
+    public TakaroRequestHandler(TakaroPlugin plugin) {
         this.plugin = plugin;
-        this.hytaleApi = hytaleApi;
     }
 
     public void handleRequest(dev.takaro.hytale.websocket.TakaroWebSocket sourceWebSocket, String requestId, String action, JsonObject payload) {
