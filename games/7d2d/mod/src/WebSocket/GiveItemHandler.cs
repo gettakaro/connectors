@@ -76,7 +76,7 @@ namespace Takaro.WebSocket
                 if (
                     !ItemQuality.TryResolve(
                         args.Quality,
-                        itemClass.HasQuality || itemClass.HasSubItems,
+                        Shared.UsesQuality(itemClass),
                         Constants.cItemMaxQuality,
                         out ushort quality,
                         out string qualityError

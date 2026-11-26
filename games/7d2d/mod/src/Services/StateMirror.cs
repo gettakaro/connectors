@@ -318,6 +318,8 @@ namespace Takaro.Services
                         Name = record.Name,
                         Description = record.Description,
                         IconHash = icons.HashFor(record.IconName),
+                        HasQuality = record.HasQuality,
+                        MaxQuality = record.HasQuality ? record.MaxQuality : (int?)null,
                     }
                 );
             }
@@ -827,6 +829,8 @@ namespace Takaro.Services
                         Name = name,
                         Description = Shared.ItemDescription(item.GetItemName()),
                         IconName = ServableIconName(item),
+                        HasQuality = Shared.UsesQuality(item),
+                        MaxQuality = Constants.cItemMaxQuality,
                     }
                 );
             }

@@ -58,6 +58,17 @@ namespace Takaro
 
         [JsonProperty("iconHash", NullValueHandling = NullValueHandling.Ignore)]
         public string IconHash { get; set; }
+
+        /// <summary>
+        /// Catalogue only: whether giveItem applies a quality to this item. Ammo and
+        /// resources have none, so a listing quality on them is ignored.
+        /// </summary>
+        [JsonProperty("hasQuality", NullValueHandling = NullValueHandling.Ignore)]
+        public bool? HasQuality { get; set; }
+
+        /// <summary>Catalogue only: the highest quality giveItem accepts, set when HasQuality is true.</summary>
+        [JsonProperty("maxQuality", NullValueHandling = NullValueHandling.Ignore)]
+        public int? MaxQuality { get; set; }
     }
 
     public class TakaroEntity
@@ -134,6 +145,13 @@ namespace Takaro
 
     public static class Shared
     {
+        /// <summary>
+        /// The one rule for which items take a quality: giveItem sets it on the item
+        /// itself or on its parts, and listItems reports it as hasQuality.
+        /// </summary>
+        public static bool UsesQuality(ItemClass itemClass) =>
+            itemClass.HasQuality || itemClass.HasSubItems;
+
         // Takaro gameId is the EOS ID (CrossPlatform ID) without the EOS_ prefix
         public static string GameIdFromClientInfo(ClientInfo clientInfo)
         {

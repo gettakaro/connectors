@@ -79,6 +79,8 @@ namespace Takaro.Persistence
         public string Name { get; set; }
         public string Description { get; set; }
         public string IconName { get; set; }
+        public bool HasQuality { get; set; }
+        public int MaxQuality { get; set; }
     }
 
     public class EntityRecord
