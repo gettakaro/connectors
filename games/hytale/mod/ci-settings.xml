@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Used by scripts/build-release.sh and scripts/test.sh. Maven Central answers shared CI runners
+     with HTTP 429, so its artifacts come from Google's public mirror of Maven Central instead.
+     Hypixel's repository (maven.hytale.com) is not mirrored. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>google-maven-central</id>
+      <name>Google mirror of Maven Central</name>
+      <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>

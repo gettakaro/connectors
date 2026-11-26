@@ -52,7 +52,7 @@ cp -r "$project_root/LICENSE" "$project_root/THIRD-PARTY-NOTICES.md" "$project_r
 # Maven Central rate-limits shared CI runners (HTTP 429): retry with a pause instead of failing.
 retry_args=(-Daether.connector.http.retryHandler.count=6 -Daether.connector.http.retryHandler.interval=10000
     -Daether.connector.http.retryHandler.serviceUnavailable=429,503)
-mvn_args=(-B -ntp "${retry_args[@]}" -Drevision="$version" -Dproject.build.outputTimestamp="$stamp_iso" -Dhytale.server.version="$server_version" package)
+mvn_args=(-B -ntp -s ci-settings.xml "${retry_args[@]}" -Drevision="$version" -Dproject.build.outputTimestamp="$stamp_iso" -Dhytale.server.version="$server_version" package)
 echo "== takaro-hytale $version (Maven, Hytale Server $server_version)"
 if [ -n "${MVN:-}" ]; then
     (cd "$stage/mod" && "$MVN" -Dmaven.repo.local="$cache/m2" "${mvn_args[@]}")
