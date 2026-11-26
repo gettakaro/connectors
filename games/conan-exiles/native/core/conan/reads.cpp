@@ -22,8 +22,9 @@ namespace {
 constexpr int kJobTimeoutMs = 2000;
 constexpr uint64_t kRescanMs = 10000;  // at most one object-array scan per 10 s
 
-// Names the index scan collects (types, the text library CDO and the DataTables).
-const std::vector<std::string> kScanNames = {
+// Names the index scan collects (types, the text library CDO and the DataTables). Leaked: the reads
+// thread can still scan while exit() runs the static destructors.
+const std::vector<std::string>& kScanNames = *new std::vector<std::string>{
     "GameStateBase", "PlayerState", "Actor", "Controller", "SceneComponent", "ConanPlayerController",
     "BasePlayerChar_C", "BaseBPChar_C", "ItemInventory", "GameItem", "ShortcutRefItem", "DataTable", "KismetTextLibrary",
     "Default__KismetTextLibrary", "ItemTable", "ItemNameToTemplateID", "SpawnDataTable", "MapMarkers_ConanSandbox",
@@ -1017,8 +1018,8 @@ std::string ReadService::HealthJson() {
 }
 
 ReadService* ProductionReads() {
-    static std::mutex m;
-    static ReadService* s = nullptr;  // leaked: action workers may still run at exit
+    static std::mutex& m = *new std::mutex;  // both leaked: action workers may still run at exit
+    static ReadService* s = nullptr;
     std::lock_guard<std::mutex> l(m);
     if (s) return s;
     if (!UE::HaveGlobals()) return nullptr;

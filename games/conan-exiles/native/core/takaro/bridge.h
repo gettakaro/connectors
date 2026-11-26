@@ -128,6 +128,7 @@ private:
     uint64_t lastQueuedId_ = 0;
     std::deque<int64_t> logSentAt_;  // when each log event of the last logWindowMs went out
     uint64_t logWaits_ = 0;          // delivery passes that stopped at the log budget
+    uint64_t unstampedEvents_ = 0;   // protocol 1 events left unsent: no valid stream position
     std::map<uint64_t, std::shared_ptr<Job>> inflight_;
     std::set<std::string> pendingIds_;
     std::deque<std::string> recentIds_;

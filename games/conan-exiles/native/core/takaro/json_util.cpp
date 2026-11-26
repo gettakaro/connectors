@@ -155,9 +155,10 @@ std::optional<double> Num(const JsonValue* v) {
 }
 
 const JsonValue& AsRecord(const JsonValue* v) {
-    static const JsonValue empty = [] {
-        JsonValue o;
-        o.type = JsonValue::Object;
+    // Leaked: frames are still parsed while exit() runs the static destructors.
+    static const JsonValue& empty = *[] {
+        auto* o = new JsonValue;
+        o->type = JsonValue::Object;
         return o;
     }();
     return v && v->type == JsonValue::Object ? *v : empty;

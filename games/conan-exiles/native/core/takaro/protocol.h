@@ -48,8 +48,8 @@ bool IsErrorCode(const std::string& code);
 std::string CreateResponseV1(const std::string& requestId, const JsonValue& payload);  // Null payload -> null
 std::string CreateErrorResponseV1(const std::string& requestId, const std::string& code, const std::string& message);
 std::string CreateCapabilities(const std::string& requestId, const std::string& capabilities);
-// A protocol 0 gameEvent frame (CreateGameEvent) with streamId and seq added to its payload; the frame
-// unchanged when it is not one.
+// A protocol 0 gameEvent frame (CreateGameEvent) with streamId and seq added to its payload; empty when
+// the frame is not one or the position is not valid (protocol 1 never sends an event without it).
 std::string WithStream(const std::string& frame, const std::string& streamId, uint64_t seq);
 // ^[A-Za-z0-9_-]{1,128}$
 bool IsStreamId(const std::string& id);

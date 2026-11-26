@@ -485,6 +485,30 @@ def protocol_v1(binary, cert, key, root):
         fake.close()
 
 
+def exit_v1(binary, cert, key, root):
+    """The engine calls exit() with the bridge still sending: every event stays a protocol 1 event."""
+    fake = FakeTakaro(key, cert)
+    fake.protocol = 1
+    h = Harness(binary, fake, cert, root / 'exit_v1')
+    try:
+        eventually(lambda: h.health()['protocol']['version'] == 1, what='protocol 1 negotiated')
+        h.send('exit')
+        h.proc.wait(timeout=15)
+        evs = events_of(fake.log)
+        msgs_ = [(e.get('data') or {}).get('msg', '') for e in evs]
+        marker = msgs_.index('teardown started') if 'teardown started' in msgs_ else -1
+        after = evs[marker:] if marker >= 0 else []
+        unstamped = [e for e in evs if not isinstance(e.get('seq'), int) or not e.get('streamId')]
+        check(h.proc.returncode == 0 and len(after) >= 5,
+              'the teardown marker and later events were sent after the static destructors ran', len(after))
+        check(not unstamped, 'no event without streamId and seq while exit() runs the static destructors',
+              unstamped[:3])
+    finally:
+        if h.proc.poll() is None:
+            h.kill()
+        fake.close()
+
+
 def main():
     binary = sys.argv[1]
     with tempfile.TemporaryDirectory(prefix='conan-wire-') as tmp:
@@ -492,7 +516,7 @@ def main():
         key, cert = make_cert(root)
         only = os.environ.get('WIRE_ONLY')
         for name, fn in (('basics', basics), ('outage', outage), ('restart', restart), ('rejected', rejected),
-                         ('protocol_v1', protocol_v1),
+                         ('protocol_v1', protocol_v1), ('exit_v1', exit_v1),
                          ('refused', refused)):
             if only and name not in only.split(','):
                 continue

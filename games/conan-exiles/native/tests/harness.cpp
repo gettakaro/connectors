@@ -10,6 +10,9 @@
 //         region <name>            -> change the loaded map
 //         health                   -> print "HEALTH <json>"
 //         quit                     -> stop cleanly (outbox persisted) and exit 0
+//         exit                     -> keep emitting log events and call exit(0) with the bridge still
+//                                     running, as the engine does: the static destructors run, then
+//                                     0.5 s pass (the engine's own teardown) before the process ends
 // stdout: READY, CHAT <json>, HEALTH <json>, BYE
 #include "common.h"
 #include "conan/adapter.h"
@@ -21,11 +24,17 @@
 #include "takaro/outbox.h"
 #include "transport_lws.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <thread>
+
+namespace {
+conan::Adapter* g_adapter = nullptr;  // for the atexit handler of the `exit` command
+}
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--registry") {
@@ -104,12 +113,36 @@ int main(int argc, char** argv) {
     bo.healthFile = cfg.stateDir + "/health.json";
     takaro::Bridge bridge(bo);
     bridge.Start();
+    // Registered first, so it runs after every static destructor registered later (atexit is LIFO):
+    // the marker event and the events of the next 0.5 s are sent with those statics already gone.
+    g_adapter = &adapter;
+    std::atexit([] {
+        takaro::GameEvent ev;
+        ev.type = "log";
+        takaro::ParseJson("{\"msg\":\"teardown started\"}", ev.data);
+        g_adapter->Emit(std::move(ev));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    });
     say("READY");
 
     std::string line;
     while (std::getline(std::cin, line)) {
         FlushNativeLogs();
         if (line == "quit") break;
+        if (line == "exit") {
+            std::thread([&adapter] {
+                for (int i = 0;; i++) {
+                    takaro::GameEvent ev;
+                    ev.type = "log";
+                    takaro::ParseJson("{\"msg\":\"exiting " + std::to_string(i) + "\"}", ev.data);
+                    adapter.Emit(std::move(ev));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+            }).detach();
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            FlushNativeLogs();
+            std::exit(0);
+        }
         if (line == "health") {
             say("HEALTH " + bridge.HealthJson());
             continue;
