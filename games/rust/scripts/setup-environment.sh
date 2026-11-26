@@ -98,7 +98,8 @@ CHECK
 else
     ARCHIVE="./_data/${RUST_CARBON_ASSET}"
     echo "Downloading ${RUST_CARBON_ASSET} (${RUST_CARBON_SHA256:0:16}...)"
-    curl -fsSL "${RUST_CARBON_DOWNLOAD_URL}" -o "${ARCHIVE}"
+    # An asset-id URL answers with JSON unless asked for the bytes; a tag URL ignores this.
+    curl -fsSL -H 'Accept: application/octet-stream' "${RUST_CARBON_DOWNLOAD_URL}" -o "${ARCHIVE}"
     printf '%s  %s\n' "${RUST_CARBON_SHA256}" "${ARCHIVE}" \
         | sha256sum --check --status \
         || { echo "error: ${RUST_CARBON_ASSET} is not the archive ${RUST_TARGET} pins" >&2; exit 5; }

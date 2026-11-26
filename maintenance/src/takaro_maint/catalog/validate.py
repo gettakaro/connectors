@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -289,6 +290,73 @@ def _check_immutable_images(result: ValidationResult, target: Target) -> None:
         )
 
 
+#: Tag names that are rolling by convention, whatever a watch block says.
+_MOVING_TAGS = re.compile(r"^(latest|nightly|edge|dev|preview|.*_build)$")
+
+
+def _is_moving_tag(game: dict[str, Any], repo: str, tag: str) -> bool:
+    """Is ``tag`` on ``repo`` re-uploaded in place?
+
+    True when a github-release watch on the same repo declares a ``mutable`` channel whose
+    ``tag`` selector matches it (exact, ``regex:<pattern>``, or no selector at all), or when
+    the name is rolling by convention.
+    """
+    if _MOVING_TAGS.match(tag):
+        return True
+    for source in (game.get("sources") or {}).values():
+        if source.get("provider") != "github-release":
+            continue
+        watch = source.get("watch") or {}
+        if str(watch.get("repo") or "") != repo:
+            continue
+        for channel in (watch.get("channels") or {}).values():
+            if not channel.get("mutable"):
+                continue
+            selector = str(channel.get("tag") or "")
+            if not selector:
+                return True
+            if selector.startswith("regex:"):
+                try:
+                    if re.fullmatch(selector[len("regex:") :], tag):
+                        return True
+                except re.error:
+                    return True  # an unreadable selector cannot vouch that the tag is fixed
+            elif selector == tag:
+                return True
+    return False
+
+
+def _check_release_asset_by_id(result: ValidationResult, catalog: Catalog, target: Target) -> None:
+    """A release asset on a tag that is re-uploaded in place must be fetched by its asset id.
+
+    The tag's download URL serves whatever was uploaded last, so the record's sha256 stops
+    matching the day upstream re-uploads: every fresh install of the target then fails its
+    hash check and ``validate --online`` goes red for everyone. An asset id is never
+    re-pointed. Retired targets are exempt; nothing installs them.
+    """
+    if target.status == "retired":
+        return
+    file = _relative(target.path)
+    game = catalog.game(target.game).record
+    for name, spec in (target.record.get("inputs") or {}).items():
+        if not isinstance(spec, dict) or spec.get("kind") != "github-release-asset":
+            continue
+        tag = str(spec.get("tag") or "")
+        if not _is_moving_tag(game, str(spec.get("repo") or ""), tag):
+            continue
+        has_id = spec.get("assetId") is not None
+        if has_id:
+            detail = f"fetched by asset id {spec['assetId']}"
+        else:
+            detail = f"tag '{tag}' is re-uploaded in place; record the asset's assetId"
+        result.add(
+            "release-asset-by-id",
+            has_id,
+            f"inputs.{name}: {detail}",
+            file,
+        )
+
+
 def _check_no_floating_words(result: ValidationResult, target: Target) -> None:
     file = _relative(target.path)
     offenders: list[str] = []
@@ -528,6 +596,7 @@ def validate_catalog(catalog: Catalog, *, online: bool = False, cache: Path | No
         ("build-system-schema", _check_build_system),
         ("no-null-hash", _check_no_null_hash),
         ("immutable-tag-and-digest", _check_immutable_images),
+        ("release-asset-by-id", lambda r, t: _check_release_asset_by_id(r, catalog, t)),
         ("no-floating-words", _check_no_floating_words),
         ("minecraft-java-chain", _check_java_chain),
         ("plugins-match-toml", lambda r, t: _check_plugins_match_toml(r, catalog, t)),

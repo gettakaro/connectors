@@ -39,7 +39,7 @@ from takaro_maint.steam import vdf
 from takaro_maint.tracker import identity
 
 GAME = "rust"
-TARGET = "carbon-26778019"
+TARGET = "carbon-26864795"
 APP = 258550
 VERSION = "0.0.6-dev.abc1234"
 ARTIFACT = f"takaro-rust-plugin-{TARGET}-{VERSION}.cs"
@@ -109,7 +109,7 @@ HEADS = json.loads((DEPOTS / "head.json").read_text(encoding="utf-8"))
 #: Where the fake upstream serves Carbon from, in both of its roles: the release listing
 #: the scan reads and the asset byte stream the install fetches.
 LISTING_PATH = "/repos/CarbonCommunity/Carbon/releases?per_page=10"
-ASSET_PATH = "/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
+ASSET_PATH = "/repos/CarbonCommunity/Carbon/releases/assets/783397591"
 CARBON_LISTING = Path(__file__).parent / "fixtures/providers/github_release/carbon-releases.json"
 
 TRACKER_REPO = "gettakaro/connectors"
@@ -260,14 +260,14 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     env = payload["env"]
     assert env["RUST_STEAM_APP"] == "258550"
     assert env["RUST_STEAM_BRANCH"] == "public"
-    assert env["RUST_STEAM_BUILDID"] == "26778019"
-    assert env["RUST_STEAM_DEPOTS"] == "258552:3849593360004026679;258554:814960451527197808"
-    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26778019-{version}.cs"
+    assert env["RUST_STEAM_BUILDID"] == "26864795"
+    assert env["RUST_STEAM_DEPOTS"] == "258552:827065827490299880;258554:7172960469086779083"
+    assert env["RUST_ARTIFACT"] == "takaro-rust-plugin-carbon-26864795-{version}.cs"
     assert env["RUST_CARBON_ASSET"] == "Carbon.Linux.Release.tar.gz"
     assert env["RUST_CARBON_TAG"] == "production_build"
-    assert env["RUST_CARBON_SHA256"] == "4b35974806ae6caf65dcd2c07e85f3a44b3979f0883d739a52b628111c781b24"
+    assert env["RUST_CARBON_SHA256"] == "c3350f9280068cda05eec062656546988fa891d998faae248b071fbc1b725a38"
     assert env["RUST_CARBON_DOWNLOAD_URL"] == (
-        "https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
+        "https://api.github.com/repos/CarbonCommunity/Carbon/releases/assets/783397591"
     )
     assert env["RUST_REFERENCES_DIR"].endswith(payload["fp16"])
     assert env["RUST_CARBON_REFERENCES_DIR"].endswith(payload["fp16"])
@@ -276,12 +276,11 @@ def test_targets_resolve_env_for_rust(run: Any) -> None:
     assert not any(key.endswith("_JAVA") for key in env)
 
     assert payload["resolvedUrls"]["server"].startswith(
-        "steam://app/258550/branch/public/build/26778019/depot/258552/manifest/3849593360004026679"
+        "steam://app/258550/branch/public/build/26864795/depot/258552/manifest/827065827490299880"
     )
-    assert "258554/manifest/814960451527197808" in payload["resolvedUrls"]["server"]
-    # The Carbon asset is addressed by the URL that actually serves the bytes: the API's
-    # asset-id URL answers with JSON unless the request asks for octet-stream, which
-    # `catalog validate --online` (and anything else that re-hashes it) cannot do.
+    assert "258554/manifest/7172960469086779083" in payload["resolvedUrls"]["server"]
+    # The Carbon asset is addressed by its asset id, which GitHub never re-points; every
+    # fetcher sends the Accept header that makes that URL answer with the bytes.
     assert payload["resolvedUrls"]["carbon"] == env["RUST_CARBON_DOWNLOAD_URL"]
     assert payload["containerRef"] == (
         "mcr.microsoft.com/dotnet/runtime-deps:8.0.31-noble@sha256:"
@@ -391,7 +390,9 @@ def test_an_unavailable_carbon_asset_exits_four(
     assert install(run, repo, dest)[0] == 0
     before = tree_hash(dest)
     record = read_target(repo)
-    record["inputs"]["carbon"]["asset"] = "Carbon.Linux.Nothing.tar.gz"
+    # What a re-upload of production_build looks like from here: GitHub drops the old asset
+    # id, so the pinned URL stops resolving rather than serving the new bytes.
+    record["inputs"]["carbon"]["assetId"] = 1
     write_target(repo, record)
     # The blob cache is content-addressed, so it would answer this happily; the question
     # here is what happens when the bytes have to come from upstream and upstream has none.

@@ -304,6 +304,7 @@ def test_the_wired_fixture_serves_exactly_the_targets_it_says(wired: Any) -> Non
         "carbon-26431843": "no repinner for platform 'carbon'",
         "carbon-26498655": "no repinner for platform 'carbon'",
         "carbon-26778019": "no repinner for platform 'carbon'",
+        "carbon-26864795": "no repinner for platform 'carbon'",
         "fabric-26.3": "the repinner has no fixture for this target",
         "linux-1.0.21": "no repinner for platform 'linux'",
         "linux-25689360": "no repinner for platform 'linux'",

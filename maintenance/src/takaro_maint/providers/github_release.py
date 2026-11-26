@@ -65,7 +65,16 @@ class GitHubReleaseProvider(Provider):
 
     # -- acquisition -----------------------------------------------------------
     def _asset_url(self, input_spec: dict[str, Any], source: dict[str, Any]) -> str:
+        """The asset-id URL when the input records one, else the tag's download URL.
+
+        An input with ``assetId`` names an API source (``https://api.github.com``): GitHub
+        never re-points an asset id, so a re-upload of the tag makes this URL 404 rather
+        than serve other bytes. ``net`` adds the ``Accept: application/octet-stream`` header
+        such a URL needs to answer with the file instead of its JSON description.
+        """
         base = str(source["baseUrl"]).rstrip("/")
+        if input_spec.get("assetId") is not None:
+            return f"{base}/repos/{input_spec['repo']}/releases/assets/{int(input_spec['assetId'])}"
         return f"{base}/{input_spec['repo']}/releases/download/{input_spec['tag']}/{input_spec['asset']}"
 
     def _source_url(self, input_spec: dict[str, Any], source: dict[str, Any]) -> str:

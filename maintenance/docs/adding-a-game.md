@@ -70,7 +70,7 @@ kinds available today:
 | `mojang-version` | a Minecraft version manifest and its server jar |
 | `fabric-launcher`, `maven-artifact`, `paper-build`, `neoforge-installer` | the Minecraft framework layers |
 | `steam-depots` | a whole dedicated-server install, as one content manifest per Steam depot |
-| `github-release-asset` | one file published on a GitHub release |
+| `github-release-asset` | one file published on a GitHub release; on a tag that is re-uploaded in place (`mutable` channel, or a name like `production_build`), also its `assetId`, so the pin cannot silently change bytes |
 | `thunderstore-package` | one versioned Thunderstore package |
 | `github-source` | a source tree at one exact commit |
 | `http-file` | anything else fetched by URL and pinned by sha256 |
@@ -136,10 +136,14 @@ asset's published digest into the revision — `production_build.bfc3cf3d` — a
 history as `heads-only`, because the uploads between two scans were never seen and are
 not claimed.
 
-Acquisition uses a **second** source pointing at the download host
-(`https://github.com`), exactly as Fabric splits `meta` from `maven`: the API listing and
-the asset download are different hosts, and the catalog stays the only place a host is
-written down.
+An input on a fixed tag can be acquired from a **second** source pointing at the download
+host (`https://github.com`), exactly as Fabric splits `meta` from `maven`, so the catalog
+stays the only place a host is written down. An input on a `mutable` tag records `assetId`
+instead and names the **API** source (`https://api.github.com`): the provider fetches
+`/repos/<owner>/<repo>/releases/assets/<assetId>` with `Accept: application/octet-stream`,
+a URL GitHub never re-points, so a re-upload makes the pin unresolvable rather than
+serving other bytes. `catalog validate` (`release-asset-by-id`) refuses a non-retired target
+that pins a mutable tag without one.
 
 ### `steam`
 
