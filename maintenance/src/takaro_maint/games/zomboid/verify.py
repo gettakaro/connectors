@@ -109,7 +109,7 @@ def _is_script_id(code: str, name: str) -> bool:
 COVERAGE_NOTE = (
     "player-lifecycle hooks (connect, disconnect, chat, death, zombie-killed) are proven "
     "BOUND, not FIRED: firing needs a connected game client (human-owed; last recorded "
-    "client evidence 2026-09-13/16)"
+    "client evidence 2026-10-01 on linux-42.21.0, where zombie-killed did not fire)"
 )
 
 # The agent waits 5 s before its first reconnect and backs off x1.5 from there.
