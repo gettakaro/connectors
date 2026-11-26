@@ -531,6 +531,13 @@ void Bridge::DeliverEvents() {
             break;
         }
         std::string frame = protocol_ >= 1 ? WithStream(it->frame, it->stream, it->seq) : it->frame;
+        if (frame.empty()) {  // Takaro refuses a protocol 1 event without its position: never send one
+            unstampedEvents_++;
+            if (unstampedEvents_ < 5)
+                NativeLog("takaro: event %llu has no valid stream position; not sent", (unsigned long long)it->id);
+            lastQueuedId_ = it->id;
+            continue;
+        }
         QueueStatus st = o_.transport->Queue({FrameKind::Event, Text(std::move(frame)), epoch_, it->id});
         if (st != QueueStatus::Accepted) {
             if (st == QueueStatus::TooLarge) {
@@ -660,6 +667,7 @@ void Bridge::Publish(int64_t now) {
                                            .Raw("nextId", std::to_string(ob.nextId))
                                            .Raw("queuedThrough", std::to_string(lastQueuedId_))
                                            .N("logWaits", (double)logWaits_)
+                                           .N("unstamped", (double)unstampedEvents_)
                                            .N("confirmedTotal", (double)ob.confirmedTotal)
                                            .N("losses", (double)ob.losses)
                                            .N("admitted", (double)eventsAdmitted_)

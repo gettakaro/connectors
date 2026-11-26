@@ -795,7 +795,11 @@ static void TestProtocolV1() {
     EQ(WithStream(ev, "abc_1", 42),
        "{\"type\":\"gameEvent\",\"payload\":{\"type\":\"log\",\"data\":{\"msg\":\"}}\"},\"streamId\":\"abc_1\",\"seq\":42}}");
     CHECK(JsonParse(WithStream(ev, "abc_1", 42), v), "stream frame is JSON");
-    EQ(WithStream("{}", "s", 1), "{}");
+    // Not a gameEvent frame, or no valid position: empty, so protocol 1 never sends an unstamped event.
+    EQ(WithStream("{}", "s", 1), "");
+    EQ(WithStream(ev, "", 1), "");
+    EQ(WithStream(ev, "a b", 1), "");
+    EQ(WithStream(ev, "abc_1", 0), "");
     CHECK(IsStreamId("4f0e9a1c-6c2b_X") && !IsStreamId("") && !IsStreamId("a b") && !IsStreamId(std::string(129, 'a')),
           "stream id rule");
     std::string a = NewStreamId(), b = NewStreamId();

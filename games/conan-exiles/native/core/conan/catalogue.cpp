@@ -47,7 +47,7 @@ TextVtables DefaultTextVtables() {
 }
 
 TextKind DecodeText(const Mem& m, uintptr_t at, std::string& out) {
-    static const TextVtables def = DefaultTextVtables();
+    static const TextVtables& def = *new TextVtables(DefaultTextVtables());  // leaked: read threads outlive exit()
     return DecodeText(m, at, out, def);
 }
 

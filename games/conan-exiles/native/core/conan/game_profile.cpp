@@ -77,12 +77,13 @@ std::string Base64(const std::string& bytes) {
 }
 
 const std::string& GameIconPng() {
-    static const std::string png(reinterpret_cast<const char*>(kIconPng), sizeof(kIconPng));
+    // Leaked (as is the revision below): actions are still answered while exit() runs the static destructors.
+    static const std::string& png = *new std::string(reinterpret_cast<const char*>(kIconPng), sizeof(kIconPng));
     return png;
 }
 
 const std::string& GameIconRevision() {
-    static const std::string revision = Sha256Hex(GameIconPng()).substr(0, 12);
+    static const std::string& revision = *new std::string(Sha256Hex(GameIconPng()).substr(0, 12));
     return revision;
 }
 

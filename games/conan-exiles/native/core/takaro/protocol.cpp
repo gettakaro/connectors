@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 
 namespace takaro {
 
@@ -98,11 +99,12 @@ std::string CreateCapabilities(const std::string& requestId, const std::string& 
 }
 
 std::string WithStream(const std::string& frame, const std::string& streamId, uint64_t seq) {
-    // CreateGameEvent ends with the payload object's and the frame's closing braces.
-    static const std::string kHead = "{\"type\":\"gameEvent\",\"payload\":{";
+    // CreateGameEvent ends with the payload object's and the frame's closing braces. A literal, not a
+    // static std::string: the bridge still sends while exit() runs the static destructors.
+    static constexpr std::string_view kHead = "{\"type\":\"gameEvent\",\"payload\":{";
     if (frame.size() < kHead.size() + 2 || frame.compare(0, kHead.size(), kHead) != 0 ||
-        frame.compare(frame.size() - 2, 2, "}}") != 0)
-        return frame;
+        frame.compare(frame.size() - 2, 2, "}}") != 0 || !IsStreamId(streamId) || seq == 0)
+        return {};
     return frame.substr(0, frame.size() - 2) + ",\"streamId\":" + JsonStr(streamId) + ",\"seq\":" + std::to_string(seq) +
            "}}";
 }
