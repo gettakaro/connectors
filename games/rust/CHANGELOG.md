@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.2](https://github.com/gettakaro/connectors/compare/rust-v0.6.1...rust-v0.6.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **rust:** serve map tiles off the game thread ([#996](https://github.com/gettakaro/connectors/issues/996)) ([655a2f9](https://github.com/gettakaro/connectors/commit/655a2f965b7e6cfa66984bee512c3f09b0ff8fb1))
+* **rust:** target Rust build 26864795 with Carbon 2.0.267 pinned by asset id ([#988](https://github.com/gettakaro/connectors/issues/988)) ([32f4e12](https://github.com/gettakaro/connectors/commit/32f4e123e1eb26b318bcfa9b31543feabf94139b))
+* **rust:** target Rust build 26921919; authenticate asset-id downloads ([#1013](https://github.com/gettakaro/connectors/issues/1013)) ([5f3c4f6](https://github.com/gettakaro/connectors/commit/5f3c4f669ab64be9cc2516dc9b4019cde43a98db))
+
 ## [0.6.1](https://github.com/gettakaro/connectors/compare/rust-v0.6.0...rust-v0.6.1) (2026-11-22)
 
 
