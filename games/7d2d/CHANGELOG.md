@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/gettakaro/connectors/compare/7d2d-v0.11.0...7d2d-v0.11.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **7d2d:** accept bans for players new to the server, harden ban sync and giveItem, report item quality ([#994](https://github.com/gettakaro/connectors/issues/994)) ([e97f86d](https://github.com/gettakaro/connectors/commit/e97f86d3c5050ab63af0ded5a655661de157c567))
+
 ## [0.11.0](https://github.com/gettakaro/connectors/compare/7d2d-v0.10.2...7d2d-v0.11.0) (2026-11-23)
 
 
