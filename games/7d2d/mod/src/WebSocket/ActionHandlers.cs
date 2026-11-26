@@ -124,11 +124,11 @@ namespace Takaro.WebSocket
 
         public static async Task BanPlayer(string requestId, TakaroBanPlayerArgs args)
         {
-            if (args == null || args.Player == null || string.IsNullOrEmpty(args.Player.GameId))
+            if (args == null || args.Player == null || !BanIdentity.IsEosGameId(args.Player.GameId))
             {
                 SendError(
                     requestId,
-                    "Invalid or missing gameId parameter",
+                    "Invalid or missing gameId parameter: expected an EOS id",
                     ProtocolErrorCodes.InvalidArgs
                 );
                 return;
@@ -142,19 +142,12 @@ namespace Takaro.WebSocket
                     $"EOS_{args.Player.GameId}"
                 );
                 PersistentPlayerList playerList = GameManager.Instance.GetPersistentPlayerList();
+                // Null for a player who never joined this server. Takaro pushes global bans
+                // to every server, so the ban is still stored under the EOS id and the game
+                // refuses the player on their first join.
                 PersistentPlayerData playerData = playerList.GetPlayerData(userId);
 
-                if (playerData == null)
-                {
-                    SendError(
-                        requestId,
-                        "Player not found in persistent data",
-                        ProtocolErrorCodes.NotFound
-                    );
-                    return;
-                }
-
-                string playerName = playerData.PlayerName.playerName.Text;
+                string playerName = playerData?.PlayerName.playerName.Text ?? "(not seen here)";
                 string banReason = string.IsNullOrEmpty(args.Reason)
                     ? "Banned by admin"
                     : args.Reason;
@@ -208,7 +201,7 @@ namespace Takaro.WebSocket
                     banSuccess = true;
                     banMethod = "AdminTools.Blacklist (timed)";
                 }
-                else if (Platform.BlockedPlayerList.Instance != null)
+                else if (playerData != null && Platform.BlockedPlayerList.Instance != null)
                 {
                     var listEntry = Platform.BlockedPlayerList.Instance.AddOrUpdatePlayer(
                         playerData.PlayerData,
@@ -232,7 +225,17 @@ namespace Takaro.WebSocket
                         banUntil,
                         banReason
                     );
-                    banSuccess = true;
+                    if (
+                        !GameManager.Instance.adminTools.Blacklist.IsBanned(
+                            userId,
+                            out DateTime _,
+                            out string _
+                        )
+                    )
+                    {
+                        SendError(requestId, "Game did not persist ban");
+                        return;
+                    }
                     banMethod = "AdminTools.Blacklist";
                 }
 
@@ -260,11 +263,11 @@ namespace Takaro.WebSocket
 
         public static async Task UnbanPlayer(string requestId, TakaroUnbanPlayerArgs args)
         {
-            if (args == null || string.IsNullOrEmpty(args.GameId))
+            if (args == null || !BanIdentity.IsEosGameId(args.GameId))
             {
                 SendError(
                     requestId,
-                    "Invalid or missing gameId parameter",
+                    "Invalid or missing gameId parameter: expected an EOS id",
                     ProtocolErrorCodes.InvalidArgs
                 );
                 return;

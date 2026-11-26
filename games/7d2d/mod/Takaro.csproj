@@ -108,6 +108,7 @@
     <Compile Include="src\Services\MainThreadDispatcher.cs" />
     <Compile Include="src\Services\BanExpiry.cs" />
 <Compile Include="src\Services\BanIdentity.cs" />
+    <Compile Include="src\Services\ItemQuality.cs" />
     <Compile Include="src\Services\ConsoleCommandOutcome.cs" />
     <Compile Include="src\Services\PlayerCharacter.cs" />
     <Compile Include="src\Services\PlayerProgression.cs" />

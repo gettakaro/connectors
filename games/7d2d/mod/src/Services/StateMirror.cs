@@ -318,6 +318,8 @@ namespace Takaro.Services
                         Name = record.Name,
                         Description = record.Description,
                         IconHash = icons.HashFor(record.IconName),
+                        HasQuality = record.HasQuality,
+                        MaxQuality = record.HasQuality ? record.MaxQuality : (int?)null,
                     }
                 );
             }
@@ -335,7 +337,9 @@ namespace Takaro.Services
             var bans = new List<TakaroBan>();
             foreach (BanRecord record in records)
             {
-                bans.Add(Shared.TransformBanRecordToTakaroBan(record));
+                // Takaro rejects the whole list over one entry without a name.
+                if (BanIdentity.IsRealName(record.Name))
+                    bans.Add(Shared.TransformBanRecordToTakaroBan(record));
             }
             return bans;
         }
@@ -825,6 +829,8 @@ namespace Takaro.Services
                         Name = name,
                         Description = Shared.ItemDescription(item.GetItemName()),
                         IconName = ServableIconName(item),
+                        HasQuality = Shared.UsesQuality(item),
+                        MaxQuality = Constants.cItemMaxQuality,
                     }
                 );
             }

@@ -70,7 +70,19 @@ class SourceRegressionTests(unittest.TestCase):
 
     def test_give_item_keeps_the_vanilla_give_default_quality(self):
         handler = self.source("src/WebSocket/GiveItemHandler.cs")
-        self.assertIn("ushort quality = Constants.cItemMaxQuality;", handler)
+        self.assertIn("Constants.cItemMaxQuality,", handler)
+        resolver = self.source("src/Services/ItemQuality.cs")
+        self.assertIn("quality = max;", resolver)
+
+    def test_item_catalogue_reports_quality_with_the_give_item_rule(self):
+        shared = self.source("src/Shared.cs")
+        self.assertIn('[JsonProperty("hasQuality"', shared)
+        self.assertIn('[JsonProperty("maxQuality"', shared)
+        mirror = self.source("src/Services/StateMirror.cs")
+        self.assertIn("HasQuality = Shared.UsesQuality(item),", mirror)
+        self.assertIn("MaxQuality = Constants.cItemMaxQuality,", mirror)
+        handler = self.source("src/WebSocket/GiveItemHandler.cs")
+        self.assertIn("Shared.UsesQuality(itemClass),", handler)
 
     def test_timed_bans_use_game_local_deadlines_and_persist_before_kick(self):
         actions = self.source("src/WebSocket/ActionHandlers.cs")
