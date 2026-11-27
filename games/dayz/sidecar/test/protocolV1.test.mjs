@@ -10,7 +10,7 @@ import { prepareSurvey, renderFrameTile, isFrameTile, FRAME_TILE_SIZE, FRAME_MAX
 import { PNG_SIGNATURE } from '../dist/map/png.js';
 import { MapService, MapTileError, parseFrameTileArgs, worldDisplayName } from '../dist/map/service.js';
 import { buildManifest, withCharacter, withDimension, eventWithDimension, ACTION_CAPABILITIES } from '../dist/ws/capabilities.js';
-import { TakaroWsClient, EVENT_BURST, EVENT_RATE_PER_SEC } from '../dist/ws/client.js';
+import { TakaroWsClient, EVENT_BURST, EVENT_RATE_PER_SEC, reconnectDelayMs } from '../dist/ws/client.js';
 import { bridgeHealthy, slimArgs } from '../dist/local/server.js';
 
 // Same synthetic 1024 m world as map.test.mjs: sea in the south quarter, a 20x10 m building at (512, 512).
@@ -278,6 +278,38 @@ test('a backlog drains at the paced rate, in order, under Takaro\'s event limits
   assert.ok(EVENT_RATE_PER_SEC * 5 < 100 && EVENT_BURST + EVENT_RATE_PER_SEC * 30 < 600);
   client.shutdown();
   takaro.wss.close();
+});
+
+test('reconnect backs off from 1 s, doubling, to at most 72 s with jitter', () => {
+  assert.equal(reconnectDelayMs(0, () => 0), 1000);
+  assert.equal(reconnectDelayMs(1, () => 0), 2000);
+  assert.equal(reconnectDelayMs(3, () => 0), 8000);
+  assert.equal(reconnectDelayMs(10, () => 0), 60000);
+  assert.equal(reconnectDelayMs(10, () => 1), 72000);
+});
+
+test('a silent link is closed by the heartbeat and the client reconnects', async () => {
+  // A fake Takaro that identifies the client, then stops answering pings on that socket.
+  const wss = new WebSocketServer({ port: 0, autoPong: false });
+  let connections = 0;
+  wss.on('connection', (sock) => {
+    connections++;
+    sock.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'identify') sock.send(JSON.stringify({ type: 'identifyResponse', payload: { gameServerId: 'gs-1', protocolVersion: 1 } }));
+    });
+  });
+  const client = new TakaroWsClient(
+    `ws://127.0.0.1:${wss.address().port}`,
+    { identityToken: 'i', registrationToken: 'r', name: 'n' },
+    { offerV1: true, manifest: () => [], heartbeatMs: 100 },
+  );
+  client.connect();
+  await waitFor(() => client.identified());
+  await waitFor(() => !client.connected(), 2000);
+  await waitFor(() => connections === 2 && client.identified(), 4000);
+  client.shutdown();
+  wss.close();
 });
 
 test('TAKARO_PROTOCOL=0 sends the old identify', async () => {

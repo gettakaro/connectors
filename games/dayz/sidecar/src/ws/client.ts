@@ -22,17 +22,29 @@ interface BufferedEvent {
 export const EVENT_RATE_PER_SEC = 14;
 export const EVENT_BURST = 20;
 
+/** Reconnect delay after the n-th failed attempt in a row: 1 s doubling to 60 s, plus up to 20 % jitter. */
+export function reconnectDelayMs(attempt: number, random: () => number = Math.random): number {
+  const base = Math.min(60_000, 1000 * 2 ** Math.max(0, attempt));
+  return Math.round(base * (1 + 0.2 * random()));
+}
+
+/** A WebSocket ping this often; a connection that answers none for two rounds is closed. */
+export const HEARTBEAT_MS = 30_000;
+
 export interface ProtocolOptions {
   /** Offer protocol version 1, with version 0 as the fallback Takaro may pick. */
   offerV1: boolean;
   /** The Capability Manifest; built again on every identify and capabilities refresh. */
   manifest: () => unknown[];
+  /** WebSocket ping interval (tests shorten it). */
+  heartbeatMs?: number;
 }
 
 export class TakaroWsClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private gameServerId: string | null = null;
-  private reconnectMs = 5000;
+  private reconnectAttempt = 0;
+  private heartbeat: NodeJS.Timeout | null = null;
   private shuttingDown = false;
   private connectedFlag = false;
   private protocolVersion = 0;
@@ -94,13 +106,35 @@ export class TakaroWsClient extends EventEmitter {
     logger.info(`WS connect ${this.url}`);
     this.ws = new WebSocket(this.url);
 
-    this.ws.on('open', () => {
+    const ws = this.ws;
+    let alive = true;
+    ws.on('pong', () => {
+      alive = true;
+    });
+    ws.on('open', () => {
       this.connectedFlag = true;
       logger.info('WS open; sending identify');
       this.send({ type: 'identify', payload: this.identifyMessage() });
+      // A link that dies silently (no FIN, no RST) never fires close on its own: ping, and close
+      // it when a whole round passes without a pong or any message.
+      this.heartbeat = setInterval(() => {
+        if (!alive) {
+          logger.warn('WS heartbeat: no answer from Takaro; closing the connection to reconnect');
+          ws.terminate();
+          return;
+        }
+        alive = false;
+        try {
+          ws.ping();
+        } catch {
+          /* closing already */
+        }
+      }, this.protocol.heartbeatMs ?? HEARTBEAT_MS);
+      this.heartbeat.unref?.();
     });
 
     this.ws.on('message', (data) => {
+      alive = true;
       const raw = data.toString();
       if (DEBUG) logger.debug(`WS RECV ${truncate(raw)}`);
       let msg: WsMessage;
@@ -124,9 +158,14 @@ export class TakaroWsClient extends EventEmitter {
       this.protocolVersion = 0;
       // Queued frames belong to the closed connection; version 1 resends from the buffer.
       this.outgoing.length = 0;
+      if (this.heartbeat) clearInterval(this.heartbeat);
+      this.heartbeat = null;
+      this.ws = null;
       this.emit('disconnected');
       if (!this.shuttingDown) {
-        setTimeout(() => this.connect(), this.reconnectMs);
+        const delay = reconnectDelayMs(this.reconnectAttempt++);
+        logger.info(`WS reconnect attempt ${this.reconnectAttempt} in ${(delay / 1000).toFixed(1)} s`);
+        setTimeout(() => this.connect(), delay);
       }
     });
   }
@@ -258,6 +297,7 @@ export class TakaroWsClient extends EventEmitter {
         }
         if (p?.gameServerId) {
           this.gameServerId = p.gameServerId;
+          this.reconnectAttempt = 0;
           this.protocolVersion = p.protocolVersion === 1 ? 1 : 0;
           logger.info(`Identified as gameServerId=${p.gameServerId} protocolVersion=${this.protocolVersion}`);
           if (this.protocolVersion === 1) {
