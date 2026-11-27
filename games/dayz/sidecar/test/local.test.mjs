@@ -30,7 +30,7 @@ async function withServer(icon, fn) {
   }
 }
 
-test('the mod\'s first request (not /health) signals contact once; its poll reports the game build', async () => {
+test('the mod\'s first poll (not register, not /health) signals that the game is up; it reports the game build', async () => {
   await withServer(null, async ({ local, url }) => {
     let contacts = 0;
     let version = null;
@@ -40,7 +40,9 @@ test('the mod\'s first request (not /health) signals contact once; its poll repo
     assert.equal(contacts, 0, '/health is not the mod');
     assert.equal(local.modHasContacted(), false);
     const reg = await fetch(`${url}/gameserver/register`, { method: 'POST', body: '{}' });
-    assert.equal(reg.status, 503, 'register waits until Takaro identified the server');
+    assert.equal(reg.status, 200, 'register is answered before Takaro identified the server');
+    assert.deepEqual(await reg.json(), { identityToken: 'i', gameServerId: 'local' });
+    assert.equal(contacts, 0, 'register is sent while the world still loads: not yet');
     await fetch(`${url}/gameserver/local/poll?gameVersion=1.30.164289.70`);
     assert.equal(contacts, 1);
     assert.equal(local.modHasContacted(), true);

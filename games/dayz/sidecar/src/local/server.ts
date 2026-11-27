@@ -275,7 +275,11 @@ export class LocalHttpServer {
     this.gameVersionListener = fn;
   }
 
-  /** Called once, on the mod's first request (register, events or poll). */
+  /**
+   * Called once, on the mod's first poll. The mod registers from MissionServer.OnInit while the
+   * world is still loading, and only polls once the mission runs, so the first poll is when the
+   * game can answer requests.
+   */
   onModContact(fn: () => void): void {
     this.modContactListener = fn;
   }
@@ -345,12 +349,10 @@ export class LocalHttpServer {
     const path = url.split('?')[0]!.replace(/\/+$/, '') || '/';
 
     if (DEBUG) logger.debug(`HTTP ${method} ${url}`);
-    if (path !== '/health') {
-      this.lastModContactAt = new Date().toISOString();
-      if (!this.modContacted) {
-        this.modContacted = true;
-        this.modContactListener?.();
-      }
+    if (path !== '/health') this.lastModContactAt = new Date().toISOString();
+    if (method === 'GET' && path.endsWith('/poll') && !this.modContacted) {
+      this.modContacted = true;
+      this.modContactListener?.();
     }
 
     try {
@@ -373,15 +375,13 @@ export class LocalHttpServer {
         });
       }
 
-      // Mod-facing register: returns the Takaro identity we already established
+      // Mod-facing register: the identity the sidecar holds. Answered at once, even before Takaro
+      // identified the server: the mod uses the id only in its request paths (which the sidecar
+      // does not read), and it must start polling for the sidecar to connect at all.
       if (method === 'POST' && path === '/gameserver/register') {
-        if (!this.cachedIdentity.gameServerId) {
-          // WS hasn't identified yet; tell mod to retry shortly.
-          return this.send(res, 503, { error: 'Bridge still identifying with Takaro' });
-        }
         return this.send(res, 200, {
           identityToken: this.cachedIdentity.identityToken,
-          gameServerId: this.cachedIdentity.gameServerId,
+          gameServerId: this.cachedIdentity.gameServerId || 'local',
         });
       }
 

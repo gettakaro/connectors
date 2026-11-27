@@ -60,13 +60,13 @@ async function main(): Promise<void> {
   }
 
   local.start();
-  // Connect to Takaro only once the game is up and the mod has called in. Takaro syncs a new
+  // Connect to Takaro only once the world is loaded and the mod polls. Takaro syncs a new
   // server's item and entity catalogue right after it first identifies (and then only hourly),
   // and a DayZ server takes minutes to load its world: identifying earlier made that first sync
   // find no mod to answer, and a server that is still loading would show as online.
-  logger.info('Waiting for the @TakaroIntegration mod to call in before connecting to Takaro');
+  logger.info('Waiting for the @TakaroIntegration mod to poll before connecting to Takaro');
   local.onModContact(() => {
-    logger.info('The mod called in; connecting to Takaro');
+    logger.info('The mod is polling; connecting to Takaro');
     ws.connect();
   });
 

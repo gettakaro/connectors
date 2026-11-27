@@ -68,7 +68,7 @@ event the mod answers, `players.characters` (each DayZ life, ended by death) and
 tiled Dimension once the survey exists. Version 1 events are numbered, kept until Takaro acknowledges
 them and resent after a reconnect; events produced before identify answers wait for it.
 
-The sidecar connects to Takaro only after the mod's first call. Takaro fills a new server's item
+The sidecar connects to Takaro only after the mod's first poll, which starts once the world has loaded. Takaro fills a new server's item
 and entity catalogue right after its first identify (then hourly), and a DayZ server needs minutes
 to load its world; connecting earlier made that first sync find no mod, and showed a loading server
 as online.
