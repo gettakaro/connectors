@@ -113,20 +113,18 @@ function shapeForAction(action: string | undefined, raw: unknown): unknown {
     if (v && typeof v === 'object' && Array.isArray((v as { bans?: unknown[] }).bans)) {
       v = (v as { bans: unknown[] }).bans;
     }
-    // M3 fix: Takaro rejected `{player:{gameId}}` ("gameserver responded with
-    // bad data"); its IGamePlayer needs name too. The mod only stores the Steam64,
-    // so fill steamId/name from it.
+    // Takaro needs a name on every banned player and writes it onto the player record, so a
+    // placeholder would rename the player. The mod sends the last real name it saw; a ban
+    // without one (a player never seen on this server) is left out.
     if (Array.isArray(v)) {
-      v = v.map((b) => {
+      v = v.flatMap((b) => {
         const ban = { ...(b as Record<string, unknown>) };
         const p = { ...((ban.player as Record<string, unknown>) ?? {}) };
         const gid = String(p.gameId ?? '');
-        if (gid) {
-          if (!p.steamId && /^7656\d{13}$/.test(gid)) p.steamId = gid;
-          if (!p.name) p.name = gid;
-        }
+        if (!gid || typeof p.name !== 'string' || p.name === '') return [];
+        if (!p.steamId && /^7656\d{13}$/.test(gid)) p.steamId = gid;
         ban.player = p;
-        return ban;
+        return [ban];
       });
     }
   } else if (action === 'listItems' || action === 'listEntities') {

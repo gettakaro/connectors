@@ -80,3 +80,19 @@ test('actions DayZ does not have are answered unsupported, not queued for the mo
     assert.deepEqual(poll.operations.filter((o) => !o.operationId.startsWith('sidecar-')).map((o) => o.action), ['getPlayers']);
   });
 });
+
+test('listBans: real names only; a ban without a known name is left out', async () => {
+  await withServer(null, async ({ ws, url }) => {
+    ws.emit('request', { requestId: 'b1', payload: { action: 'listBans', args: '{}' } });
+    const poll = await (await fetch(`${url}/gameserver/local/poll`)).json();
+    assert.ok(poll.operations.some((o) => o.operationId === 'b1'));
+    const result = [
+      { player: { gameId: '76561198000000001', name: 'Alice' }, reason: 'r', expiresAt: null },
+      { player: { gameId: '76561198000000002' }, reason: 'r', expiresAt: null },
+    ];
+    await fetch(`${url}/gameserver/local/operation/b1/result`, { method: 'POST', body: JSON.stringify({ ok: true, result }) });
+    assert.deepEqual(ws.responses.find((r) => r.id === 'b1').payload, [
+      { player: { gameId: '76561198000000001', name: 'Alice', steamId: '76561198000000001' }, reason: 'r', expiresAt: null },
+    ]);
+  });
+});

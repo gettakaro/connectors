@@ -1416,7 +1416,12 @@ class TakaroCommandDispatcher
         {
             if (TakaroBanStore.IsExpired(ex[i])) continue;
             if (emitted > 0) json += ",";
-            string entry = "{" + Quote("player") + ":{" + Quote("gameId") + ":" + Quote(ids[i]) + "}";
+            // The player's last real name from the name cache (written on every join), so the
+            // ban list never needs a placeholder name.
+            string banName = TakaroNameCache.Resolve(ids[i], "");
+            string entry = "{" + Quote("player") + ":{" + Quote("gameId") + ":" + Quote(ids[i]);
+            if (banName != "") entry += "," + Quote("name") + ":" + Quote(JsonSafeString(banName));
+            entry += "}";
             entry += "," + Quote("reason") + ":" + Quote(JsonSafeString(rs[i]));
             if (ex[i] == "" || ex[i] == "null") entry += "," + Quote("expiresAt") + ":null}";
             else entry += "," + Quote("expiresAt") + ":" + Quote(ex[i]) + "}";
