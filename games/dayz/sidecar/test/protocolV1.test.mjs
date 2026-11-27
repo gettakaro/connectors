@@ -122,7 +122,8 @@ test('manifest: every mod action and event, plus the map once surveyed', () => {
   const names = buildManifest(null).map((c) => c.name);
   assert.ok(names.includes('players.location') && names.includes('events.player-death'));
   assert.ok(!names.includes('map'));
-  assert.equal(names.length, ACTION_CAPABILITIES.length + 6 + 1);
+  assert.equal(names[0], 'game.profile');
+  assert.equal(names.length, 1 + ACTION_CAPABILITIES.length + 6 + 1);
   const dim = { id: 'chernarusplus' };
   const map = buildManifest(dim).find((c) => c.name === 'map');
   assert.deepEqual(map, { name: 'map', parameters: { dimensions: [dim] } });
@@ -236,7 +237,14 @@ test('TAKARO_PROTOCOL=0 sends the old identify', async () => {
   client.connect();
   await waitFor(() => client.identified());
   const identify = takaro.frames.find((f) => f.type === 'identify');
-  assert.deepEqual(identify.payload, { identityToken: 'i', registrationToken: 'r', name: 'n' });
+  // No protocolVersions and no manifest; the game and connector slugs go on version 0 too.
+  assert.deepEqual(identify.payload, {
+    identityToken: 'i',
+    registrationToken: 'r',
+    name: 'n',
+    game: 'dayz',
+    connector: { name: 'takaro-dayz', version: identify.payload.connector.version },
+  });
   client.shutdown();
   takaro.wss.close();
 });

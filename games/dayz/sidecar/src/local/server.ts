@@ -26,6 +26,11 @@ import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
 import { DISABLED_MAP_INFO, MapTileError, parseFrameTileArgs, parseTileArgs, type MapService } from '../map/service.js';
 import { eventWithDimension, withCharacter, withDimension } from '../ws/capabilities.js';
+import { Catalogue, humanizeCatalogue, type CatalogueEntry } from '../catalogue.js';
+import { normalizeGameVersion, type GameIcon } from '../gameProfile.js';
+
+/** Operations the sidecar sends the mod for itself; their answers never reach Takaro. */
+const INTERNAL_PREFIX = 'sidecar-catalogue-';
 
 interface PendingOperation {
   operationId: string; // = WS requestId
@@ -117,10 +122,11 @@ function shapeForAction(action: string | undefined, raw: unknown): unknown {
         return ban;
       });
     }
-  } else if (action === 'listItems') {
+  } else if (action === 'listItems' || action === 'listEntities') {
     if (v && typeof v === 'object' && Array.isArray((v as { items?: unknown[] }).items)) {
       v = (v as { items: unknown[] }).items;
     }
+    if (Array.isArray(v)) v = humanizeCatalogue(v as CatalogueEntry[]);
   }
 
   return v;
@@ -152,6 +158,11 @@ export class LocalHttpServer {
   // F9: RPT-tailed `log` events are emitted straight to the WS (they never pass
   // through this HTTP server), so the tail reports its count in here.
   private logsForwarded: () => number = () => 0;
+  /** Class name to human name, for kill and death events. */
+  readonly catalogue = new Catalogue();
+  private gameVersion: string | null = null;
+  private gameVersionListener: (v: string) => void = () => {};
+  private catalogueRequested = false;
 
   constructor(
     private port: number,
@@ -160,6 +171,7 @@ export class LocalHttpServer {
     private identityToken: string,
     private bindAddress: string = '127.0.0.1',
     private map: MapService | null = null,
+    private gameIcon: GameIcon | null = null,
   ) {
     this.cachedIdentity.identityToken = identityToken;
 
@@ -180,6 +192,11 @@ export class LocalHttpServer {
       if (!payload?.action) {
         logger.warn(`Got Takaro request with no action: ${JSON.stringify(msg)}`);
         this.ws.sendError(requestId, 'No action');
+        return;
+      }
+      if (payload.action === 'getGameIcon') {
+        if (this.gameIcon) this.ws.sendResponse(requestId, { revision: this.gameIcon.revision, data: this.gameIcon.data });
+        else this.ws.sendError(requestId, 'This connector ships no game icon', 'not_found');
         return;
       }
       // Map requests are answered here from the world survey; the mod never sees them.
@@ -221,6 +238,29 @@ export class LocalHttpServer {
     } catch (err) {
       logger.debug(`${action} failed: ${(err as Error).message}`);
       this.ws.sendError(requestId, (err as Error).message, err instanceof MapTileError ? err.code : 'game_error');
+    }
+  }
+
+  /** The server build the mod last reported, or null before its first poll. */
+  getGameVersion(): string | null {
+    return this.gameVersion;
+  }
+
+  onGameVersion(fn: (v: string) => void): void {
+    this.gameVersionListener = fn;
+  }
+
+  /**
+   * Asks the mod for both catalogues once, so kill and death events carry human names even
+   * before Takaro's own catalogue sync. The mod caches them, so Takaro's later requests are free.
+   */
+  private requestCatalogue(): void {
+    if (this.catalogueRequested) return;
+    this.catalogueRequested = true;
+    for (const action of ['listEntities', 'listItems']) {
+      const id = INTERNAL_PREFIX + action;
+      this.operationQueue.push({ operationId: id, action, argsJson: '{}' });
+      this.operationActions.set(id, action);
     }
   }
 
@@ -334,7 +374,8 @@ export class LocalHttpServer {
           for (const ev of events) {
             // strip the type field from the data payload — Takaro takes type separately
             const { type, ...fields } = ev;
-            const rest = dimension ? eventWithDimension(fields, dimension) : fields;
+            const named = this.catalogue.translateEvent(type, fields);
+            const rest = dimension ? eventWithDimension(named, dimension) : named;
             // F2: the mod stamps in-game world time at minute resolution, which
             // Takaro shows as wildly wrong event times. Ingest time in the bridge
             // is within milliseconds of the real event, so it wins.
@@ -355,6 +396,13 @@ export class LocalHttpServer {
 
         if (method === 'GET' && parsed.rest === 'poll') {
           this.lastPollAt = new Date().toISOString();
+          const reported = normalizeGameVersion(new URLSearchParams(url.split('?')[1] ?? '').get('gameVersion') ?? undefined);
+          if (reported && reported !== this.gameVersion) {
+            this.gameVersion = reported;
+            logger.info(`DayZ server build ${reported}`);
+            this.gameVersionListener(reported);
+          }
+          this.requestCatalogue();
           const ops = this.operationQueue.splice(0, this.operationQueue.length);
           return this.send(res, 200, { operations: ops });
         }
@@ -367,8 +415,21 @@ export class LocalHttpServer {
           const obj = body ? parseModJson(body) : {};
           const action = this.operationActions.get(opId);
           this.operationActions.delete(opId);
+          if (opId.startsWith(INTERNAL_PREFIX)) {
+            const shaped = obj.ok ? shapeForAction(action, obj.result ?? {}) : null;
+            if (Array.isArray(shaped)) {
+              if (action === 'listItems') this.catalogue.setItems(shaped as CatalogueEntry[]);
+              else this.catalogue.setEntities(shaped as CatalogueEntry[]);
+              logger.info(`Catalogue: ${shaped.length} ${action === 'listItems' ? 'items' : 'entities'} for event names`);
+            } else {
+              logger.warn(`Catalogue ${action} failed: ${obj.error ?? 'no list'}`);
+            }
+            return this.send(res, 200, { ok: true });
+          }
           if (obj.ok) {
             const shaped = shapeForAction(action, obj.result ?? {});
+            if (Array.isArray(shaped) && action === 'listItems') this.catalogue.setItems(shaped as CatalogueEntry[]);
+            if (Array.isArray(shaped) && action === 'listEntities') this.catalogue.setEntities(shaped as CatalogueEntry[]);
             const dimension = this.positionDimension();
             this.ws.sendResponse(opId, dimension ? withDimension(action, shaped, dimension) : shaped);
           } else {

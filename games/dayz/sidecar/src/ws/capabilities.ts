@@ -2,6 +2,7 @@
 // Dimension once the world survey has finished.
 
 import type { MapDimension } from '../map/service.js';
+import { gameProfileCapability, type GameIcon } from '../gameProfile.js';
 
 export interface Capability {
   name: string;
@@ -43,8 +44,9 @@ export const CHARACTERS_CAPABILITY: Capability = {
   parameters: { held: 'server', ends: ['death'] },
 };
 
-export function buildManifest(dimension: MapDimension | null): Capability[] {
-  const manifest: Capability[] = [...ACTION_CAPABILITIES, ...EVENT_CAPABILITIES].map((name) => ({ name }));
+export function buildManifest(dimension: MapDimension | null, gameVersion: string | null = null, icon: GameIcon | null = null): Capability[] {
+  const manifest: Capability[] = [gameProfileCapability(gameVersion, icon)];
+  manifest.push(...[...ACTION_CAPABILITIES, ...EVENT_CAPABILITIES].map((name) => ({ name })));
   manifest.push(CHARACTERS_CAPABILITY);
   if (dimension) manifest.push({ name: 'map', parameters: { dimensions: [dimension] } });
   return manifest;

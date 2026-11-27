@@ -14,6 +14,7 @@ export type GameServerAction =
   | 'getPlayerInventory'
   | 'getMapInfo'
   | 'getMapTile'
+  | 'getGameIcon'
   | 'giveItem'
   | 'sendMessage'
   | 'teleportPlayer'
@@ -51,6 +52,9 @@ export interface IdentifyPayload {
   protocolVersions?: number[];
   /** Protocol v1 Capability Manifest. */
   capabilities?: unknown[];
+  /** The game and connector slugs Takaro groups servers and releases by. */
+  game?: string;
+  connector?: { name: string; version: string };
 }
 
 /** Protocol v1 response error codes. */

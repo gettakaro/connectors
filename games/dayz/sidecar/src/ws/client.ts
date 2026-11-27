@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import EventEmitter from 'node:events';
 import WebSocket from 'ws';
 import { DEBUG, logger, truncate } from '../logger.js';
+import { CONNECTOR_IDENTITY } from '../gameProfile.js';
 import type { GameEventType, IdentifyPayload, ProtocolErrorCode, WsMessage } from './protocol.js';
 
 /** Protocol v1 event buffer: at least the 1,000 events the protocol recommends. */
@@ -53,10 +54,12 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   private identifyMessage(): IdentifyPayload {
-    if (!this.protocol.offerV1) return this.identify;
+    // game and connector are accepted on version 0 too; the game profile needs version 1.
+    const identify: IdentifyPayload = { ...this.identify, ...CONNECTOR_IDENTITY };
+    if (!this.protocol.offerV1) return identify;
     const capabilities = this.protocol.manifest();
     this.lastManifest = JSON.stringify(capabilities);
-    return { ...this.identify, protocolVersions: [0, 1], capabilities };
+    return { ...identify, protocolVersions: [0, 1], capabilities };
   }
 
   /**

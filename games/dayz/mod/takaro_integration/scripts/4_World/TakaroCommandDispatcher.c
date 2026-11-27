@@ -167,6 +167,11 @@ class TakaroLocationsData
 class TakaroCommandDispatcher
 {
     TakaroHttpClient m_Http;
+    // The item and entity catalogues come from the game config, which never changes while the
+    // server runs: walk it once (tens of thousands of classes, on the game thread) and answer
+    // every later request from the cached JSON.
+    string m_ItemsJson;
+    string m_EntitiesJson;
 
     void TakaroCommandDispatcher(TakaroHttpClient http)
     {
@@ -1158,6 +1163,11 @@ class TakaroCommandDispatcher
     // Cap at MAX_LIST_ITEMS so we don't ship a 30k-entry payload over WS.
     void HandleListItems(TakaroOperation op)
     {
+        if (m_ItemsJson != "")
+        {
+            ReplyOk(op, m_ItemsJson);
+            return;
+        }
         // Modded DayZ servers (Expansion + BBP + DDA + PvZmoD + …) push
         // CfgVehicles past 30k entries. The previous 5000 cap silently
         // truncated the alphabet before reaching mid-letters like 'H' —
@@ -1181,8 +1191,10 @@ class TakaroCommandDispatcher
             // Inventory_Base so the IsKindOf filter alone doesn't catch them.
             if (cls.IndexOf("bldr_prop_") == 0) continue;
             string baseV = ROOT_V + " " + cls + " ";
+            // scope 2 = public: what can exist in the world. Scope 0/1 are base classes, body
+            // parts and placement holograms, which no player can own.
             int scopeV = GetGame().ConfigGetInt(baseV + "scope");
-            if (scopeV < 1) continue;
+            if (scopeV != 2) continue;
             // Player-pickupable items inherit from Inventory_Base. Skip
             // everything else: vehicles (Car/Truck), buildings/houses, AI
             // (ZombieBase/AnimalBase).
@@ -1215,7 +1227,7 @@ class TakaroCommandDispatcher
             if (mcls.IndexOf("bldr_prop_") == 0) continue;
             string baseM = ROOT_M + " " + mcls + " ";
             int scopeM = GetGame().ConfigGetInt(baseM + "scope");
-            if (scopeM < 1) continue;
+            if (scopeM != 2) continue;
             string displayM = "";
             GetGame().ConfigGetText(baseM + "displayName", displayM);
             if (displayM == "") displayM = mcls;
@@ -1232,6 +1244,7 @@ class TakaroCommandDispatcher
 
         json += "]";
         TakaroLog.Info("listItems: " + emitted.ToString() + " items returned");
+        m_ItemsJson = json;
         ReplyOk(op, json);
     }
 
@@ -1239,6 +1252,11 @@ class TakaroCommandDispatcher
     // whose base class chain includes 'DZ_LightAI_Base', 'DayZAnimal', etc.
     void HandleListEntities(TakaroOperation op)
     {
+        if (m_EntitiesJson != "")
+        {
+            ReplyOk(op, m_EntitiesJson);
+            return;
+        }
         const int MAX = 2000;
         const string ROOT = "CfgVehicles";
         int count = GetGame().ConfigGetChildrenCount(ROOT);
@@ -1251,7 +1269,10 @@ class TakaroCommandDispatcher
             GetGame().ConfigGetChildName(ROOT, i, cls);
             if (cls == "") continue;
             // Filter to entity types: animals, infected (zombies), AI.
-            if (!GetGame().IsKindOf(cls, "DayZAnimal") && !GetGame().IsKindOf(cls, "DayZInfected") && !GetGame().IsKindOf(cls, "DayZCreature")) continue;
+            // Animals derive from AnimalBase, the infected from ZombieBase (DayZInfected); only
+            // public (scope 2) classes spawn, the rest are base classes.
+            if (!GetGame().IsKindOf(cls, "AnimalBase") && !GetGame().IsKindOf(cls, "DayZAnimal") && !GetGame().IsKindOf(cls, "DayZInfected") && !GetGame().IsKindOf(cls, "DayZCreature")) continue;
+            if (GetGame().ConfigGetInt(ROOT + " " + cls + " scope") != 2) continue;
             string display = "";
             GetGame().ConfigGetText(ROOT + " " + cls + " displayName", display);
             // M1: unresolved stringtable keys ("$STR_DN_MAN" arrives as
@@ -1270,6 +1291,7 @@ class TakaroCommandDispatcher
         }
         json += "]";
         TakaroLog.Info("listEntities: " + emitted.ToString() + " entities returned");
+        m_EntitiesJson = json;
         ReplyOk(op, json);
     }
 

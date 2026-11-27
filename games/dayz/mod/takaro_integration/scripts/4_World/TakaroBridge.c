@@ -44,6 +44,7 @@ class TakaroBridge
     void Initialize()
     {
         TakaroLog.Info("Bridge v" + VERSION + " starting");
+        GetGame().GetVersion(m_GameVersion);
         TakaroConfig.Load();
         TakaroConfigData cfg = TakaroConfig.Get();
 
@@ -323,6 +324,9 @@ class TakaroBridge
     }
 
     private ref TakaroPollCallback m_PollCallback;
+    // The server build ("1.30.164289"), sent on every poll so the sidecar can name it in
+    // Takaro's game profile.
+    private string m_GameVersion;
 
     void PollOperations()
     {
@@ -335,6 +339,7 @@ class TakaroBridge
         m_PollCallback.m_Bridge = this;
 
         string path = "/gameserver/" + cfg.GameServerId + "/poll";
+        if (m_GameVersion != "") path += "?gameVersion=" + m_GameVersion;
         m_Http.Get(path, m_PollCallback);
     }
 

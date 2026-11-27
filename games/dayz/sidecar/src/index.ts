@@ -6,6 +6,7 @@ import { rptTailFromEnv } from './local/rptTail.js';
 import { mapServiceFromEnv } from './map/service.js';
 import { buildManifest } from './ws/capabilities.js';
 import { PollWatchdog } from './watchdog.js';
+import { loadGameIcon } from './gameProfile.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env.BRIDGE_CONFIG || 'TakaroConfig.txt');
@@ -17,6 +18,10 @@ async function main(): Promise<void> {
 
   // Map tiles come from the mod's world survey under the profiles directory.
   const map = mapServiceFromEnv();
+  const icon = loadGameIcon();
+  if (!icon) logger.warn('No game icon found (assets/icon-256.png); the game profile goes without one');
+  // The mod reports the server build on its first poll, after identify.
+  let localRef: LocalHttpServer | null = null;
 
   // Protocol v1 (map Dimensions, acknowledged events) is offered by default; Takaro picks the
   // version. TAKARO_PROTOCOL=0 sends the old identify.
@@ -29,22 +34,18 @@ async function main(): Promise<void> {
       registrationToken: config.registrationToken,
       name: config.serverName,
     },
-    { offerV1, manifest: () => buildManifest(map?.dimension() ?? null) },
+    { offerV1, manifest: () => buildManifest(map?.dimension() ?? null, localRef?.getGameVersion() ?? null, icon) },
   );
-  if (offerV1 && map) {
-    // The survey can finish (or be redone) after identify: declare the new map then.
+  if (offerV1) {
+    // The survey can finish (or be redone) after identify, and the server build arrives with
+    // the mod's first poll: declare the new manifest then.
     const refresh = setInterval(() => ws.refreshCapabilities(), 30_000);
     refresh.unref?.();
   }
   logger.info(map ? 'Map tiles: serving getMapInfo/getMapTile from the world survey' : 'Map tiles: off (no DAYZ_LOG_DIR/DAYZ_MAP_DIR)');
-  const local = new LocalHttpServer(
-    config.localPort,
-    ws,
-    config.serverName,
-    config.identityToken,
-    config.bindAddress,
-    map,
-  );
+  const local = new LocalHttpServer(config.localPort, ws, config.serverName, config.identityToken, config.bindAddress, map, icon);
+  localRef = local;
+  local.onGameVersion(() => ws.refreshCapabilities());
 
   // F9: forward DayZ .RPT / script log lines to Takaro as `log` events when the
   // profiles directory is mounted (DAYZ_LOG_DIR). No-op when it is not set.
