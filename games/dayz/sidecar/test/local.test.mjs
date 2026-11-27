@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { LocalHttpServer, eventTimestamp } from '../dist/local/server.js';
+import { LocalHttpServer, eventTimestamp, reachability } from '../dist/local/server.js';
 
 class FakeWs extends EventEmitter {
   responses = [];
@@ -94,5 +94,18 @@ test('listBans: real names only; a ban without a known name is left out', async 
     assert.deepEqual(ws.responses.find((r) => r.id === 'b1').payload, [
       { player: { gameId: '76561198000000001', name: 'Alice', steamId: '76561198000000001' }, reason: 'r', expiresAt: null },
     ]);
+  });
+});
+
+test('reachability follows the mod\'s calls, answered by the sidecar', async () => {
+  assert.deepEqual(reachability(1000, 5000), { connectable: true, reason: null });
+  assert.equal(reachability(1000, 30000).connectable, false);
+  assert.equal(reachability(null, 5000).connectable, false);
+  await withServer(null, async ({ ws, url }) => {
+    ws.emit('request', { requestId: 'r0', payload: { action: 'testReachability', args: '{}' } });
+    assert.equal(ws.responses.find((r) => r.id === 'r0').payload.connectable, false, 'no mod yet');
+    await fetch(`${url}/gameserver/register`, { method: 'POST', body: '{}' });
+    ws.emit('request', { requestId: 'r1', payload: { action: 'testReachability', args: '{}' } });
+    assert.deepEqual(ws.responses.find((r) => r.id === 'r1').payload, { connectable: true, reason: null });
   });
 });

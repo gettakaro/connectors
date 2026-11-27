@@ -152,6 +152,11 @@ export class LocalHttpServer {
   private lastModContactAt: string | null = null;
   private lastPollAt: string | null = null;
 
+  /** Epoch ms of the mod's last call of any kind, or null before the first one. */
+  lastModContactMs(): number | null {
+    return this.lastModContactAt ? Date.parse(this.lastModContactAt) : null;
+  }
+
   /** Epoch ms of the mod's last /poll, or null before the first one. */
   lastPollAtMs(): number | null {
     return this.lastPollAt ? Date.parse(this.lastPollAt) : null;
@@ -199,6 +204,13 @@ export class LocalHttpServer {
       if (!payload?.action) {
         logger.warn(`Got Takaro request with no action: ${JSON.stringify(msg)}`);
         this.ws.sendError(requestId, 'No action');
+        return;
+      }
+      // Reachability is answered here from the mod's last call (it polls every second, and asks
+      // for its identity every few seconds before that), so Takaro's jobs that test reachability
+      // right after identify (catalogue, icon) are not refused while the mod is still registering.
+      if (payload.action === 'testReachability') {
+        this.ws.sendResponse(requestId, reachability(this.lastModContactMs(), Date.now()));
         return;
       }
       if (payload.action === 'getGameIcon') {
@@ -505,6 +517,12 @@ export function eventTimestamp(modTimestamp: unknown, nowMs: number): string {
     if (Number.isFinite(t) && t <= nowMs + MAX_CLOCK_SKEW_MS && t >= nowMs - MAX_EVENT_AGE_MS) return new Date(t).toISOString();
   }
   return new Date(nowMs).toISOString();
+}
+
+/** testReachability: the game is reachable while the mod keeps calling in. */
+export function reachability(lastModContactMs: number | null, nowMs: number): { connectable: boolean; reason: string | null } {
+  if (lastModContactMs !== null && nowMs - lastModContactMs < MOD_POLL_STALE_MS) return { connectable: true, reason: null };
+  return { connectable: false, reason: 'The DayZ server is not running, or the @TakaroIntegration mod is not loaded or cannot reach the sidecar' };
 }
 
 /** The mod polls about once a second, so this much silence means the game is gone. */
