@@ -28,6 +28,16 @@ test('variants that share a name get the part of the class name that differs', (
   assert.equal(out[0].amount, 1, 'other fields are kept');
 });
 
+test('the base class keeps the plain name next to its variants', () => {
+  const out = humanizeCatalogue([
+    { name: 'Canned Pork', code: 'PorkCan' },
+    { name: 'Canned Pork', code: 'PorkCan_Opened' },
+    { name: 'Firefighter Axe', code: 'FirefighterAxe' },
+    { name: 'Firefighter Axe', code: 'FirefighterAxe_Black' },
+  ]);
+  assert.deepEqual(out.map((e) => e.name), ['Canned Pork', 'Canned Pork (Opened)', 'Firefighter Axe', 'Firefighter Axe (Black)']);
+});
+
 test('every infected gets its own name', () => {
   const codes = ['ZmbM_VillagerOld_Blue', 'ZmbF_HikerSkinny_Red', 'ZmbM_NBC_Yellow', 'ZmbM_VillagerOld_Green'];
   const out = humanizeCatalogue(codes.map((code) => ({ name: 'Infected', code, type: 'hostile' })));

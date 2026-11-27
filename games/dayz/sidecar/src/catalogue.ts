@@ -65,9 +65,11 @@ export function humanizeCatalogue<T extends CatalogueEntry>(entries: T[]): T[] {
       tokenSets[0]!.map((t) => t.toLowerCase()).filter((t) => tokenSets.every((ts) => ts.some((x) => x.toLowerCase() === t))),
     );
     const base = cleaned[indexes[0]!]!.name;
-    const named = indexes.map((i, k) => {
+    // The base class (all of its class-name parts shared, e.g. PorkCan next to PorkCan_Opened)
+    // keeps the plain name; every variant gets the parts that tell it apart.
+    const named = indexes.map((_, k) => {
       const label = tokenSets[k]!.filter((t) => !common.has(t.toLowerCase())).map(humanToken).join(' ');
-      return label ? `${base} (${label})` : `${base} (${cleaned[i]!.code})`;
+      return label ? `${base} (${label})` : base;
     });
     // Two classes can still end up alike (same tokens in another order): name those by class.
     const seen = new Map<string, number>();

@@ -1536,7 +1536,10 @@ class TakaroCommandDispatcher
                 NotificationSystem.SendNotificationToPlayerExtended(pb, 8.0, title, msg, "");
             }
         }
-        TakaroLog.Info("BROADCAST (popup): " + msg);
+        if (onlyTo && onlyTo.GetIdentity())
+            TakaroLog.Info("MESSAGE (popup) to " + onlyTo.GetIdentity().GetName() + ": " + msg);
+        else
+            TakaroLog.Info("BROADCAST (popup): " + msg);
     }
 
     // Loud center-screen banner shown to every connected player. Uses
