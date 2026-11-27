@@ -60,6 +60,7 @@ test('kill and death events carry catalogue names', () => {
   assert.equal(kill.weapon, 'Mosin 91/30');
   assert.deepEqual(kill.player, { gameId: '1' });
   assert.equal(c.translateEvent('player-death', { msg: 'killed with Mosin9130' }).msg, 'killed with Mosin 91/30');
+  assert.equal(c.translateEvent('player-death', { msg: 'killed with FallDamageHealth' }).msg, 'died from a fall');
   assert.equal(c.translateEvent('entity-killed', { entity: 'Animal_CervusElaphus', weapon: '' }).entity, 'Animal Cervus Elaphus');
   assert.equal(c.translateEvent('chat-message', { msg: 'killed with Mosin9130' }).msg, 'killed with Mosin9130');
 });

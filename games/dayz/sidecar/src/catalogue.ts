@@ -80,6 +80,14 @@ export function humanizeCatalogue<T extends CatalogueEntry>(entries: T[]): T[] {
   return cleaned as T[];
 }
 
+/** Damage sources that are not items: the engine reports them by their ammo-type name. */
+const DEATH_CAUSES: Record<string, string> = {
+  falldamagehealth: 'a fall',
+  falldamage: 'a fall',
+  fireplacefire: 'fire',
+  bleeding: 'bleeding',
+};
+
 /** The class-name to human-name lookup the events use, fed by every catalogue the mod answers. */
 export class Catalogue {
   private items = new Map<string, string>();
@@ -123,7 +131,10 @@ export class Catalogue {
     }
     if (type === 'player-death' && typeof event.msg === 'string') {
       const m = /^killed with (.+)$/.exec(event.msg);
-      if (m) return { ...event, msg: `killed with ${this.itemName(m[1]!)}` };
+      if (m) {
+        const cause = DEATH_CAUSES[m[1]!.toLowerCase()];
+        return { ...event, msg: cause ? `died from ${cause}` : `killed with ${this.itemName(m[1]!)}` };
+      }
     }
     return event;
   }
