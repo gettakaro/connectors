@@ -21,7 +21,7 @@ class TakaroBridge
     float m_AccumPoll;
     float m_AccumRegister;
     // While the sidecar is not up or has not identified with Takaro yet, ask it again this often.
-    static const float REGISTER_RETRY_SEC = 10;
+    static const float REGISTER_RETRY_SEC = 5;
     int m_FlushIntervalSec;
     int m_PollIntervalSec;
 

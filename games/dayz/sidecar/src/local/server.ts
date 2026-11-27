@@ -163,6 +163,8 @@ export class LocalHttpServer {
   private gameVersion: string | null = null;
   private gameVersionListener: (v: string) => void = () => {};
   private catalogueRequested = false;
+  private modContactListener: (() => void) | null = null;
+  private modContacted = false;
 
   constructor(
     private port: number,
@@ -250,6 +252,16 @@ export class LocalHttpServer {
     this.gameVersionListener = fn;
   }
 
+  /** Called once, on the mod's first request (register, events or poll). */
+  onModContact(fn: () => void): void {
+    this.modContactListener = fn;
+  }
+
+  /** True once the mod has called in since this sidecar started. */
+  modHasContacted(): boolean {
+    return this.modContacted;
+  }
+
   /**
    * Asks the mod for both catalogues once, so kill and death events carry human names even
    * before Takaro's own catalogue sync. The mod caches them, so Takaro's later requests are free.
@@ -310,7 +322,13 @@ export class LocalHttpServer {
     const path = url.split('?')[0]!.replace(/\/+$/, '') || '/';
 
     if (DEBUG) logger.debug(`HTTP ${method} ${url}`);
-    if (path !== '/health') this.lastModContactAt = new Date().toISOString();
+    if (path !== '/health') {
+      this.lastModContactAt = new Date().toISOString();
+      if (!this.modContacted) {
+        this.modContacted = true;
+        this.modContactListener?.();
+      }
+    }
 
     try {
       // Health
