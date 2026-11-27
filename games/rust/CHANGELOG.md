@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/gettakaro/connectors/compare/rust-v0.6.2...rust-v0.6.3) (2026-11-27)
+
+
+### Continuous Integration
+
+* **rust:** stop failing unrelated pull requests when Steam moves the Rust build ([#843](https://github.com/gettakaro/connectors/issues/843)) ([fab611b](https://github.com/gettakaro/connectors/commit/fab611bb5993ddf7bdc469aac3ca24cdde4bb290))
+
 ## [0.6.2](https://github.com/gettakaro/connectors/compare/rust-v0.6.1...rust-v0.6.2) (2026-11-26)
 
 
