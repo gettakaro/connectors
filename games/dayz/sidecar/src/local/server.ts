@@ -29,6 +29,13 @@ import { eventWithDimension, withCharacter, withDimension } from '../ws/capabili
 import { Catalogue, humanizeCatalogue, type CatalogueEntry } from '../catalogue.js';
 import { normalizeGameVersion, type GameIcon } from '../gameProfile.js';
 
+/** Actions the mod answers (TakaroCommandDispatcher.Dispatch). Anything else is not queued. */
+export const MOD_ACTIONS = new Set([
+  'testReachability', 'getPlayer', 'getPlayers', 'listPlayers', 'getPlayerLocation', 'getPlayerInventory',
+  'listItems', 'listEntities', 'listLocations', 'listBans', 'giveItem', 'sendMessage', 'teleportPlayer',
+  'kickPlayer', 'banPlayer', 'unbanPlayer', 'executeConsoleCommand', 'executeCommand', 'shutdown',
+]);
+
 /** Operations the sidecar sends the mod for itself; their answers never reach Takaro. */
 const INTERNAL_PREFIX = 'sidecar-catalogue-';
 
@@ -199,6 +206,12 @@ export class LocalHttpServer {
       if (payload.action === 'getGameIcon') {
         if (this.gameIcon) this.ws.sendResponse(requestId, { revision: this.gameIcon.revision, data: this.gameIcon.data });
         else this.ws.sendError(requestId, 'This connector ships no game icon', 'not_found');
+        return;
+      }
+      // An action DayZ does not have (getPlayerProgression: no levels) or does not know is
+      // answered here with the protocol's `unsupported`, not handed to the mod as a game error.
+      if (!MOD_ACTIONS.has(payload.action) && payload.action !== 'getMapInfo' && payload.action !== 'getMapTile') {
+        this.ws.sendError(requestId, `DayZ connector does not support ${payload.action}`, 'unsupported');
         return;
       }
       // Map requests are answered here from the world survey; the mod never sees them.
@@ -517,6 +530,8 @@ export function slimArgs(argsJson: string): string {
     const obj = JSON.parse(argsJson);
     if (obj && typeof obj === 'object' && obj.player && typeof obj.player === 'object') {
       obj.player = { gameId: obj.player.gameId };
+      // Some mod handlers read a flat gameId only (getPlayerLocation); give them both shapes.
+      if (obj.gameId === undefined && typeof obj.player.gameId === 'string') obj.gameId = obj.player.gameId;
       return JSON.stringify(obj);
     }
     // unbanPlayer: Takaro sends the PlayerOnGameserver row flat (no `player` key).

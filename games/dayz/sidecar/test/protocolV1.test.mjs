@@ -337,7 +337,7 @@ test('TAKARO_PROTOCOL=0 sends the old identify', async () => {
 
 test('flat and nested player ids reach the mod as the same gameId', () => {
   const nested = JSON.parse(slimArgs(JSON.stringify({ player: { gameId: '7656', roles: ['x'] }, reason: 'r' })));
-  assert.deepEqual(nested, { player: { gameId: '7656' }, reason: 'r' });
+  assert.deepEqual(nested, { player: { gameId: '7656' }, reason: 'r', gameId: '7656' });
   const flat = JSON.parse(slimArgs(JSON.stringify({ gameId: '7656', playerId: 'p', gameServerId: 'g', roles: [] })));
   assert.deepEqual(flat, { gameId: '7656' });
 });

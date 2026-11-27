@@ -69,3 +69,14 @@ test('events keep the mod\'s UTC time unless it is missing or implausible', () =
   assert.equal(eventTimestamp('2026-11-27T18:40:00Z', now), '2026-11-27T17:32:11.000Z', 'future');
   assert.equal(eventTimestamp('2026-11-20T17:30:21Z', now), '2026-11-27T17:32:11.000Z', 'a week old');
 });
+
+test('actions DayZ does not have are answered unsupported, not queued for the mod', async () => {
+  await withServer(null, async ({ ws, url }) => {
+    ws.emit('request', { requestId: 'p1', payload: { action: 'getPlayerProgression', args: '{}' } });
+    ws.emit('request', { requestId: 'u1', payload: { action: 'fooBarBaz', args: '{}' } });
+    ws.emit('request', { requestId: 'g1', payload: { action: 'getPlayers', args: '{}' } });
+    assert.deepEqual(ws.errors.map((e) => [e.id, e.code]), [['p1', 'unsupported'], ['u1', 'unsupported']]);
+    const poll = await (await fetch(`${url}/gameserver/local/poll`)).json();
+    assert.deepEqual(poll.operations.filter((o) => !o.operationId.startsWith('sidecar-')).map((o) => o.action), ['getPlayers']);
+  });
+});
