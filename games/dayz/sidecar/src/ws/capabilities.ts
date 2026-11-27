@@ -59,6 +59,8 @@ export function buildManifest(dimension: MapDimension | null, gameVersion: strin
 export function withCharacter(player: unknown): unknown {
   if (!player || typeof player !== 'object') return player;
   const { characterId, characterName, ...rest } = player as Record<string, unknown>;
+  // DayZ's script API gives no player IP; the mod's serializer still writes the empty field.
+  if (rest.ip === '') delete rest.ip;
   if (typeof characterId !== 'string' || characterId === '') return rest;
   const name = typeof characterName === 'string' && characterName !== '' ? characterName : String(rest.name ?? characterId);
   return { ...rest, character: { id: characterId, name } };

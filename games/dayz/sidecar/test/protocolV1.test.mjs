@@ -46,6 +46,11 @@ test('flat mod character fields become one character object', () => {
   assert.deepEqual(withCharacter(player), { gameId: '1', name: 'Limon', character: { id: '1_2_3_4', name: 'Linda' } });
 });
 
+test('an empty ip is left out of a player row', () => {
+  assert.deepEqual(withCharacter({ gameId: '1', name: 'n', ip: '' }), { gameId: '1', name: 'n' });
+  assert.deepEqual(withCharacter({ gameId: '1', name: 'n', ip: '10.0.0.1' }), { gameId: '1', name: 'n', ip: '10.0.0.1' });
+});
+
 test('a player with no character id gets no character member', () => {
   const offline = { gameId: '1', name: 'Limon', characterId: '', characterName: '' };
   assert.deepEqual(withCharacter(offline), { gameId: '1', name: 'Limon' });
