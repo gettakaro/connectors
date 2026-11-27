@@ -14,6 +14,14 @@ interface BufferedEvent {
   data: unknown;
 }
 
+/**
+ * Takaro drops a server's events past 100 per 5 s (sustained) or 600 per 30 s (burst) and reports
+ * them as event-rate-limited. Every event frame leaves through one token bucket that stays under
+ * that: a boot backlog or an outage resend drains at this pace instead of in one burst.
+ */
+export const EVENT_RATE_PER_SEC = 14;
+export const EVENT_BURST = 20;
+
 export interface ProtocolOptions {
   /** Offer protocol version 1, with version 0 as the fallback Takaro may pick. */
   offerV1: boolean;
@@ -34,6 +42,11 @@ export class TakaroWsClient extends EventEmitter {
   private readonly buffer: BufferedEvent[] = [];
   private dropped = 0;
   private lastManifest = '';
+  // Event frames waiting for a token; cleared when the socket closes (v1 resends from `buffer`).
+  private readonly outgoing: WsMessage[] = [];
+  private tokens = EVENT_BURST;
+  private tokensAt = Date.now();
+  private pacer: NodeJS.Timeout | null = null;
 
   constructor(
     private url: string,
@@ -109,6 +122,8 @@ export class TakaroWsClient extends EventEmitter {
       this.connectedFlag = false;
       this.gameServerId = null;
       this.protocolVersion = 0;
+      // Queued frames belong to the closed connection; version 1 resends from the buffer.
+      this.outgoing.length = 0;
       this.emit('disconnected');
       if (!this.shuttingDown) {
         setTimeout(() => this.connect(), this.reconnectMs);
@@ -153,7 +168,7 @@ export class TakaroWsClient extends EventEmitter {
   sendGameEvent(type: GameEventType, data: unknown): void {
     // Identified on version 0: sent once, as before.
     if (this.gameServerId !== null && this.protocolVersion !== 1) {
-      this.send({ type: 'gameEvent', payload: { type, data } });
+      this.queueEvent({ type: 'gameEvent', payload: { type, data } });
       return;
     }
     // Version 1, or not identified yet (the socket can be open before identify answers, and the
@@ -170,7 +185,33 @@ export class TakaroWsClient extends EventEmitter {
   }
 
   private sendBuffered(event: BufferedEvent): void {
-    this.send({ type: 'gameEvent', payload: { type: event.type, data: event.data, streamId: this.streamId, seq: event.seq } });
+    this.queueEvent({ type: 'gameEvent', payload: { type: event.type, data: event.data, streamId: this.streamId, seq: event.seq } });
+  }
+
+  /** Event frames go out through the token bucket, in order. */
+  private queueEvent(frame: WsMessage): void {
+    this.outgoing.push(frame);
+    this.drainEvents();
+  }
+
+  private drainEvents(): void {
+    const now = Date.now();
+    this.tokens = Math.min(EVENT_BURST, this.tokens + ((now - this.tokensAt) / 1000) * EVENT_RATE_PER_SEC);
+    this.tokensAt = now;
+    while (this.outgoing.length && this.tokens >= 1) {
+      if (!this.send(this.outgoing.shift()!)) {
+        this.outgoing.length = 0; // socket gone: v1 resends from the buffer after identify
+        break;
+      }
+      this.tokens -= 1;
+    }
+    if (this.outgoing.length && !this.pacer) {
+      this.pacer = setTimeout(() => {
+        this.pacer = null;
+        this.drainEvents();
+      }, Math.ceil(1000 / EVENT_RATE_PER_SEC));
+      this.pacer.unref?.();
+    }
   }
 
   private acknowledge(payload: unknown): void {
@@ -223,7 +264,7 @@ export class TakaroWsClient extends EventEmitter {
             for (const event of this.buffer) this.sendBuffered(event);
           } else {
             // Version 0 has no acknowledgements: what waited for identify goes out once.
-            for (const event of this.buffer) this.send({ type: 'gameEvent', payload: { type: event.type, data: event.data } });
+            for (const event of this.buffer) this.queueEvent({ type: 'gameEvent', payload: { type: event.type, data: event.data } });
             this.buffer.length = 0;
           }
           this.emit('identified', p.gameServerId);

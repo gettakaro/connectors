@@ -10,7 +10,7 @@ import { prepareSurvey, renderFrameTile, isFrameTile, FRAME_TILE_SIZE, FRAME_MAX
 import { PNG_SIGNATURE } from '../dist/map/png.js';
 import { MapService, MapTileError, parseFrameTileArgs, worldDisplayName } from '../dist/map/service.js';
 import { buildManifest, withCharacter, withDimension, eventWithDimension, ACTION_CAPABILITIES } from '../dist/ws/capabilities.js';
-import { TakaroWsClient } from '../dist/ws/client.js';
+import { TakaroWsClient, EVENT_BURST, EVENT_RATE_PER_SEC } from '../dist/ws/client.js';
 import { bridgeHealthy, slimArgs } from '../dist/local/server.js';
 
 // Same synthetic 1024 m world as map.test.mjs: sea in the south quarter, a 20x10 m building at (512, 512).
@@ -260,6 +260,24 @@ test('events sent before identify answers wait for it, then go out in the versio
     client.shutdown();
     wss.close();
   }
+});
+
+test('a backlog drains at the paced rate, in order, under Takaro\'s event limits', async () => {
+  const takaro = fakeTakaro(1);
+  const client = new TakaroWsClient(takaro.url, { identityToken: 'i', registrationToken: 'r', name: 'n' }, { offerV1: true, manifest: () => [] });
+  client.connect();
+  await waitFor(() => client.identified());
+  const start = Date.now();
+  for (let i = 0; i < EVENT_BURST + 14; i++) client.sendGameEvent('log', { msg: `line ${i}` });
+  const events = () => takaro.frames.filter((f) => f.type === 'gameEvent');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(events().length <= EVENT_BURST + 2, `burst capped (${events().length})`);
+  await waitFor(() => events().length === EVENT_BURST + 14, 4000);
+  assert.ok(Date.now() - start >= 800, 'the rest waited for tokens');
+  assert.deepEqual(events().map((f) => f.payload.data.msg), Array.from({ length: EVENT_BURST + 14 }, (_, i) => `line ${i}`));
+  assert.ok(EVENT_RATE_PER_SEC * 5 < 100 && EVENT_BURST + EVENT_RATE_PER_SEC * 30 < 600);
+  client.shutdown();
+  takaro.wss.close();
 });
 
 test('TAKARO_PROTOCOL=0 sends the old identify', async () => {
