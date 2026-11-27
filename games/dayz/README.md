@@ -70,7 +70,7 @@ Checked on DayZ 1.30 (Linux server), 2026-11-27. ✅ works, ⚠️ works with a 
 | What | | Notes |
 |---|---|---|
 | Connection | ✅ | |
-| Player list | ✅ | Steam ID for every player |
+| Player list | ✅ | Steam ID for every player; DayZ does not expose player IPs |
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
