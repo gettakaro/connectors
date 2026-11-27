@@ -181,6 +181,7 @@ def test_every_job_checks_out_the_commit_that_started_the_run() -> None:
 CONNECTOR_WORKFLOWS = (
     "7d2d",
     "conan-exiles",
+    "dayz",
     "dragonwilds",
     "empyrion",
     "enshrouded",
