@@ -11,7 +11,7 @@
 //                                   ←  {identityToken, gameServerId}
 //
 // POST /gameserver/<id>/events      →  for each event: gameEvent(type, data)
-//                                   ←  {ok:true}
+//                                   ←  {ok:true}, or 503 while the WS is not identified (mod requeues)
 //
 // GET  /gameserver/<id>/poll        →  drain queue of pending Takaro requests
 //                                   ←  {operations:[{operationId, action, argsJson}]}
@@ -21,7 +21,7 @@
 //                                   ←  {ok:true}
 
 import http from 'node:http';
-import { logger } from '../logger.js';
+import { DEBUG, logger, truncate } from '../logger.js';
 import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
 
@@ -96,6 +96,22 @@ function shapeForAction(action: string | undefined, raw: unknown): unknown {
     if (v && typeof v === 'object' && Array.isArray((v as { bans?: unknown[] }).bans)) {
       v = (v as { bans: unknown[] }).bans;
     }
+    // M3 fix: Takaro rejected `{player:{gameId}}` ("gameserver responded with
+    // bad data"); its IGamePlayer needs name too. The mod only stores the Steam64,
+    // so fill steamId/name from it.
+    if (Array.isArray(v)) {
+      v = v.map((b) => {
+        const ban = { ...(b as Record<string, unknown>) };
+        const p = { ...((ban.player as Record<string, unknown>) ?? {}) };
+        const gid = String(p.gameId ?? '');
+        if (gid) {
+          if (!p.steamId && /^7656\d{13}$/.test(gid)) p.steamId = gid;
+          if (!p.name) p.name = gid;
+        }
+        ban.player = p;
+        return ban;
+      });
+    }
   } else if (action === 'listItems') {
     if (v && typeof v === 'object' && Array.isArray((v as { items?: unknown[] }).items)) {
       v = (v as { items: unknown[] }).items;
@@ -115,11 +131,29 @@ export class LocalHttpServer {
   // Cached identity for the mod's first-run "register" round-trip.
   private cachedIdentity = { identityToken: '', gameServerId: '' };
 
+  // Liveness counters surfaced on /health, so "is the mod actually talking to us?"
+  // is answerable without reading logs.
+  private lastModContactAt: string | null = null;
+  private lastPollAt: string | null = null;
+
+  /** Epoch ms of the mod's last /poll, or null before the first one. */
+  lastPollAtMs(): number | null {
+    return this.lastPollAt ? Date.parse(this.lastPollAt) : null;
+  }
+  private lastEventAt: string | null = null;
+  private eventsForwarded = 0;
+  // M4: events answered with 503 (WS down) so the mod requeues them; counted per attempt.
+  private eventsDeferred = 0;
+  // F9: RPT-tailed `log` events are emitted straight to the WS (they never pass
+  // through this HTTP server), so the tail reports its count in here.
+  private logsForwarded: () => number = () => 0;
+
   constructor(
     private port: number,
     private ws: TakaroWsClient,
     private serverName: string,
     private identityToken: string,
+    private bindAddress: string = '127.0.0.1',
   ) {
     this.cachedIdentity.identityToken = identityToken;
 
@@ -145,17 +179,22 @@ export class LocalHttpServer {
       this.operationQueue.push({
         operationId: requestId,
         action: payload.action,
-        argsJson: typeof payload.args === 'string' ? payload.args : JSON.stringify(payload.args ?? {}),
+        argsJson: slimArgs(typeof payload.args === 'string' ? payload.args : JSON.stringify(payload.args ?? {})),
       });
       this.operationActions.set(requestId, payload.action);
       logger.debug(`Queued ${payload.action} (op=${requestId})`);
     });
   }
 
+  /** F9: lets index.ts surface the RPT tail's forwarded-line count on /health. */
+  setLogCounter(fn: () => number): void {
+    this.logsForwarded = fn;
+  }
+
   start(): void {
     this.server = http.createServer((req, res) => this.handle(req, res));
-    this.server.listen(this.port, '127.0.0.1', () => {
-      logger.info(`HTTP listening on 127.0.0.1:${this.port} (mod-facing)`);
+    this.server.listen(this.port, this.bindAddress, () => {
+      logger.info(`HTTP listening on ${this.bindAddress}:${this.port} (mod-facing)`);
     });
   }
 
@@ -192,14 +231,24 @@ export class LocalHttpServer {
     const method = req.method || 'GET';
     const path = url.split('?')[0]!.replace(/\/+$/, '') || '/';
 
+    if (DEBUG) logger.debug(`HTTP ${method} ${url}`);
+    if (path !== '/health') this.lastModContactAt = new Date().toISOString();
+
     try {
       // Health
       if (method === 'GET' && path === '/health') {
         return this.send(res, 200, {
           ok: true,
           identified: this.ws.identified(),
+          wsConnected: this.ws.connected(),
           gameServerId: this.ws.getGameServerId(),
           pendingOperations: this.operationQueue.length,
+          lastModContactAt: this.lastModContactAt,
+          lastPollAt: this.lastPollAt,
+          lastEventAt: this.lastEventAt,
+          eventsForwarded: this.eventsForwarded,
+          eventsDeferred: this.eventsDeferred,
+          logsForwarded: this.logsForwarded(),
         });
       }
 
@@ -222,18 +271,48 @@ export class LocalHttpServer {
       if (parsed) {
         if (method === 'POST' && parsed.rest === 'events') {
           const body = await this.readBody(req);
-          const batch = body ? JSON.parse(body) : { events: [] };
+          if (DEBUG) logger.debug(`HTTP BODY events ${truncate(body)}`);
+          const batch = body ? parseModJson(body) : { events: [] };
           const events = (batch.events || []) as TakaroEvent[];
+          // M4 fix: while the Takaro WS is closed (or open but not identified yet),
+          // ws.send() only logs "Cannot send gameEvent: WS not open" and drops the
+          // frame, yet the mod used to get 200 and forgot the batch. Answer 503 so
+          // the mod requeues it (TakaroBridge.OnFlushComplete) and retries on its
+          // next flush. The check runs right before the synchronous send loop:
+          // Node dispatches the socket's close event on a later tick, so the state
+          // cannot change mid-batch and a batch is either sent whole or not at all
+          // (no partial batch, no duplicates on retry).
+          if (events.length > 0 && !(this.ws.connected() && this.ws.identified())) {
+            this.eventsDeferred += events.length;
+            logger.warn(
+              `Takaro WS not ready (connected=${this.ws.connected()} identified=${this.ws.identified()}): ` +
+                `503 for ${events.length} event(s), mod will requeue`,
+            );
+            return this.send(res, 503, { error: 'Takaro WebSocket not connected; retry', deferred: events.length });
+          }
           for (const ev of events) {
             // strip the type field from the data payload — Takaro takes type separately
             const { type, ...rest } = ev;
+            // F2: the mod stamps in-game world time at minute resolution, which
+            // Takaro shows as wildly wrong event times. Ingest time in the bridge
+            // is within milliseconds of the real event, so it wins.
+            const modTimestamp = rest.timestamp;
+            rest.timestamp = new Date().toISOString();
+            if (DEBUG && modTimestamp) {
+              logger.debug(`Event ${type}: replaced mod timestamp '${modTimestamp}' with ${rest.timestamp}`);
+            }
             this.ws.sendGameEvent(type as GameEventType, rest);
+          }
+          if (events.length > 0) {
+            this.eventsForwarded += events.length;
+            this.lastEventAt = new Date().toISOString();
           }
           logger.debug(`Forwarded ${events.length} events`);
           return this.send(res, 200, { ok: true, forwarded: events.length });
         }
 
         if (method === 'GET' && parsed.rest === 'poll') {
+          this.lastPollAt = new Date().toISOString();
           const ops = this.operationQueue.splice(0, this.operationQueue.length);
           return this.send(res, 200, { operations: ops });
         }
@@ -242,7 +321,8 @@ export class LocalHttpServer {
         if (method === 'POST' && opMatch) {
           const opId = opMatch[1]!;
           const body = await this.readBody(req);
-          const obj = body ? JSON.parse(body) : {};
+          if (DEBUG) logger.debug(`HTTP BODY result op=${opId} ${truncate(body)}`);
+          const obj = body ? parseModJson(body) : {};
           const action = this.operationActions.get(opId);
           this.operationActions.delete(opId);
           if (obj.ok) {
@@ -262,4 +342,46 @@ export class LocalHttpServer {
       this.send(res, 500, { error: 'Internal' });
     }
   }
+}
+
+/**
+ * M3 fix: the mod builds JSON by string concatenation. An unescaped control
+ * character (e.g. the newline inside Enforce's "JSON ERROR:\n..." text) made
+ * JSON.parse throw, the result was never relayed, and Takaro timed out after
+ * 10 s instead of seeing the error. Retry with raw control chars escaped.
+ */
+export function parseModJson(body: string): any {
+  try {
+    return JSON.parse(body);
+  } catch (e) {
+    const cleaned = body.replace(/[\u0000-\u001f]/g, (c) =>
+      c === '\n' ? '\\n' : c === '\r' ? '\\r' : c === '\t' ? '\\t' : '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'),
+    );
+    return JSON.parse(cleaned);
+  }
+}
+
+/**
+ * M3 fix: for teleportPlayer/kickPlayer/banPlayer/... Takaro sends the whole
+ * PlayerOnGameserver row as `player` (roles, permissions, inventory, steam
+ * profile: several KB). The Enforce side truncates that string (observed: the
+ * argsJson ended mid-`platformId`, so x/y/z and reason were lost and teleport
+ * failed with "missing x/y/z"). The mod only ever needs player.gameId, so the
+ * nested object is reduced to {gameId} before queueing.
+ */
+export function slimArgs(argsJson: string): string {
+  try {
+    const obj = JSON.parse(argsJson);
+    if (obj && typeof obj === 'object' && obj.player && typeof obj.player === 'object') {
+      obj.player = { gameId: obj.player.gameId };
+      return JSON.stringify(obj);
+    }
+    // unbanPlayer: Takaro sends the PlayerOnGameserver row flat (no `player` key).
+    if (obj && typeof obj === 'object' && typeof obj.gameId === 'string' && obj.playerId && obj.gameServerId) {
+      return JSON.stringify({ gameId: obj.gameId });
+    }
+  } catch {
+    /* not JSON: pass through */
+  }
+  return argsJson;
 }

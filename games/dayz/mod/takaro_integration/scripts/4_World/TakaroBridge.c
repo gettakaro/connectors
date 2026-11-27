@@ -9,7 +9,7 @@
 
 class TakaroBridge
 {
-    static const string VERSION = "0.1.14";
+    static const string VERSION = "0.2.0";
 
     ref TakaroHttpClient m_Http;
     ref TakaroEventQueue m_Queue;
@@ -148,9 +148,27 @@ class TakaroBridge
 
     // identity + uid come straight from MissionServer.PlayerDisconnected;
     // player may already be null/deleted by the time we're called.
+    // M3: uids whose player-disconnected was already emitted by a kick/ban
+    // (GetGame().DisconnectPlayer does NOT run MissionServer.PlayerDisconnected,
+    // so the dispatcher emits it itself). Guards against a double event.
+    ref map<string, bool> m_DisconnectEmitted = new map<string, bool>;
+
+    void OnPlayerKickedByTakaro(PlayerBase player, PlayerIdentity identity)
+    {
+        if (!identity) return;
+        string uid = identity.GetId();
+        OnPlayerDisconnected(player, identity, uid);
+        m_DisconnectEmitted.Set(uid, true);
+    }
+
     void OnPlayerDisconnected(PlayerBase player, PlayerIdentity identity, string uid)
     {
         if (!m_Initialized) return;
+        if (m_DisconnectEmitted.Contains(uid))
+        {
+            m_DisconnectEmitted.Remove(uid);
+            return;
+        }
 
         // Strip '=' padding from uid so it matches the cache key we wrote on
         // connect.
@@ -186,6 +204,16 @@ class TakaroBridge
         if (!m_Initialized) return;
         if (!victim) return;
         m_Queue.Enqueue(TakaroEventFactory.Death(victim, killer, weapon));
+    }
+
+    // F4 — a player killed an infected/animal. `entityType` is the victim
+    // classname, `weapon` the resolved weapon/ammo classname.
+    void OnEntityKilled(PlayerBase player, string entityType, string weapon, vector pos)
+    {
+        if (!m_Initialized) return;
+        if (!player) return;
+        m_Queue.Enqueue(TakaroEventFactory.EntityKilled(player, entityType, weapon, pos));
+        TakaroLog.Debug("event: entity-killed " + entityType);
     }
 
     void OnRawLogLine(string line)

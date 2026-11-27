@@ -64,7 +64,8 @@ class ArgsBanPlayer
 {
     string gameId;
     string reason;
-    int durationSeconds;     // 0 = permanent
+    int durationSeconds;     // 0 = permanent (legacy)
+    string expiresAt;        // Takaro ISO date, empty = permanent
 }
 
 class ArgsUnbanPlayer
@@ -125,6 +126,38 @@ class ResultReachability
 {
     bool connectable;
     string reason;
+}
+
+// ---- F5: config-driven map locations -----------------------------------
+//
+// DayZ has no stable script API for enumerating named world locations, so the
+// list is CONFIG-DRIVEN: it is read from $profile:TakaroIntegration/locations.json
+// and can be edited per server (Chernarus, Livonia, Sakhal, a modded map...)
+// without touching the mod. The file is written with Chernarus defaults on
+// first use.
+//
+// File shape (JsonFileLoader needs a class, so the array is wrapped):
+//   { "locations": [ { "name": "Chernogorsk", "x": 6700, "y": 0, "z": 2600 }, ... ] }
+//
+// y = 0 means "ground level": DayZ world coordinates are (x, y=height, z), and
+// 0 is a deliberate "unknown height / use terrain" marker, not sea level. Takaro
+// only uses locations as named markers, so the height is not load-bearing.
+class TakaroLocationEntry
+{
+    string name;
+    float x;
+    float y;
+    float z;
+}
+
+class TakaroLocationsData
+{
+    ref array<ref TakaroLocationEntry> locations;
+
+    void TakaroLocationsData()
+    {
+        locations = new array<ref TakaroLocationEntry>;
+    }
 }
 
 // ---- Dispatcher --------------------------------------------------------
@@ -231,7 +264,7 @@ class TakaroCommandDispatcher
             ResultPlayerInfo info = new ResultPlayerInfo();
             info.gameId = id.GetPlainId();
             info.name = TakaroNameCache.Resolve(id.GetPlainId(), id.GetName());
-            info.steamId = id.GetPlainId();
+            if (TakaroEventFactory.IsSteamId64(id.GetPlainId())) info.steamId = id.GetPlainId();
             info.platformId = BuildPlatformId(id);
             info.ping = id.GetPingAct();
             info.online = true;
@@ -248,13 +281,25 @@ class TakaroCommandDispatcher
         PlayerIdentity id = FindIdentityByGameId(args.gameId);
         if (!id)
         {
-            ReplyError(op, "Player not online: " + args.gameId);
+            // F6: an offline player is a state, not an error. Takaro's
+            // IGamePlayer requires gameId+name, so fall back to the persistent
+            // name cache and finally to the gameId itself.
+            ResultPlayerInfo offline = new ResultPlayerInfo();
+            offline.gameId = args.gameId;
+            string cachedName = TakaroNameCache.Resolve(args.gameId, "");
+            if (cachedName == "") cachedName = args.gameId;
+            offline.name = cachedName;
+            if (TakaroEventFactory.IsSteamId64(args.gameId)) offline.steamId = args.gameId;
+            offline.platformId = TakaroEventFactory.PlatformIdFor(args.gameId, "");
+            offline.ping = 0;
+            offline.online = false;
+            ReplyOk(op, SerializePlayerInfo(offline));
             return;
         }
         ResultPlayerInfo info = new ResultPlayerInfo();
         info.gameId = id.GetPlainId();
         info.name = TakaroNameCache.Resolve(id.GetPlainId(), id.GetName());
-        info.steamId = id.GetPlainId();
+        if (TakaroEventFactory.IsSteamId64(id.GetPlainId())) info.steamId = id.GetPlainId();
         info.platformId = BuildPlatformId(id);
         info.ping = id.GetPingAct();
         info.online = true;
@@ -284,12 +329,19 @@ class TakaroCommandDispatcher
         {
             EntityAI it = items[i];
             if (!it) continue;
+            // M1: EnumerateInventory includes the root (the player body itself,
+            // e.g. SurvivorF_Linda) — skip it.
+            if (it == pb) continue;
             string code = it.GetType();
             if (code == "") continue;
             int amount = 1;
-            // Stack count for stackable items (ammo etc.)
+            // M1: only stackable items carry a count in GetQuantity(). For
+            // food/liquids/batteries it is grams/ml/energy (Apple=125,
+            // Chemlight=100), which is not an item count.
             ItemBase ib = ItemBase.Cast(it);
-            if (ib) amount = (int)ib.GetQuantity();
+            Magazine mag = Magazine.Cast(it);
+            if (mag && mag.IsAmmoPile()) amount = mag.GetAmmoCount();
+            else if (ib && ib.ConfigGetBool("canBeSplit")) amount = (int)ib.GetQuantity();
             if (amount <= 0) amount = 1;
             if (!first) json += ",";
             first = false;
@@ -341,6 +393,10 @@ class TakaroCommandDispatcher
         string message = ExtractJsonStringField(op.argsJson, "message");
         if (message == "") { ReplyError(op, "sendMessage: empty message"); return; }
         string recipientGameId = ExtractJsonStringField(op.argsJson, "gameId");
+        // M2 fix: vanilla toast title was hard-coded "Discord". Use Takaro's
+        // opts.senderNameOverride when present, else "Server".
+        string senderTitle = ExtractJsonStringField(op.argsJson, "senderNameOverride");
+        if (senderTitle == "") senderTitle = "Server";
 
         if (recipientGameId != "")
         {
@@ -350,11 +406,11 @@ class TakaroCommandDispatcher
                 ReplyError(op, "Recipient not online: " + recipientGameId);
                 return;
             }
-            BroadcastSystemMessage(message, pb);
+            BroadcastSystemMessage(message, pb, senderTitle);
         }
         else
         {
-            BroadcastSystemMessage(message, null);
+            BroadcastSystemMessage(message, null, senderTitle);
         }
         ReplyOk(op, "{}");
     }
@@ -367,11 +423,23 @@ class TakaroCommandDispatcher
         PlayerIdentity id = FindIdentityByGameId(args.gameId);
         if (!id)
         {
-            ReplyError(op, "Player not online: " + args.gameId);
+            // F6: structured, machine-greppable message.
+            ReplyError(op, "player " + args.gameId + " is not online");
             return;
         }
-        GetGame().DisconnectPlayer(id);
+        KickWithReason(id, "Kicked", args.reason);
         ReplyOk(op, "{}");
+    }
+
+    // M3 fix: DisconnectPlayer bypasses MissionServer.PlayerDisconnected, so
+    // no player-disconnected event reached Takaro on kick/ban, and the client
+    // only saw the main menu with no reason. Emit the event, show the reason
+    // as a notification, then disconnect after a short delay.
+
+    void KickWithReason(PlayerIdentity id, string title, string reason)
+    {
+        if (!id) return;
+        TakaroKicker.Get().Kick(FindPlayerByGameId(id.GetPlainId()), id, title, reason);
     }
 
     void HandleBan(TakaroOperation op)
@@ -379,18 +447,12 @@ class TakaroCommandDispatcher
         ArgsBanPlayer args = new ArgsBanPlayer();
         if (!ParseBan(op, args)) return;
 
-        // BattlEye stores GUID-based bans in <serverRoot>\battleye\bans.txt.
-        // Format per line: "GUID DURATION REASON"
-        // DURATION = -1 for permanent, otherwise minutes.
-        // We can't compute the BE GUID from the Steam64 in script (needs MD5),
-        // so we ban by Steam ID using DayZ's online-player kick first; the DLL
-        // also computes the BE GUID and writes it to bans.txt. For now, kick
-        // + write a Steam-ID line so admins can match later.
+        // Bans are stored/enforced by TakaroBanStore (see TakaroBanStore.c).
         PlayerIdentity id = FindIdentityByGameId(args.gameId);
         if (id)
-            GetGame().DisconnectPlayer(id);
+            KickWithReason(id, "Banned", args.reason);
 
-        AppendBanLine(args.gameId, args.durationSeconds, args.reason);
+        TakaroBanStore.Add(args.gameId, args.expiresAt, args.reason);
         TakaroLog.Info("banPlayer applied: " + args.gameId + " duration=" + args.durationSeconds.ToString() + "s reason=" + args.reason);
         ReplyOk(op, "{}");
     }
@@ -399,61 +461,9 @@ class TakaroCommandDispatcher
     {
         ArgsUnbanPlayer args = new ArgsUnbanPlayer();
         if (!ParseUnban(op, args)) return;
-        RemoveBanLine(args.gameId);
-        TakaroLog.Info("unbanPlayer applied: " + args.gameId);
+        bool removed = TakaroBanStore.Remove(args.gameId);
+        TakaroLog.Info("unbanPlayer applied: " + args.gameId + " (was banned: " + removed.ToString() + ")");
         ReplyOk(op, "{}");
-    }
-
-    void AppendBanLine(string gameId, int durationSeconds, string reason)
-    {
-        // BattlEye bans.txt is plain text: "GUID-or-name DURATION REASON" per line.
-        // Vanilla DayZ also reads "ban.txt" at server root for steamID-based bans.
-        // We write to BOTH so whichever the server uses picks it up.
-        int durMinutes = -1;
-        if (durationSeconds > 0) durMinutes = (durationSeconds + 59) / 60;
-        string line = gameId + " " + durMinutes.ToString() + " " + reason + "\n";
-
-        // Vanilla DayZ ban.txt — Steam64 IDs, one per line, no extra columns.
-        FileHandle f = OpenFile("ban.txt", FileMode.APPEND);
-        if (f != 0)
-        {
-            FPrint(f, gameId + "\n");
-            CloseFile(f);
-        }
-        // BE bans.txt — full ban entry
-        FileHandle bf = OpenFile("battleye/bans.txt", FileMode.APPEND);
-        if (bf != 0)
-        {
-            FPrint(bf, line);
-            CloseFile(bf);
-        }
-    }
-
-    void RemoveBanLine(string gameId)
-    {
-        // Read both files, write back without lines containing the gameId.
-        RemoveBanFromFile("ban.txt", gameId);
-        RemoveBanFromFile("battleye/bans.txt", gameId);
-    }
-
-    void RemoveBanFromFile(string path, string gameId)
-    {
-        FileHandle f = OpenFile(path, FileMode.READ);
-        if (f == 0) return;
-        array<string> kept = new array<string>;
-        string line;
-        while (FGets(f, line) > 0)
-        {
-            if (line.IndexOf(gameId) == -1)
-                kept.Insert(line);
-        }
-        CloseFile(f);
-
-        FileHandle wf = OpenFile(path, FileMode.WRITE);
-        if (wf == 0) return;
-        for (int i = 0; i < kept.Count(); i++)
-            FPrint(wf, kept[i] + "\n");
-        CloseFile(wf);
     }
 
     void HandleTeleport(TakaroOperation op)
@@ -464,10 +474,17 @@ class TakaroCommandDispatcher
         PlayerBase pb = FindPlayerByGameId(args.gameId);
         if (!pb)
         {
-            ReplyError(op, "Player not online: " + args.gameId);
+            // F6: structured, machine-greppable message.
+            ReplyError(op, "player " + args.gameId + " is not online");
             return;
         }
-        vector destination = Vector(args.x, args.y, args.z);
+        // Takaro x/y/z maps 1:1 to DayZ world x/y(height)/z. A y below the terrain
+        // (e.g. y=0 from a 2D map click) is clamped to the surface so the player
+        // never ends up underground; a y above ground is kept (fall damage).
+        float groundY = GetGame().SurfaceY(args.x, args.z);
+        float destY = args.y;
+        if (destY < groundY) destY = groundY;
+        vector destination = Vector(args.x, destY, args.z);
         pb.SetPosition(destination);
         ReplyOk(op, "{}");
     }
@@ -491,7 +508,8 @@ class TakaroCommandDispatcher
         PlayerBase pb = FindPlayerByGameId(gameId);
         if (!pb)
         {
-            ReplyError(op, "Player not online: " + gameId);
+            // F6: structured, machine-greppable message.
+            ReplyError(op, "player " + gameId + " is not online");
             return;
         }
         for (int i = 0; i < amount; i++)
@@ -557,7 +575,7 @@ class TakaroCommandDispatcher
             {
                 PlayerIdentity kid = FindIdentityByGameId(kgid);
                 if (!kid) { rawResult = "Player not online: " + kgid; success = false; }
-                else { GetGame().DisconnectPlayer(kid); rawResult = "Kicked " + kgid; }
+                else { KickWithReason(kid, "Kicked", kreason); rawResult = "Kicked " + kgid; }
             }
         }
         else if (verb == "ban" || verb == "addban")
@@ -570,8 +588,8 @@ class TakaroCommandDispatcher
             else
             {
                 PlayerIdentity bid = FindIdentityByGameId(bgid);
-                if (bid) GetGame().DisconnectPlayer(bid);
-                AppendBanLine(bgid, 0, breason);
+                if (bid) KickWithReason(bid, "Banned", breason);
+                TakaroBanStore.Add(bgid, "", breason);
                 rawResult = "Banned " + bgid;
             }
         }
@@ -579,7 +597,7 @@ class TakaroCommandDispatcher
         {
             // unban <gameId>
             if (rest == "") { rawResult = "Usage: unban <gameId>"; success = false; }
-            else { RemoveBanLine(rest); rawResult = "Unbanned " + rest; }
+            else { TakaroBanStore.Remove(rest); rawResult = "Unbanned " + rest; }
         }
         else if (verb == "tp" || verb == "teleport")
         {
@@ -763,6 +781,101 @@ class TakaroCommandDispatcher
         {
             rawResult = BuildPlayerListing();
         }
+        else if (verb == "givehands")
+        {
+            // M3 test/admin verb: givehands <gameId> <classname>
+            // Creates the item directly in the player's hands (e.g. FirefighterAxe),
+            // so a melee test needs no inventory drag-and-drop.
+            array<string> hparts = new array<string>;
+            SplitTokens(rest, hparts);
+            if (hparts.Count() < 2) { rawResult = "Usage: givehands <gameId> <classname>"; success = false; }
+            else
+            {
+                PlayerBase hpb = FindPlayerByGameId(hparts[0]);
+                if (!hpb) { rawResult = "Player not online: " + hparts[0]; success = false; }
+                else
+                {
+                    EntityAI hent = hpb.GetHumanInventory().CreateInHands(hparts[1]);
+                    if (!hent) { rawResult = "Could not create " + hparts[1] + " in hands (hands full?)"; success = false; }
+                    else rawResult = "In hands: " + hparts[1];
+                }
+            }
+        }
+        else if (verb == "hitnearest")
+        {
+            // M3 test/admin verb: hitnearest <gameId> [radius] [ammo]
+            // SYNTHETIC: applies lethal engine damage (ProcessDirectDamage) to the nearest
+            // infected/animal, with the player's item in hands (or the player) as the
+            // damage SOURCE. EEHitBy/EEKilled and the entity-killed emitter run for real;
+            // the swing itself does not. Exists because injected attack input never
+            // reaches DayZ on the test client. Evidence using it must say "synthetic".
+            array<string> nparts = new array<string>;
+            SplitTokens(rest, nparts);
+            if (nparts.Count() < 1) { rawResult = "Usage: hitnearest <gameId> [radius] [ammo]"; success = false; }
+            else
+            {
+                PlayerBase npb = FindPlayerByGameId(nparts[0]);
+                if (!npb) { rawResult = "Player not online: " + nparts[0]; success = false; }
+                else
+                {
+                    float nrad = 10.0;
+                    if (nparts.Count() >= 2) nrad = nparts[1].ToFloat();
+                    string nammo = "Bullet_762x54";
+                    if (nparts.Count() >= 3) nammo = nparts[2];
+                    array<Object> nobjs = new array<Object>;
+                    GetGame().GetObjectsAtPosition3D(npb.GetPosition(), nrad, nobjs, null);
+                    EntityAI ntarget = null;
+                    float nbest = 999999.0;
+                    for (int ni = 0; ni < nobjs.Count(); ni++)
+                    {
+                        EntityAI ne = EntityAI.Cast(nobjs[ni]);
+                        if (!ne || !ne.IsAlive()) continue;
+                        if (!ne.IsInherited(ZombieBase) && !ne.IsInherited(AnimalBase)) continue;
+                        float nd = vector.Distance(ne.GetPosition(), npb.GetPosition());
+                        if (nd < nbest) { nbest = nd; ntarget = ne; }
+                    }
+                    if (!ntarget) { rawResult = "No living infected/animal within " + nrad.ToString() + " m"; success = false; }
+                    else
+                    {
+                        EntityAI nsource = npb.GetHumanInventory().GetEntityInHands();
+                        if (!nsource) nsource = npb;
+                        // No SetHealth fallback: that kills with killer=null and no EEHitBy, so
+                        // nothing can be attributed. ProcessDirectDamage may apply next frame.
+                        ntarget.ProcessDirectDamage(DamageType.CLOSE_COMBAT, nsource, "Head", nammo, "0 0 0", 100.0);
+                        rawResult = "Hit " + ntarget.GetType() + " at " + nbest.ToString() + " m with source " + nsource.GetType() + " ammo " + nammo;
+                    }
+                }
+            }
+        }
+        else if (verb == "spawnentity")
+        {
+            // M3 test/admin verb: spawnentity <classname> <gameId> [distanceMeters]
+            // Spawns a creature (e.g. ZmbM_HermitSkinny_Beige, Animal_GallusGallusDomesticus)
+            // on the surface in front of the player, with AI initialised. Used to
+            // prove entity-killed / infected player-death without hunting for spawns.
+            array<string> sparts = new array<string>;
+            SplitTokens(rest, sparts);
+            if (sparts.Count() < 2) { rawResult = "Usage: spawnentity <classname> <gameId> [distance]"; success = false; }
+            else
+            {
+                PlayerBase spb = FindPlayerByGameId(sparts[1]);
+                if (!spb) { rawResult = "Player not online: " + sparts[1]; success = false; }
+                else if (!GetGame().ConfigIsExisting("CfgVehicles " + sparts[0])) { rawResult = "Unknown class: " + sparts[0]; success = false; }
+                else
+                {
+                    float sdist = 3.0;
+                    if (sparts.Count() >= 3) { sdist = sparts[2].ToFloat(); if (sdist <= 0) sdist = 3.0; }
+                    vector sdir = spb.GetDirection();
+                    sdir[1] = 0;
+                    sdir.Normalize();
+                    vector spos = spb.GetPosition() + (sdir * sdist);
+                    spos[1] = GetGame().SurfaceY(spos[0], spos[2]);
+                    Object sobj = GetGame().CreateObjectEx(sparts[0], spos, ECE_PLACE_ON_SURFACE | ECE_INITAI | ECE_EQUIP_ATTACHMENTS);
+                    if (!sobj) { rawResult = "Spawn failed: " + sparts[0]; success = false; }
+                    else rawResult = "Spawned " + sparts[0] + " at " + spos[0].ToString() + "," + spos[1].ToString() + "," + spos[2].ToString();
+                }
+            }
+        }
         else if (verb == "announce" || verb == "banner")
         {
             // Loud center-screen banner via Expansion's BAGUETTE notification.
@@ -856,12 +969,15 @@ class TakaroCommandDispatcher
         h += "  help                                - show this command list" + nl;
         h += "  shutdown                            - gracefully stop the server (kicks all, RequestExit)" + nl;
         h += "  kick <gameId> [reason]              - disconnect a player (gameId = Steam64)" + nl;
-        h += "  ban <gameId> [reason]               - write to ban.txt + battleye/bans.txt and kick" + nl;
+        h += "  ban <gameId> [reason]               - add to $profile:TakaroIntegration/bans.txt (enforced on join) and kick" + nl;
         h += "  unban <gameId>                      - remove the gameId from both ban files" + nl;
         h += "  tp <gameId> <x> <y> <z>             - teleport a player to world coordinates" + nl;
         h += "  visit <requesterId> <targetId> [--force]  - teleport requester to target (must be partied unless --force)" + nl;
         h += "  give <gameId> <classname> [amount]  - spawn item(s) into the player's inventory" + nl;
         h += "  players                             - list online players (name, id, ping, hp, blood, pos, party)" + nl;
+        h += "  givehands <gameId> <classname>      - (test/admin) create an item in the player's hands" + nl;
+        h += "  hitnearest <gameId> [radius] [ammo] - (test/admin, SYNTHETIC) lethal engine damage to nearest creature, player as source" + nl;
+        h += "  spawnentity <class> <gameId> [dist] - (test/admin) spawn a creature in front of a player" + nl;
         h += "  parties                             - list active Expansion parties and their online members" + nl;
         h += "  party                               - list every online player with their party id (or 'solo')" + nl;
         h += "  announce <message>                  - center-screen banner to all players (Expansion BAGUETTE)" + nl;
@@ -930,18 +1046,12 @@ class TakaroCommandDispatcher
     // CParser gotcha: `"\\"` literals break Enforce's parser, but `"\\n"`
     // parses fine because the lexer sees `\\` as one escaped backslash
     // followed by a regular `n` — net result is the 2-char string `\n`.
+    // F7: delegates to TakaroEventFactory.Safe, which escapes backslash and
+    // double-quote properly (see the CParser note there) and then folds
+    // newline/CR/tab into their two-character JSON escapes.
     string JsonSafeString(string s)
     {
-        string out_s = s;
-        string dq = "\"";
-        out_s.Replace(dq, "'");
-        string nl = "\n";
-        out_s.Replace(nl, "\\n");
-        string cr = "\r";
-        out_s.Replace(cr, "\\r");
-        string tab = "\t";
-        out_s.Replace(tab, "\\t");
-        return out_s;
+        return TakaroEventFactory.Safe(s);
     }
 
     // Drain delay between disconnecting all players and asking the engine
@@ -950,6 +1060,9 @@ class TakaroCommandDispatcher
     // seconds of state (last item crafted, last base part placed). 5s is
     // generous; persistence finishes well within that window in practice.
     static const int SHUTDOWN_EXIT_DELAY_MS = 5000;
+
+    // F5 — config-driven location list (see TakaroLocationsData).
+    static const string LOCATIONS_FILE = "$profile:TakaroIntegration/locations.json";
 
     void TakaroFinalExit()
     {
@@ -966,7 +1079,12 @@ class TakaroCommandDispatcher
             PlayerBase pb = PlayerBase.Cast(players[i]);
             if (!pb) continue;
             PlayerIdentity id = pb.GetIdentity();
-            if (id) GetGame().DisconnectPlayer(id);
+            if (!id) continue;
+            // M3: DisconnectPlayer skips MissionServer.PlayerDisconnected, so emit
+            // player-disconnected ourselves (same path as kick/ban).
+            TakaroBridge bridge = TakaroBridge.Cast(TakaroBridgeAccessor.Get());
+            if (bridge) bridge.OnPlayerKickedByTakaro(pb, id);
+            GetGame().DisconnectPlayer(id);
         }
         // Schedule the engine exit on the system call queue so the
         // disconnect-driven persistence saves get a chance to flush.
@@ -1081,9 +1199,15 @@ class TakaroCommandDispatcher
             if (!GetGame().IsKindOf(cls, "DayZAnimal") && !GetGame().IsKindOf(cls, "DayZInfected") && !GetGame().IsKindOf(cls, "DayZCreature")) continue;
             string display = "";
             GetGame().ConfigGetText(ROOT + " " + cls + " displayName", display);
-            if (display == "") display = cls;
+            // M1: unresolved stringtable keys ("$STR_DN_MAN" arrives as
+            // "STR_DN_MAN") are useless as a name — fall back to the classname.
+            if (display == "" || display.IndexOf("STR_") == 0 || display.IndexOf("$STR_") == 0 || display.IndexOf("#STR_") == 0) display = cls;
             display = JsonSafeString(display);
-            string entry = "{" + Quote("name") + ":" + Quote(display) + "," + Quote("code") + ":" + Quote(cls) + "," + Quote("type") + ":" + Quote("entity") + "}";
+            // M1: Takaro IEntityDTO.type is an enum hostile|friendly|neutral —
+            // "entity" failed validation and nothing was stored.
+            string etype = "neutral";
+            if (GetGame().IsKindOf(cls, "DayZInfected") || GetGame().IsKindOf(cls, "Animal_CanisLupus") || GetGame().IsKindOf(cls, "Animal_UrsusArctos")) etype = "hostile";
+            string entry = "{" + Quote("name") + ":" + Quote(display) + "," + Quote("code") + ":" + Quote(cls) + "," + Quote("type") + ":" + Quote(etype) + "}";
             if (!first) json += ",";
             first = false;
             json += entry;
@@ -1097,13 +1221,95 @@ class TakaroCommandDispatcher
     // Map locations from the world's location config. DayZ exposes these via
     // GetGame().GetWorld().GetMapLoctList — typed result is array<MapLocation>.
     // We surface name + position as IMapLocationDTO[].
+    // F5 — config-driven. See TakaroLocationsData above for the file shape.
+    // Returns Takaro's IMapLocationDTO[]: {code, name, position:{x,y,z}}.
     void HandleListLocations(TakaroOperation op)
     {
-        // DayZ doesn't have a stable script API for enumerating named locations;
-        // they live in the world config. Returning [] is the honest default;
-        // server-specific location lists can be added by a custom mission later.
-        ReplyOk(op, "[]");
-        TakaroLog.Info("listLocations: returned empty (no enumeration API in vanilla)");
+        TakaroLocationsData data = LoadLocations();
+        string json = "[";
+        bool first = true;
+        int emitted = 0;
+        int n = 0;
+        if (data && data.locations) n = data.locations.Count();
+        for (int i = 0; i < n; i++)
+        {
+            TakaroLocationEntry e = data.locations[i];
+            if (!e) continue;
+            if (e.name == "") continue;
+            if (!first) json += ",";
+            first = false;
+            json += BuildLocationEntry(e);
+            emitted++;
+        }
+        json += "]";
+        TakaroLog.Info("listLocations: " + emitted.ToString() + " locations from " + LOCATIONS_FILE);
+        ReplyOk(op, json);
+    }
+
+    // Built via accumulator: a single long concat chain trips Enforce's
+    // "formula too complex" (same reason as BuildBanEntry).
+    string BuildLocationEntry(TakaroLocationEntry e)
+    {
+        // Takaro wants a stable `code`; derive it from the name with spaces
+        // turned into underscores so it stays identifier-safe.
+        string code = e.name;
+        code.Replace(" ", "_");
+        string s = "{" + Quote("code") + ":" + Quote(JsonSafeString(code));
+        s += "," + Quote("name") + ":" + Quote(JsonSafeString(e.name));
+        s += "," + Quote("position") + ":{";
+        s += Quote("x") + ":" + e.x.ToString();
+        s += "," + Quote("y") + ":" + e.y.ToString();
+        s += "," + Quote("z") + ":" + e.z.ToString();
+        s += "}}";
+        return s;
+    }
+
+    // Load locations.json, writing Chernarus defaults if the file is absent.
+    TakaroLocationsData LoadLocations()
+    {
+        if (!FileExist(TakaroConfig.CONFIG_DIR))
+            MakeDirectory(TakaroConfig.CONFIG_DIR);
+
+        TakaroLocationsData data = new TakaroLocationsData();
+        if (FileExist(LOCATIONS_FILE))
+        {
+            JsonFileLoader<TakaroLocationsData>.JsonLoadFile(LOCATIONS_FILE, data);
+            return data;
+        }
+
+        data = DefaultLocations();
+        JsonFileLoader<TakaroLocationsData>.JsonSaveFile(LOCATIONS_FILE, data);
+        TakaroLog.Info("listLocations: wrote Chernarus defaults to " + LOCATIONS_FILE + " — edit it for your map");
+        return data;
+    }
+
+    void AddLocation(TakaroLocationsData data, string name, float x, float z)
+    {
+        TakaroLocationEntry e = new TakaroLocationEntry();
+        e.name = name;
+        e.x = x;
+        e.y = 0;    // ground level, see the note on TakaroLocationsData
+        e.z = z;
+        data.locations.Insert(e);
+    }
+
+    // Chernarus (dayzOffline.chernarusplus) town centres, approximate.
+    TakaroLocationsData DefaultLocations()
+    {
+        TakaroLocationsData data = new TakaroLocationsData();
+        AddLocation(data, "Chernogorsk", 6700, 2600);
+        AddLocation(data, "Elektrozavodsk", 10400, 2300);
+        AddLocation(data, "Berezino", 12100, 9200);
+        AddLocation(data, "Svetlojarsk", 13900, 13200);
+        AddLocation(data, "Novodmitrovsk", 11600, 14500);
+        AddLocation(data, "Stary Sobor", 6100, 7700);
+        AddLocation(data, "Zelenogorsk", 2600, 5000);
+        AddLocation(data, "Vybor", 3800, 8900);
+        AddLocation(data, "Severograd", 8100, 12700);
+        AddLocation(data, "Tisy", 1600, 14000);
+        AddLocation(data, "Balota", 4500, 2400);
+        AddLocation(data, "Kamyshovo", 12000, 3500);
+        return data;
     }
 
     // Single ban entry builder. Built via accumulator to dodge two Enforce
@@ -1123,57 +1329,23 @@ class TakaroCommandDispatcher
     // (GUID DURATION REASON). Merges, dedups, returns IBanDTO[].
     void HandleListBans(TakaroOperation op)
     {
+        array<string> ids = new array<string>;
+        array<string> ex = new array<string>;
+        array<string> rs = new array<string>;
+        TakaroBanStore.Load(ids, ex, rs);
         string json = "[";
-        bool first = true;
         int emitted = 0;
-
-        // Vanilla ban.txt — one Steam64 per line (sometimes followed by name)
-        FileHandle f = OpenFile("ban.txt", FileMode.READ);
-        if (f != 0)
+        for (int i = 0; i < ids.Count(); i++)
         {
-            string line;
-            while (FGets(f, line) > 0)
-            {
-                line.TrimInPlace();
-                if (line == "") continue;
-                int sp = line.IndexOf(" ");
-                string steamId;
-                if (sp >= 0) steamId = line.Substring(0, sp); else steamId = line;
-                if (steamId == "") continue;
-                if (!first) json += ",";
-                first = false;
-                json += BuildBanEntry(steamId, "");
-                emitted++;
-            }
-            CloseFile(f);
+            if (TakaroBanStore.IsExpired(ex[i])) continue;
+            if (emitted > 0) json += ",";
+            string entry = "{" + Quote("player") + ":{" + Quote("gameId") + ":" + Quote(ids[i]) + "}";
+            entry += "," + Quote("reason") + ":" + Quote(JsonSafeString(rs[i]));
+            if (ex[i] == "" || ex[i] == "null") entry += "," + Quote("expiresAt") + ":null}";
+            else entry += "," + Quote("expiresAt") + ":" + Quote(ex[i]) + "}";
+            json += entry;
+            emitted++;
         }
-
-        // BE bans.txt — "GUID DURATION REASON" per line
-        FileHandle bf = OpenFile("battleye/bans.txt", FileMode.READ);
-        if (bf != 0)
-        {
-            string bline;
-            while (FGets(bf, bline) > 0)
-            {
-                bline.TrimInPlace();
-                if (bline == "" || bline.IndexOf("//") == 0) continue;
-                int sp1 = bline.IndexOf(" ");
-                if (sp1 < 0) continue;
-                string guid = bline.Substring(0, sp1);
-                string rest = bline.Substring(sp1 + 1, bline.Length() - sp1 - 1);
-                rest.TrimInPlace();
-                int sp2 = rest.IndexOf(" ");
-                string reason = "";
-                if (sp2 >= 0)
-                    reason = JsonSafeString(rest.Substring(sp2 + 1, rest.Length() - sp2 - 1));
-                if (!first) json += ",";
-                first = false;
-                json += BuildBanEntry(guid, reason);
-                emitted++;
-            }
-            CloseFile(bf);
-        }
-
         json += "]";
         TakaroLog.Info("listBans: " + emitted.ToString() + " bans returned");
         ReplyOk(op, json);
@@ -1228,10 +1400,7 @@ class TakaroCommandDispatcher
     string BuildPlatformId(PlayerIdentity id)
     {
         if (!id) return "";
-        string bisid = id.GetId();
-        int eqIdx = bisid.IndexOf("=");
-        if (eqIdx >= 0) bisid = bisid.Substring(0, eqIdx);
-        return "dayz:" + bisid;
+        return TakaroEventFactory.PlatformIdFor(id.GetPlainId(), id.GetId());
     }
 
     PlayerBase FindPlayerByGameId(string gameId)
@@ -1249,7 +1418,7 @@ class TakaroCommandDispatcher
         return null;
     }
 
-    void BroadcastSystemMessage(string msg, PlayerBase onlyTo)
+    void BroadcastSystemMessage(string msg, PlayerBase onlyTo, string title = "Server")
     {
         // With Expansion loaded we use the global chat channel (CCGlobal),
         // which renders the entire message body in GlobalChatColor (88,195,255
@@ -1277,7 +1446,7 @@ class TakaroCommandDispatcher
 #endif
         if (onlyTo)
         {
-            NotificationSystem.SendNotificationToPlayerExtended(onlyTo, 8.0, "Discord", msg, "");
+            NotificationSystem.SendNotificationToPlayerExtended(onlyTo, 8.0, title, msg, "");
         }
         else
         {
@@ -1287,7 +1456,7 @@ class TakaroCommandDispatcher
             {
                 PlayerBase pb = PlayerBase.Cast(players[i]);
                 if (!pb) continue;
-                NotificationSystem.SendNotificationToPlayerExtended(pb, 8.0, "Discord", msg, "");
+                NotificationSystem.SendNotificationToPlayerExtended(pb, 8.0, title, msg, "");
             }
         }
         TakaroLog.Info("BROADCAST (popup): " + msg);
@@ -1333,32 +1502,107 @@ class TakaroCommandDispatcher
         if (!js.ReadFromString(args, op.argsJson, err)) { ReplyError(op, "Bad args: " + err); return false; }
         return true;
     }
+    // M3 fix: Takaro sends the target as a nested `player` object (for
+    // teleportPlayer the FULL PlayerOnGameserver row incl. inventory/roles),
+    // e.g. {"player":{...,"gameId":"7656..."},"x":1,"y":2,"z":3}. The flat
+    // JsonSerializer DTO read failed with "JSON ERROR", so every one of these
+    // actions timed out in Takaro. Manual extraction, same as sendMessage/giveItem.
     bool ParseKick(TakaroOperation op, out ArgsKickPlayer args)
     {
         if (!op || op.argsJson == "") { ReplyError(op, "Missing args"); return false; }
-        string err; JsonSerializer js = new JsonSerializer;
-        if (!js.ReadFromString(args, op.argsJson, err)) { ReplyError(op, "Bad args: " + err); return false; }
+        args.gameId = ExtractJsonStringField(op.argsJson, "gameId");
+        args.reason = ExtractJsonStringFieldLast(op.argsJson, "reason");
+        if (args.gameId == "") { ReplyError(op, "kickPlayer: missing gameId"); return false; }
         return true;
     }
     bool ParseBan(TakaroOperation op, out ArgsBanPlayer args)
     {
         if (!op || op.argsJson == "") { ReplyError(op, "Missing args"); return false; }
-        string err; JsonSerializer js = new JsonSerializer;
-        if (!js.ReadFromString(args, op.argsJson, err)) { ReplyError(op, "Bad args: " + err); return false; }
+        args.gameId = ExtractJsonStringField(op.argsJson, "gameId");
+        args.reason = ExtractJsonStringFieldLast(op.argsJson, "reason");
+        args.durationSeconds = ExtractJsonIntField(op.argsJson, "durationSeconds");
+        args.expiresAt = ExtractJsonStringFieldLast(op.argsJson, "expiresAt");
+        if (args.gameId == "") { ReplyError(op, "banPlayer: missing gameId"); return false; }
         return true;
     }
     bool ParseUnban(TakaroOperation op, out ArgsUnbanPlayer args)
     {
         if (!op || op.argsJson == "") { ReplyError(op, "Missing args"); return false; }
-        string err; JsonSerializer js = new JsonSerializer;
-        if (!js.ReadFromString(args, op.argsJson, err)) { ReplyError(op, "Bad args: " + err); return false; }
+        args.gameId = ExtractJsonStringField(op.argsJson, "gameId");
+        if (args.gameId == "") { ReplyError(op, "unbanPlayer: missing gameId"); return false; }
         return true;
     }
     bool ParseTeleport(TakaroOperation op, out ArgsTeleportPlayer args)
     {
         if (!op || op.argsJson == "") { ReplyError(op, "Missing args"); return false; }
-        string err; JsonSerializer js = new JsonSerializer;
-        if (!js.ReadFromString(args, op.argsJson, err)) { ReplyError(op, "Bad args: " + err); return false; }
+        args.gameId = ExtractJsonStringField(op.argsJson, "gameId");
+        if (args.gameId == "") { ReplyError(op, "teleportPlayer: missing gameId"); return false; }
+        // Locals, not `out args.x`: Enforce does not reliably write out-params into class members.
+        float fx = 0;
+        float fy = 0;
+        float fz = 0;
+        bool hx = ExtractJsonFloatFieldLast(op.argsJson, "x", fx);
+        bool hy = ExtractJsonFloatFieldLast(op.argsJson, "y", fy);
+        bool hz = ExtractJsonFloatFieldLast(op.argsJson, "z", fz);
+        if (!hx || !hy || !hz)
+        {
+            ReplyError(op, "teleportPlayer: missing x/y/z");
+            return false;
+        }
+        args.x = fx;
+        args.y = fy;
+        args.z = fz;
+        return true;
+    }
+
+    // Last occurrence of "field":"value" (top-level fields come after the nested player object).
+    string ExtractJsonStringFieldLast(string json, string field)
+    {
+        string needle = "\"" + field + "\":\"";
+        int p = -1;
+        int from = 0;
+        while (true)
+        {
+            int q = json.IndexOfFrom(from, needle);
+            if (q < 0) break;
+            p = q;
+            from = q + 1;
+        }
+        if (p < 0) return "";
+        p += needle.Length();
+        string rest = json.Substring(p, json.Length() - p);
+        int e = rest.IndexOf("\"");
+        if (e < 0) return "";
+        return rest.Substring(0, e);
+    }
+
+    // Last occurrence of an unquoted numeric "field":<number>. Returns false if absent.
+    bool ExtractJsonFloatFieldLast(string json, string field, out float value)
+    {
+        string needle = "\"" + field + "\":";
+        int p = -1;
+        int from = 0;
+        while (true)
+        {
+            int q = json.IndexOfFrom(from, needle);
+            if (q < 0) break;
+            p = q;
+            from = q + 1;
+        }
+        if (p < 0) return false;
+        p += needle.Length();
+        while (p < json.Length() && json.Get(p) == " ") p++;
+        int start = p;
+        while (p < json.Length())
+        {
+            string ch = json.Get(p);
+            if (ch == "," || ch == "}" || ch == " " || ch == "]") break;
+            p++;
+        }
+        if (p == start) return false;
+        string num = json.Substring(start, p - start);
+        if (num == "null") return false;
+        value = num.ToFloat();
         return true;
     }
     bool ParseGiveItem(TakaroOperation op, out ArgsGiveItem args)
@@ -1410,7 +1654,7 @@ class TakaroCommandDispatcher
         if (resultJson != "")
             body += ",\"result\":" + resultJson;
         if (errorMessage != "")
-            body += ",\"error\":\"" + errorMessage + "\"";
+            body += ",\"error\":\"" + TakaroEventFactory.Safe(errorMessage) + "\"";  // M3 fix: JSON ERROR text has raw newlines
         body += "}";
         return body;
     }

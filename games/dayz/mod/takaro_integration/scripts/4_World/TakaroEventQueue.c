@@ -76,14 +76,42 @@ class TakaroEventQueue
 
 class TakaroEventFactory
 {
+    // Takaro links players across servers and games only through steamId /
+    // epicOnlineServicesId / xboxLiveId / platformId, compared verbatim (it
+    // never parses platformId). DayZ PC players are Steam players, so:
+    //   steamId    = the bare SteamID64 (GetPlainId), never the BIS hash
+    //   platformId = "steam:<SteamID64>", the form every other connector uses;
+    //                "dayz:<BIS hash>" only when no SteamID64 is known.
+    static bool IsSteamId64(string sid)
+    {
+        if (sid.Length() != 17) return false;
+        if (sid.Substring(0, 4) != "7656") return false;
+        string digits = "0123456789";
+        for (int i = 0; i < 17; i++)
+        {
+            if (digits.IndexOf(sid.Substring(i, 1)) < 0) return false;
+        }
+        return true;
+    }
+
+    static string PlatformIdFor(string sid, string bis)
+    {
+        if (IsSteamId64(sid)) return "steam:" + sid;
+        int eqIdx = bis.IndexOf("=");
+        if (eqIdx >= 0) bis = bis.Substring(0, eqIdx);
+        if (bis != "") return "dayz:" + bis;
+        return "dayz:" + sid;
+    }
+
     static string NowIso()
     {
-        int y, mo, d, h, mi;
-        GetGame().GetWorld().GetDate(y, mo, d, h, mi);
-        // Seconds always 00 — DayZ's GetDate has minute-resolution. Format
-        // each int with width-2 padding via a single string.Format.
-        return string.Format("%1-%2-%3T%4:%5:00Z",
-            y.ToString(), Pad2(mo), Pad2(d), Pad2(h), Pad2(mi));
+        // M1: was World.GetDate (in-game time, not UTC) formatted with
+        // string.Format, which rendered e.g. '26-09-20T11:26:00Z'. Use the
+        // real UTC wall clock and plain concatenation.
+        int y, mo, d, h, mi, sec;
+        GetYearMonthDayUTC(y, mo, d);
+        GetHourMinuteSecondUTC(h, mi, sec);
+        return y.ToString() + "-" + Pad2(mo) + "-" + Pad2(d) + "T" + Pad2(h) + ":" + Pad2(mi) + ":" + Pad2(sec) + "Z";
     }
 
     static string Pad2(int v)
@@ -92,14 +120,36 @@ class TakaroEventFactory
         return v.ToString();
     }
 
-    // Strip double-quotes from user-controlled strings to keep our naive JSON
-    // valid. Same trick the command dispatcher uses; backslash escapes in
-    // string literals confuse Enforce's CParser.
+    // F7 — real JSON escaping for user-controlled strings (player names, chat
+    // text, item classnames) instead of the old "replace \" with '" mangling.
+    //
+    // CParser gotcha: a lone `"\\"` literal breaks Enforce's parser, so we
+    // cannot write a single backslash directly. `"\\n"` DOES parse (the lexer
+    // reads `\\` as one escaped backslash followed by a plain `n`, yielding the
+    // 2-char string backslash+n), so we take its first character to obtain a
+    // literal backslash without ever writing the forbidden literal.
+    //
+    // Order matters: backslashes first, then quotes, otherwise the backslash
+    // we inject in front of a quote would itself get escaped.
+    static string Backslash()
+    {
+        string seed = "\\n";
+        return seed.Substring(0, 1);
+    }
+
     static string Safe(string s)
     {
         string out_s = s;
+        string bs = Backslash();
+        out_s.Replace(bs, bs + bs);
         string dq = "\"";
-        out_s.Replace(dq, "'");
+        out_s.Replace(dq, bs + dq);
+        string nl = "\n";
+        out_s.Replace(nl, "\\n");
+        string cr = "\r";
+        out_s.Replace(cr, "\\r");
+        string tab = "\t";
+        out_s.Replace(tab, "\\t");
         return out_s;
     }
 
@@ -116,15 +166,12 @@ class TakaroEventFactory
         if (!id && pb) id = pb.GetIdentity();
         if (!id) return "null";
         string sid = id.GetPlainId();
-        string bisid = id.GetId();
-        int eqIdx = bisid.IndexOf("=");
-        if (eqIdx >= 0) bisid = bisid.Substring(0, eqIdx);
         string name = Safe(TakaroNameCache.Resolve(sid, id.GetName()));
         string q = "\"";
         string s = "{" + q + "gameId" + q + ":" + q + sid + q;
         s += "," + q + "name" + q + ":" + q + name + q;
-        s += "," + q + "steamId" + q + ":" + q + sid + q;
-        s += "," + q + "platformId" + q + ":" + q + "dayz:" + bisid + q;
+        if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
+        s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, id.GetId()) + q;
         s += "," + q + "ping" + q + ":" + id.GetPingAct().ToString();
         s += "}";
         return s;
@@ -191,8 +238,8 @@ class TakaroEventFactory
         s += "," + q + "player" + q + ":{";
         s += q + "gameId" + q + ":" + q + sid + q;
         s += "," + q + "name" + q + ":" + q + name + q;
-        s += "," + q + "steamId" + q + ":" + q + sid + q;
-        s += "," + q + "platformId" + q + ":" + q + "dayz:" + bis + q;
+        if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
+        s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, bis) + q;
         s += "," + q + "ping" + q + ":" + ping.ToString();
         s += "}}";
         return s;
@@ -238,6 +285,25 @@ class TakaroEventFactory
         }
         if (weapon != "")
             s += "," + q + "msg" + q + ":" + q + "killed with " + Safe(weapon) + q;
+        s += "}";
+        return s;
+    }
+
+    // F4 — `entity-killed`. Takaro's EventEntityKilled carries the player who
+    // made the kill, the victim entity classname, the weapon and an optional
+    // position. Built by concatenation, same as the other factories.
+    static string EntityKilled(PlayerBase player, string entityType, string weapon, vector pos)
+    {
+        string q = "\"";
+        string s = "{" + q + "type" + q + ":" + q + "entity-killed" + q;
+        s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
+        s += "," + q + "player" + q + ":" + PlayerJson(null, player);
+        s += "," + q + "entity" + q + ":" + q + Safe(entityType) + q;
+        s += "," + q + "weapon" + q + ":" + q + Safe(weapon) + q;
+        // M3 fix: Takaro's EventEntityKilled has NO position property; sending one
+        // failed whitelistValidation and the event was dropped ("property position
+        // has failed the following constraints: whitelistValidation"). `pos` is kept
+        // in the signature for callers/logging only.
         s += "}";
         return s;
     }

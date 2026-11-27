@@ -71,12 +71,12 @@ class TakaroHttpClient
 
     void TakaroHttpClient(string baseUrl, string identityToken, int timeoutSeconds)
     {
-        m_BaseUrl = baseUrl;
+        m_BaseUrl = NormalizeBaseUrl(baseUrl);
         m_TimeoutSeconds = timeoutSeconds;
-        if (identityToken != "")
-            m_AuthHeader = "Bearer " + identityToken;
-        else
-            m_AuthHeader = "";
+        // Diagnostic build: the local bridge does not require Authorization.
+        // Avoid custom/multi-line headers because DayZ RestApi reports
+        // EREST_ERROR_APPERROR before the request reaches the bridge on Wisp.
+        m_AuthHeader = "";
 
         m_Api = CreateRestApi();
         m_Api.EnableDebug(false);
@@ -84,23 +84,27 @@ class TakaroHttpClient
 
     void UpdateAuth(string identityToken)
     {
-        if (identityToken != "")
-            m_AuthHeader = "Bearer " + identityToken;
-        else
-            m_AuthHeader = "";
+        m_AuthHeader = "";
+    }
+
+    private string NormalizeBaseUrl(string baseUrl)
+    {
+        if (baseUrl == "") return baseUrl;
+        if (baseUrl.Substring(baseUrl.Length() - 1, 1) == "/") return baseUrl;
+        return baseUrl + "/";
+    }
+
+    private string NormalizePath(string path)
+    {
+        if (path == "") return path;
+        if (path.Substring(0, 1) == "/") return path.Substring(1, path.Length() - 1);
+        return path;
     }
 
     private RestContext NewContext()
     {
         RestContext ctx = m_Api.GetRestContext(m_BaseUrl);
         ctx.SetHeader("application/json");
-        if (m_AuthHeader != "")
-        {
-            // DayZ RestContext.SetHeader takes a single header line; we keep the
-            // last call as the Authorization header. If your build of DayZ supports
-            // multi-header context, replace with explicit header method.
-            ctx.SetHeader("application/json\r\nAuthorization: " + m_AuthHeader);
-        }
         return ctx;
     }
 
@@ -109,8 +113,8 @@ class TakaroHttpClient
         if (!callback)
             return;
         RestContext ctx = NewContext();
-        TakaroLog.Debug("POST " + m_BaseUrl + path + " body=" + jsonBody.Substring(0, Math.Min(120, jsonBody.Length())));
-        ctx.POST(callback, path, jsonBody);
+        TakaroLog.Debug("POST " + m_BaseUrl + NormalizePath(path) + " body=" + jsonBody.Substring(0, Math.Min(120, jsonBody.Length())));
+        ctx.POST(callback, NormalizePath(path), jsonBody);
     }
 
     void Get(string path, TakaroHttpCallback callback)
@@ -118,7 +122,7 @@ class TakaroHttpClient
         if (!callback)
             return;
         RestContext ctx = NewContext();
-        TakaroLog.Debug("GET " + m_BaseUrl + path);
-        ctx.GET(callback, path);
+        TakaroLog.Debug("GET " + m_BaseUrl + NormalizePath(path));
+        ctx.GET(callback, NormalizePath(path));
     }
 }

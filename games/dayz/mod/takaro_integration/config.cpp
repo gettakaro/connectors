@@ -19,17 +19,12 @@ class CfgMods
         credits = "";
         author = "mad-001";
         authorID = "0";
-        version = "0.1.14";
+        version = "0.2.1";
         extra = 0;
         dependencies[] = {"Game", "World", "Mission"};
 
         class defs
         {
-            class engineScriptModule
-            {
-                value = "";
-                files[] = {"TakaroIntegration/scripts/1_Core"};
-            };
             class gameScriptModule
             {
                 value = "";

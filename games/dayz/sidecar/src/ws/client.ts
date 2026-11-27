@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events';
 import WebSocket from 'ws';
-import { logger } from '../logger.js';
+import { DEBUG, logger, truncate } from '../logger.js';
 import type { GameEventType, IdentifyPayload, WsMessage } from './protocol.js';
 
 export class TakaroWsClient extends EventEmitter {
@@ -8,6 +8,7 @@ export class TakaroWsClient extends EventEmitter {
   private gameServerId: string | null = null;
   private reconnectMs = 5000;
   private shuttingDown = false;
+  private connectedFlag = false;
 
   constructor(
     private url: string,
@@ -21,14 +22,17 @@ export class TakaroWsClient extends EventEmitter {
     this.ws = new WebSocket(this.url);
 
     this.ws.on('open', () => {
+      this.connectedFlag = true;
       logger.info('WS open; sending identify');
       this.send({ type: 'identify', payload: this.identify });
     });
 
     this.ws.on('message', (data) => {
+      const raw = data.toString();
+      if (DEBUG) logger.debug(`WS RECV ${truncate(raw)}`);
       let msg: WsMessage;
       try {
-        msg = JSON.parse(data.toString()) as WsMessage;
+        msg = JSON.parse(raw) as WsMessage;
       } catch (err) {
         logger.warn(`Bad WS payload: ${(err as Error).message}`);
         return;
@@ -42,6 +46,7 @@ export class TakaroWsClient extends EventEmitter {
 
     this.ws.on('close', (code, reason) => {
       logger.warn(`WS closed code=${code} reason=${reason.toString()}`);
+      this.connectedFlag = false;
       this.gameServerId = null;
       this.emit('disconnected');
       if (!this.shuttingDown) {
@@ -52,6 +57,7 @@ export class TakaroWsClient extends EventEmitter {
 
   shutdown(): void {
     this.shuttingDown = true;
+    this.connectedFlag = false;
     this.ws?.close();
   }
 
@@ -60,7 +66,9 @@ export class TakaroWsClient extends EventEmitter {
       logger.warn(`Cannot send ${msg.type}: WS not open`);
       return;
     }
-    this.ws.send(JSON.stringify(msg));
+    const frame = JSON.stringify(msg);
+    if (DEBUG) logger.debug(`WS SEND ${truncate(frame)}`);
+    this.ws.send(frame);
   }
 
   sendResponse(requestId: string, payload: unknown): void {
@@ -73,6 +81,11 @@ export class TakaroWsClient extends EventEmitter {
 
   sendGameEvent(type: GameEventType, data: unknown): void {
     this.send({ type: 'gameEvent', payload: { type, data } });
+  }
+
+  /** True while the socket is open (independent of whether identify succeeded). */
+  connected(): boolean {
+    return this.connectedFlag && this.ws?.readyState === WebSocket.OPEN;
   }
 
   identified(): boolean {
