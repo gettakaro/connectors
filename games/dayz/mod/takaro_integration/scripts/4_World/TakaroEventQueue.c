@@ -165,6 +165,7 @@ class TakaroEventFactory
     {
         if (!id && pb) id = pb.GetIdentity();
         if (!id) return "null";
+        if (!pb) pb = PlayerBase.Cast(id.GetPlayer());
         string sid = id.GetPlainId();
         string name = Safe(TakaroNameCache.Resolve(sid, id.GetName()));
         string q = "\"";
@@ -173,16 +174,17 @@ class TakaroEventFactory
         if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
         s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, id.GetId()) + q;
         s += "," + q + "ping" + q + ":" + id.GetPingAct().ToString();
+        s += TakaroCharacter.JsonMember(pb);
         s += "}";
         return s;
     }
 
-    static string Connected(PlayerIdentity id)
+    static string Connected(PlayerIdentity id, PlayerBase pb)
     {
         string q = "\"";
         string s = "{" + q + "type" + q + ":" + q + "player-connected" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
-        s += "," + q + "player" + q + ":" + PlayerJson(id, null);
+        s += "," + q + "player" + q + ":" + PlayerJson(id, pb);
         s += "}";
         return s;
     }
@@ -206,7 +208,7 @@ class TakaroEventFactory
     // them Takaro's resolveRef throws "Platform ID collision detected"
     // because gameId would mismatch the existing POG and the disconnect
     // event silently drops.
-    static string Disconnected(PlayerIdentity id, PlayerBase pb, string uid, string cachedSteam = "", string cachedName = "")
+    static string Disconnected(PlayerIdentity id, PlayerBase pb, string uid, string cachedSteam = "", string cachedName = "", string cachedCharacter = "")
     {
         // Strip trailing '=' from BIS uid to satisfy Takaro's platformId regex.
         string bis = uid;
@@ -235,13 +237,23 @@ class TakaroEventFactory
         string q = "\"";
         string s = "{" + q + "type" + q + ":" + q + "player-disconnected" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
-        s += "," + q + "player" + q + ":{";
-        s += q + "gameId" + q + ":" + q + sid + q;
+        s += "," + q + "player" + q + ":" + PlayerRef(sid, name, bis, ping, cachedCharacter);
+        s += "}";
+        return s;
+    }
+
+    // A player object built from known fields, for a player whose identity
+    // is already gone. `name` is expected to be escaped.
+    static string PlayerRef(string sid, string name, string bis, int ping, string character)
+    {
+        string q = "\"";
+        string s = "{" + q + "gameId" + q + ":" + q + sid + q;
         s += "," + q + "name" + q + ":" + q + name + q;
         if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
         s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, bis) + q;
         s += "," + q + "ping" + q + ":" + ping.ToString();
-        s += "}}";
+        s += character;
+        s += "}";
         return s;
     }
 
@@ -261,14 +273,19 @@ class TakaroEventFactory
         return s;
     }
 
-    static string Death(PlayerBase victim, EntityAI killer, string weapon)
+    // cachedPlayer stands in for the victim when the body has lost its identity,
+    // which is the case for a death during the logout timer.
+    static string Death(PlayerBase victim, EntityAI killer, string weapon, string cachedPlayer = "")
     {
         // EventPlayerDeath has no `weapon` field (that's on EventEntityKilled).
         // Fold the weapon name into the optional `msg` so it isn't lost.
         string q = "\"";
         string s = "{" + q + "type" + q + ":" + q + "player-death" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
-        s += "," + q + "player" + q + ":" + PlayerJson(null, victim);
+        string victimJson = cachedPlayer;
+        if (victimJson == "") victimJson = PlayerJson(null, victim);
+        s += "," + q + "player" + q + ":" + victimJson;
+        s += "," + q + "characterEnded" + q + ":true";
         if (killer && killer.IsInherited(PlayerBase))
         {
             PlayerBase kp = PlayerBase.Cast(killer);

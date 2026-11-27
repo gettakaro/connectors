@@ -18,6 +18,8 @@ modded class MissionServer
             m_TakaroBridge.Initialize();
             TakaroBridgeAccessor.Set(m_TakaroBridge);
             TakaroLog.Info("Bridge attached to MissionServer.OnInit");
+            // Map tiles: survey this world once, after the server has settled.
+            TakaroMapSurvey.ScheduleAuto(60000);
         }
     }
 

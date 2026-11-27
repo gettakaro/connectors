@@ -29,6 +29,7 @@ class TakaroBridge
     // drops the disconnect event.
     ref map<string, string> m_BisToSteam;
     ref map<string, string> m_BisToName;
+    ref map<string, string> m_BisToCharacter = new map<string, string>;
 
     void TakaroBridge()
     {
@@ -132,7 +133,10 @@ class TakaroBridge
     {
         if (!m_Initialized) return;
         if (!identity) return;
-        m_Queue.Enqueue(TakaroEventFactory.Connected(identity));
+        // A kick never reaches PlayerDisconnected, so its guard outlives the
+        // session; without this the next disconnect would be swallowed.
+        m_DisconnectEmitted.Remove(identity.GetId());
+        m_Queue.Enqueue(TakaroEventFactory.Connected(identity, player));
         TakaroLog.Debug("event: player-connected " + identity.GetName());
 
         // Cache identity bits so disconnect can re-emit the same gameId/name
@@ -144,6 +148,7 @@ class TakaroBridge
         if (eqIdx >= 0) bisKey = bisKey.Substring(0, eqIdx);
         m_BisToSteam.Set(bisKey, identity.GetPlainId());
         m_BisToName.Set(bisKey, TakaroNameCache.Resolve(identity.GetPlainId(), identity.GetName()));
+        m_BisToCharacter.Set(bisKey, TakaroCharacter.JsonMember(player));
     }
 
     // identity + uid come straight from MissionServer.PlayerDisconnected;
@@ -180,8 +185,10 @@ class TakaroBridge
         string cachedName = "";
         if (m_BisToSteam.Contains(bisKey)) cachedSteam = m_BisToSteam.Get(bisKey);
         if (m_BisToName.Contains(bisKey)) cachedName = m_BisToName.Get(bisKey);
+        string cachedCharacter = "";
+        if (m_BisToCharacter.Contains(bisKey)) cachedCharacter = m_BisToCharacter.Get(bisKey);
 
-        m_Queue.Enqueue(TakaroEventFactory.Disconnected(identity, player, uid, cachedSteam, cachedName));
+        m_Queue.Enqueue(TakaroEventFactory.Disconnected(identity, player, uid, cachedSteam, cachedName, cachedCharacter));
 
         if (identity)
             TakaroLog.Info("event: player-disconnected " + identity.GetName());
@@ -190,6 +197,7 @@ class TakaroBridge
 
         m_BisToSteam.Remove(bisKey);
         m_BisToName.Remove(bisKey);
+        m_BisToCharacter.Remove(bisKey);
     }
 
     void OnChatMessage(PlayerIdentity sender, string channel, string text)
@@ -203,7 +211,29 @@ class TakaroBridge
     {
         if (!m_Initialized) return;
         if (!victim) return;
-        m_Queue.Enqueue(TakaroEventFactory.Death(victim, killer, weapon));
+
+        string cachedPlayer = "";
+        if (!victim.GetIdentity())
+        {
+            cachedPlayer = CachedPlayerJson(victim.GetCachedID());
+            if (cachedPlayer == "")
+            {
+                TakaroLog.Warn("player-death skipped: body has no identity and no cached player");
+                return;
+            }
+        }
+        m_Queue.Enqueue(TakaroEventFactory.Death(victim, killer, weapon, cachedPlayer));
+    }
+
+    // The connect-time player for a BIS uid, or "" if none is cached.
+    protected string CachedPlayerJson(string uid)
+    {
+        string bisKey = uid;
+        int eqIdx = bisKey.IndexOf("=");
+        if (eqIdx >= 0) bisKey = bisKey.Substring(0, eqIdx);
+        if (!m_BisToSteam.Contains(bisKey)) return "";
+        string name = TakaroEventFactory.Safe(m_BisToName.Get(bisKey));
+        return TakaroEventFactory.PlayerRef(m_BisToSteam.Get(bisKey), name, bisKey, 0, m_BisToCharacter.Get(bisKey));
     }
 
     // F4 — a player killed an infected/animal. `entityType` is the victim

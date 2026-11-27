@@ -53,15 +53,24 @@ Every file key can also be set from the environment, and the environment wins. W
 | `BRIDGE_LOCAL_PORT` | `localPort` | |
 | `BRIDGE_BIND_ADDR` | `bindAddress` | Default `127.0.0.1`. |
 | `BRIDGE_CONFIG` | | Path to the config file. |
-| `BRIDGE_POLL_WATCHDOG_SEC` | | Exit if the mod stopped polling for this long, so a supervisor restarts the bridge. `0` disables it. |
-| `DAYZ_LOG_DIR` | | Server profiles directory. When set, new RPT and script log lines are sent as Takaro `log` events. |
+| `BRIDGE_POLL_WATCHDOG_SEC` | | Docker sidecar: exit when only loopback has been left in the network namespace for this many seconds (the game container restarted or stopped), so the restart policy re-attaches the bridge. A hung or busy game does not trigger it. `0` disables it. |
+| `DAYZ_LOG_DIR` | | Server profiles directory. When set, new RPT and script log lines are sent as Takaro `log` events, and map tiles are drawn from `TakaroIntegration/map/<world>.survey` in it. |
+| `DAYZ_MAP_DIR` | | Directory with the mod's map survey, if it is not under `DAYZ_LOG_DIR`. |
 | `DAYZ_LOG_DENY` | | Comma-separated regexes of log lines to skip. |
-| `DAYZ_LOG_MAX_PER_SEC` | | Rate limit for `log` events. Default `20`. |
+| `DAYZ_LOG_MAX_PER_SEC` | | Rate limit for `log` events. Default `10`. |
+| `TAKARO_PROTOCOL` | | `0` identifies with Takaro protocol version 0 only. By default the bridge offers versions 0 and 1 and Takaro picks one. |
 | `DEBUG` | | `1` logs every WebSocket frame, with tokens redacted. |
 
 ## What the bridge does
 
 1. Connects WS to Takaro, sends `identify` with registrationToken + serverName, receives `gameServerId`.
+   It offers protocol versions 0 and 1. On version 1 it sends a Capability Manifest with every action and event
+   the mod handles and, once the world survey has finished, the map: one Dimension per world (`chernarusplus`
+   is "Chernarus", `enoch` is "Livonia"), x to the right and z up, bounds `0..<world size>` metres, and a tiled
+   source of 256 px XYZ tiles at zoom 0 to 5 (row 0 is the north edge). Every position the bridge passes on
+   (player location, locations, death and kill events) then names that Dimension, and an offline player's
+   location is `null`. Events are numbered and resent after a reconnect until Takaro acknowledges them.
+   On version 0 the legacy `getMapInfo`/`getMapTile` answers stay as they were.
 2. Listens on `127.0.0.1:<localPort>` for the mod:
    - `POST /gameserver/register` — returns the cached `{identityToken, gameServerId}` so the mod skips its own registration round-trip.
    - `POST /gameserver/<id>/events` — each event in the batch is forwarded as a Takaro `gameEvent` over WS.
@@ -78,7 +87,7 @@ Every file key can also be set from the environment, and the environment wins. W
    batch and retries, so events are delivered once after a reconnect instead of being dropped.
 8. Passes only the player's `gameId` to the mod for player-targeted actions. Takaro sends the whole player record,
    which is long enough that Enforce Script truncates the argument string.
-9. `/health` reports `identified`, `wsConnected`, `lastModContactAt`, `lastPollAt`, `lastEventAt`,
+9. `/health` reports `ok` (true only while Takaro is connected and the mod is polling), `identified`, `wsConnected`, `lastModContactAt`, `lastPollAt`, `lastEventAt`,
    `eventsForwarded`, `eventsDeferred` and `logsForwarded`.
 
 ## Linux hosting (Docker)
@@ -89,7 +98,9 @@ namespace (`network_mode: service:<dayz>`). The mod then reaches the bridge on `
 - Do not mount the `@TakaroIntegration` folder read-only. With a `:ro` mount the server loads nothing from `Addons/`
   and logs no error.
 - If the game container is recreated on its own, the bridge keeps the old network namespace and every poll fails.
-  Recreate both together, or set `BRIDGE_POLL_WATCHDOG_SEC` with a restart policy.
+  Recreate both together, or set `BRIDGE_POLL_WATCHDOG_SEC` with a restart policy. Docker tries that restart once: if
+  the game container is still restarting at that moment, the start fails ("cannot join network namespace") and Docker
+  does not retry, so run something that starts the exited bridge again once the game container is up.
 - Folder and file casing of the mod did not matter on this build. `-servermod=`, `-serverMod=` and `-mod=` all
   loaded it.
 - RestApi callback codes: `5` client error (4xx), `6` server error (5xx), `7` app error, `8` timeout. A code `8` means

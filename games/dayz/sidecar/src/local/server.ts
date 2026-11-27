@@ -24,6 +24,8 @@ import http from 'node:http';
 import { DEBUG, logger, truncate } from '../logger.js';
 import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
+import { DISABLED_MAP_INFO, MapTileError, parseFrameTileArgs, parseTileArgs, type MapService } from '../map/service.js';
+import { eventWithDimension, withCharacter, withDimension } from '../ws/capabilities.js';
 
 interface PendingOperation {
   operationId: string; // = WS requestId
@@ -92,6 +94,9 @@ function shapeForAction(action: string | undefined, raw: unknown): unknown {
     if (v && typeof v === 'object' && Array.isArray((v as { players?: unknown[] }).players)) {
       v = (v as { players: unknown[] }).players;
     }
+    if (Array.isArray(v)) v = v.map(withCharacter);
+  } else if (action === 'getPlayer') {
+    v = withCharacter(v);
   } else if (action === 'listBans') {
     if (v && typeof v === 'object' && Array.isArray((v as { bans?: unknown[] }).bans)) {
       v = (v as { bans: unknown[] }).bans;
@@ -154,6 +159,7 @@ export class LocalHttpServer {
     private serverName: string,
     private identityToken: string,
     private bindAddress: string = '127.0.0.1',
+    private map: MapService | null = null,
   ) {
     this.cachedIdentity.identityToken = identityToken;
 
@@ -176,6 +182,11 @@ export class LocalHttpServer {
         this.ws.sendError(requestId, 'No action');
         return;
       }
+      // Map requests are answered here from the world survey; the mod never sees them.
+      if (payload.action === 'getMapInfo' || payload.action === 'getMapTile') {
+        this.answerMap(requestId, payload.action, payload.args);
+        return;
+      }
       this.operationQueue.push({
         operationId: requestId,
         action: payload.action,
@@ -184,6 +195,33 @@ export class LocalHttpServer {
       this.operationActions.set(requestId, payload.action);
       logger.debug(`Queued ${payload.action} (op=${requestId})`);
     });
+  }
+
+  /** The Dimension positions carry on a protocol v1 connection, or null on v0 / without a map. */
+  private positionDimension(): string | null {
+    if (this.ws.getProtocolVersion() !== 1 || !this.map) return null;
+    return this.map.dimension()?.id ?? null;
+  }
+
+  private answerMap(requestId: string, action: string, args: unknown): void {
+    try {
+      if (action === 'getMapTile' && this.ws.getProtocolVersion() === 1) {
+        if (!this.map) throw new MapTileError('not_found', 'Map tiles are not configured (set DAYZ_LOG_DIR or DAYZ_MAP_DIR)');
+        const { dimension, zoom, x, y } = parseFrameTileArgs(args);
+        this.ws.sendResponse(requestId, this.map.frameTile(dimension, zoom, x, y));
+        return;
+      }
+      if (action === 'getMapInfo') {
+        this.ws.sendResponse(requestId, this.map ? this.map.mapInfo() : DISABLED_MAP_INFO);
+        return;
+      }
+      if (!this.map) throw new Error('Map tiles are not configured (set DAYZ_LOG_DIR or DAYZ_MAP_DIR)');
+      const { x, y, z } = parseTileArgs(args);
+      this.ws.sendResponse(requestId, this.map.tile(x, y, z));
+    } catch (err) {
+      logger.debug(`${action} failed: ${(err as Error).message}`);
+      this.ws.sendError(requestId, (err as Error).message, err instanceof MapTileError ? err.code : 'game_error');
+    }
   }
 
   /** F9: lets index.ts surface the RPT tail's forwarded-line count on /health. */
@@ -238,10 +276,12 @@ export class LocalHttpServer {
       // Health
       if (method === 'GET' && path === '/health') {
         return this.send(res, 200, {
-          ok: true,
+          ok: bridgeHealthy(this.ws.identified(), this.ws.connected(), this.lastPollAtMs(), Date.now()),
           identified: this.ws.identified(),
           wsConnected: this.ws.connected(),
           gameServerId: this.ws.getGameServerId(),
+          protocolVersion: this.ws.getProtocolVersion(),
+          unacknowledgedEvents: this.ws.unacknowledged(),
           pendingOperations: this.operationQueue.length,
           lastModContactAt: this.lastModContactAt,
           lastPollAt: this.lastPollAt,
@@ -290,9 +330,11 @@ export class LocalHttpServer {
             );
             return this.send(res, 503, { error: 'Takaro WebSocket not connected; retry', deferred: events.length });
           }
+          const dimension = this.positionDimension();
           for (const ev of events) {
             // strip the type field from the data payload — Takaro takes type separately
-            const { type, ...rest } = ev;
+            const { type, ...fields } = ev;
+            const rest = dimension ? eventWithDimension(fields, dimension) : fields;
             // F2: the mod stamps in-game world time at minute resolution, which
             // Takaro shows as wildly wrong event times. Ingest time in the bridge
             // is within milliseconds of the real event, so it wins.
@@ -326,8 +368,9 @@ export class LocalHttpServer {
           const action = this.operationActions.get(opId);
           this.operationActions.delete(opId);
           if (obj.ok) {
-            const result = shapeForAction(action, obj.result ?? {});
-            this.ws.sendResponse(opId, result);
+            const shaped = shapeForAction(action, obj.result ?? {});
+            const dimension = this.positionDimension();
+            this.ws.sendResponse(opId, dimension ? withDimension(action, shaped, dimension) : shaped);
           } else {
             this.ws.sendError(opId, obj.error || 'Unknown error');
           }
@@ -359,6 +402,14 @@ export function parseModJson(body: string): any {
     );
     return JSON.parse(cleaned);
   }
+}
+
+/** The mod polls about once a second, so this much silence means the game is gone. */
+const MOD_POLL_STALE_MS = 15_000;
+
+/** True only while events can flow end to end: Takaro identified us and the mod is polling. */
+export function bridgeHealthy(identified: boolean, wsConnected: boolean, lastPollMs: number | null, nowMs: number): boolean {
+  return identified && wsConnected && lastPollMs !== null && nowMs - lastPollMs < MOD_POLL_STALE_MS;
 }
 
 /**

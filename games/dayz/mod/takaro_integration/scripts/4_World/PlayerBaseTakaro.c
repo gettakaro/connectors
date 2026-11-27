@@ -53,7 +53,7 @@ modded class PlayerBase
 
         EntityAI killerEntity;
         if (attacker)
-            killerEntity = EntityAI.Cast(attacker);
+            killerEntity = attacker;
         else if (killer && killer != this)
             killerEntity = EntityAI.Cast(killer);
 

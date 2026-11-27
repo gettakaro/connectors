@@ -14,6 +14,7 @@ class TakaroConfigData
     int RequestTimeoutSeconds;      // HTTP request timeout
     bool LogVerbose;                // Verbose logging to RPT
     bool DryRun;                    // If true, log outbound calls instead of sending
+    int MapSurvey;                  // 1 = survey the world once for Takaro map tiles, 0 = never
 
     void TakaroConfigData()
     {
@@ -27,6 +28,7 @@ class TakaroConfigData
         RequestTimeoutSeconds = 10;
         LogVerbose = false;
         DryRun = false;
+        MapSurvey = 1;
     }
 }
 

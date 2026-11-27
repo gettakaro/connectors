@@ -21,6 +21,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { logger } from '../logger.js';
 
+/** Half of Takaro's sustained limit (100 events per 5 s), so a boot burst is never rate limited. */
+const DEFAULT_MAX_PER_SEC = 10;
+
 /** Patterns dropped unless DAYZ_LOG_DENY overrides them. */
 export const DEFAULT_DENY = [
   '\\[Takaro\\]\\[DBG\\]',
@@ -106,7 +109,7 @@ export class RptTail {
     private onEvent: (ev: LogEvent) => void,
   ) {
     this.deny = (opts.denyPatterns ? parseDenyList(opts.denyPatterns.join(',')) : parseDenyList(undefined));
-    this.maxPerSec = opts.maxPerSec && opts.maxPerSec > 0 ? opts.maxPerSec : 20;
+    this.maxPerSec = opts.maxPerSec && opts.maxPerSec > 0 ? opts.maxPerSec : DEFAULT_MAX_PER_SEC;
     this.pollIntervalMs = opts.pollIntervalMs ?? 1000;
     this.matches = opts.matches ?? defaultMatches;
     this.dedupeWindowMs = opts.dedupeWindowMs ?? 60_000;
@@ -199,6 +202,7 @@ export class RptTail {
     if (now - this.windowStart >= 1000) {
       if (this.dropped > 0) {
         logger.debug(`rptTail: dropped ${this.dropped} lines to the rate limit`);
+        this.dropped = 0;
       }
       this.windowStart = now;
       this.windowCount = 0;
@@ -285,12 +289,12 @@ export class RptTail {
 export function rptTailFromEnv(onEvent: (ev: LogEvent) => void): RptTail | null {
   const dir = process.env.DAYZ_LOG_DIR;
   if (!dir || dir.trim() === '') return null;
-  const maxRaw = parseInt(process.env.DAYZ_LOG_MAX_PER_SEC || '20', 10);
+  const maxRaw = parseInt(process.env.DAYZ_LOG_MAX_PER_SEC ?? '', 10);
   const tail = new RptTail(
     {
       dir,
       denyPatterns: process.env.DAYZ_LOG_DENY ? [process.env.DAYZ_LOG_DENY] : undefined,
-      maxPerSec: Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : 20,
+      maxPerSec: Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : DEFAULT_MAX_PER_SEC,
     },
     onEvent,
   );
