@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { LocalHttpServer } from '../dist/local/server.js';
+import { LocalHttpServer, eventTimestamp } from '../dist/local/server.js';
 
 class FakeWs extends EventEmitter {
   responses = [];
@@ -59,4 +59,13 @@ test('getGameIcon is answered by the sidecar, or not_found without an icon', asy
     ws.emit('request', { requestId: 'r2', payload: { action: 'getGameIcon', args: '{}' } });
     assert.equal(ws.errors[0].code, 'not_found');
   });
+});
+
+test('events keep the mod\'s UTC time unless it is missing or implausible', () => {
+  const now = Date.parse('2026-11-27T17:32:11.000Z');
+  assert.equal(eventTimestamp('2026-11-27T17:30:21Z', now), '2026-11-27T17:30:21.000Z');
+  assert.equal(eventTimestamp(undefined, now), '2026-11-27T17:32:11.000Z');
+  assert.equal(eventTimestamp('26-09-20T11:26:00Z', now), '2026-11-27T17:32:11.000Z');
+  assert.equal(eventTimestamp('2026-11-27T18:40:00Z', now), '2026-11-27T17:32:11.000Z', 'future');
+  assert.equal(eventTimestamp('2026-11-20T17:30:21Z', now), '2026-11-27T17:32:11.000Z', 'a week old');
 });

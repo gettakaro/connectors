@@ -394,13 +394,13 @@ export class LocalHttpServer {
             const { type, ...fields } = ev;
             const named = this.catalogue.translateEvent(type, fields);
             const rest = dimension ? eventWithDimension(named, dimension) : named;
-            // F2: the mod stamps in-game world time at minute resolution, which
-            // Takaro shows as wildly wrong event times. Ingest time in the bridge
-            // is within milliseconds of the real event, so it wins.
+            // The mod stamps the real UTC time of the event (to the second). Keep it, so an
+            // event the mod held through a Takaro outage keeps its own time; fall back to the
+            // receipt time when the stamp is missing or implausible.
             const modTimestamp = rest.timestamp;
-            rest.timestamp = new Date().toISOString();
-            if (DEBUG && modTimestamp) {
-              logger.debug(`Event ${type}: replaced mod timestamp '${modTimestamp}' with ${rest.timestamp}`);
+            rest.timestamp = eventTimestamp(modTimestamp, Date.now());
+            if (DEBUG && modTimestamp !== rest.timestamp) {
+              logger.debug(`Event ${type}: mod timestamp '${modTimestamp}' replaced with ${rest.timestamp}`);
             }
             this.ws.sendGameEvent(type as GameEventType, rest);
           }
@@ -481,6 +481,19 @@ export function parseModJson(body: string): any {
     );
     return JSON.parse(cleaned);
   }
+}
+
+/** Events older than this, or stamped in the future, get the receipt time instead. */
+const MAX_EVENT_AGE_MS = 24 * 3600_000;
+const MAX_CLOCK_SKEW_MS = 60_000;
+
+/** The mod's UTC stamp as ISO 8601 when it is plausible, else the receipt time. */
+export function eventTimestamp(modTimestamp: unknown, nowMs: number): string {
+  if (typeof modTimestamp === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(modTimestamp)) {
+    const t = Date.parse(modTimestamp);
+    if (Number.isFinite(t) && t <= nowMs + MAX_CLOCK_SKEW_MS && t >= nowMs - MAX_EVENT_AGE_MS) return new Date(t).toISOString();
+  }
+  return new Date(nowMs).toISOString();
 }
 
 /** The mod polls about once a second, so this much silence means the game is gone. */
