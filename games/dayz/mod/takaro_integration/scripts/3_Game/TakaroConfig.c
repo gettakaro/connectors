@@ -4,10 +4,10 @@
 
 class TakaroConfigData
 {
-    string TakaroApiUrl;            // local DLL bridge URL — script POSTs events here, DLL forwards over WS
-    string IdentityToken;           // unused at script level (DLL talks to Takaro); kept for compat
-    string RegistrationToken;       // unused at script level (DLL talks to Takaro); kept for compat
-    string GameServerId;            // server identity used in /gameserver/<id>/... paths to the DLL
+    string TakaroApiUrl;            // the sidecar's local URL: the mod posts events and polls here, the sidecar holds the Takaro WebSocket
+    string IdentityToken;           // filled in from the sidecar; the Takaro tokens live in the sidecar's config
+    string RegistrationToken;       // not needed: the sidecar registers with Takaro; kept for older configs
+    string GameServerId;            // server identity used in /gameserver/<id>/... paths to the sidecar
     int CommandPollIntervalMs;      // How often to poll for outbound commands
     int EventBatchIntervalMs;       // How often to flush queued events
     int MaxEventsPerBatch;          // Max events sent per flush
@@ -18,7 +18,7 @@ class TakaroConfigData
 
     void TakaroConfigData()
     {
-        TakaroApiUrl = "http://localhost:8089";
+        TakaroApiUrl = "http://127.0.0.1:8088";
         IdentityToken = "";
         RegistrationToken = "";
         GameServerId = "local";
@@ -61,7 +61,7 @@ class TakaroConfig
         {
             m_Data = new TakaroConfigData();
             Save();
-            TakaroLog.Warn("No config found — wrote defaults to " + CONFIG_FILE + ". Edit it and restart.");
+            TakaroLog.Warn("No config found; wrote defaults to " + CONFIG_FILE + " (the sidecar at 127.0.0.1:8088).");
         }
     }
 
@@ -76,9 +76,9 @@ class TakaroConfig
     {
         TakaroConfigData d = Get();
         if (!d) return false;
+        // The sidecar holds the Takaro tokens and hands the mod its identity on register, so
+        // the sidecar's URL is all the mod needs.
         if (d.TakaroApiUrl == "") return false;
-        // Either an identity token or a registration token is required to bootstrap.
-        if (d.IdentityToken == "" && d.RegistrationToken == "") return false;
         return true;
     }
 }

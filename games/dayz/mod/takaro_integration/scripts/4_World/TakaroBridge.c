@@ -19,6 +19,9 @@ class TakaroBridge
     bool m_Registered;          // true once we have a GameServerId and identity token
     float m_AccumFlush;
     float m_AccumPoll;
+    float m_AccumRegister;
+    // While the sidecar is not up or has not identified with Takaro yet, ask it again this often.
+    static const float REGISTER_RETRY_SEC = 10;
     int m_FlushIntervalSec;
     int m_PollIntervalSec;
 
@@ -69,13 +72,10 @@ class TakaroBridge
             m_Registered = true;
             TakaroLog.Info("Already registered (gameserver=" + cfg.GameServerId + ")");
         }
-        else if (cfg.RegistrationToken != "")
-        {
-            BootstrapRegistration();
-        }
         else
         {
-            TakaroLog.Warn("Have IdentityToken but no GameServerId — set GameServerId in config.json after registering this server in the Takaro dashboard.");
+            // The sidecar registers with Takaro and answers with this server's identity.
+            BootstrapRegistration();
         }
     }
 
@@ -86,7 +86,7 @@ class TakaroBridge
     void BootstrapRegistration()
     {
         TakaroConfigData cfg = TakaroConfig.Get();
-        TakaroLog.Info("Bootstrapping with registration token...");
+        TakaroLog.Info("Asking the sidecar for this server's Takaro identity");
 
         TakaroRegistrationRequest req = new TakaroRegistrationRequest();
         req.registrationToken = cfg.RegistrationToken;
@@ -107,7 +107,7 @@ class TakaroBridge
     {
         if (!ok)
         {
-            TakaroLog.Error("Registration failed — staying offline. Body: " + body);
+            TakaroLog.Warn("Sidecar not ready yet (" + body + "); asking again in " + REGISTER_RETRY_SEC.ToString() + " s");
             return;
         }
         TakaroRegistrationResponse resp = new TakaroRegistrationResponse();
@@ -258,7 +258,16 @@ class TakaroBridge
     void OnUpdate(float timeslice)
     {
         if (!m_Initialized) return;
-        if (!m_Registered) return;
+        if (!m_Registered)
+        {
+            m_AccumRegister += timeslice;
+            if (m_AccumRegister >= REGISTER_RETRY_SEC && (!m_RegCallback || m_RegCallback.m_Done))
+            {
+                m_AccumRegister = 0;
+                BootstrapRegistration();
+            }
+            return;
+        }
 
         m_AccumFlush += timeslice;
         m_AccumPoll += timeslice;
