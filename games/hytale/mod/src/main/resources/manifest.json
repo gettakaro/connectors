@@ -1,0 +1,22 @@
+{
+  "Group": "",
+  "Name": "TakaroConfig",
+  "Version": "${project.version}",
+  "Description": "Connects a Hytale server to Takaro for game server management",
+  "Authors": [
+    {
+      "Name": "mad-001",
+      "Url": "https://github.com/mad-001"
+    },
+    {
+      "Name": "Takaro",
+      "Url": "https://github.com/gettakaro"
+    }
+  ],
+  "Website": "https://github.com/gettakaro/connectors/tree/main/games/hytale",
+  "Main": "dev.takaro.hytale.TakaroPlugin",
+  "ServerVersion": ">=0.7.7",
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "DisabledByDefault": false
+}

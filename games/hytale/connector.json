@@ -1,0 +1,19 @@
+{
+  "name": "Hytale",
+  "tagline": "One Java plugin for Hytale dedicated servers that connects to Takaro itself, no sidecar.",
+  "assetMode": "pick-one",
+  "requirements": [
+    "Hytale dedicated server (the version named in the file name)",
+    "File access to the server's mods folder",
+    "Takaro registration token"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-hytale-server-0.7.7-*.jar",
+      "label": "Server plugin",
+      "requires": "Hytale server 0.7.7 · Java 25",
+      "hint": "Copy into <server>/mods/, start the server once, then set REGISTRATION_TOKEN in mods/HytaleTakaroMod/TakaroConfig.properties and restart.",
+      "required": true
+    }
+  ]
+}

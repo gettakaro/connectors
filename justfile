@@ -69,6 +69,10 @@ build-release-empyrion version out-dir='dist' target='windows-26660180':
 build-release-ark-ascended version out-dir='dist' target='windows-26334129':
     ./games/ark-ascended/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
+# Build the Hytale connector plugin jar for one catalog target into <out-dir>
+build-release-hytale version out-dir='dist' target='server-0.7.7':
+    ./games/hytale/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies

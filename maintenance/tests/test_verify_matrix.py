@@ -184,6 +184,7 @@ CONNECTOR_WORKFLOWS = (
     "dragonwilds",
     "empyrion",
     "enshrouded",
+    "hytale",
     "minecraft",
     "rust",
     "scum",
