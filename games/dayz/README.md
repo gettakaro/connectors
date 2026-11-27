@@ -100,6 +100,7 @@ Checked on DayZ 1.30 (Linux server), 2026-11-27. ✅ works, ⚠️ works with a 
 ## Known issues
 
 - DayZ has no levels or skills, so there is no player progression.
+- When the DayZ server is stopped outside Takaro (not with Takaro's shutdown), Takaro marks the players offline at its next check instead of right away.
 - Checked on a Linux server. A Windows server uses the same two files but has not been checked yet.
 
 Developers: see [DEVELOPMENT.md](DEVELOPMENT.md).
