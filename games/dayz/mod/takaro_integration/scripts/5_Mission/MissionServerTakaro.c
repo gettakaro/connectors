@@ -42,13 +42,19 @@ modded class MissionServer
     override void InvokeOnConnect(PlayerBase player, PlayerIdentity identity)
     {
         super.InvokeOnConnect(player, identity);
-        if (m_TakaroBridge && identity)
-            m_TakaroBridge.OnPlayerConnected(player, identity);
 
-        // M3: enforce Takaro bans (TakaroBanStore) on join.
+        // Enforce Takaro bans (TakaroBanStore) on join, before anything is reported: a refused
+        // join is not a session, so Takaro gets neither player-connected nor player-disconnected
+        // (no join notices or welcome messages for a banned player).
         string banReason;
         if (identity && TakaroBanStore.IsBanned(identity.GetPlainId(), banReason))
-            TakaroKicker.Get().Kick(player, identity, "Banned", banReason);
+        {
+            if (m_TakaroBridge) m_TakaroBridge.OnJoinRefused(identity);
+            TakaroKicker.Get().Kick(player, identity, "Banned", banReason, false);
+            return;
+        }
+        if (m_TakaroBridge && identity)
+            m_TakaroBridge.OnPlayerConnected(player, identity);
     }
 
     // PlayerDisconnected is the reliable hook — InvokeOnDisconnect is called

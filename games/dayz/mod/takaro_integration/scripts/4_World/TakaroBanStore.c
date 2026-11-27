@@ -123,7 +123,7 @@ class TakaroKicker
         return s_Instance;
     }
 
-    void Kick(PlayerBase pb, PlayerIdentity id, string title, string reason)
+    void Kick(PlayerBase pb, PlayerIdentity id, string title, string reason, bool reportDisconnect = true)
     {
         if (!id) return;
         string body = reason;
@@ -131,7 +131,7 @@ class TakaroKicker
         if (pb)
             NotificationSystem.SendNotificationToPlayerExtended(pb, 5.0, title, body, "");
         TakaroBridge bridge = TakaroBridge.Cast(TakaroBridgeAccessor.Get());
-        if (bridge) bridge.OnPlayerKickedByTakaro(pb, id);
+        if (bridge && reportDisconnect) bridge.OnPlayerKickedByTakaro(pb, id);
         TakaroLog.Info(title + " " + id.GetPlainId() + ": " + body);
         GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(this.DoDisconnect, KICK_DELAY_MS, false, id);
     }

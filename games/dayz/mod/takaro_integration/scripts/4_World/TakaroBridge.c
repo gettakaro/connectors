@@ -167,6 +167,15 @@ class TakaroBridge
         m_DisconnectEmitted.Set(uid, true);
     }
 
+    // A banned player's join was refused before it was reported: swallow the disconnect
+    // DayZ runs for it, so Takaro sees nothing of that join.
+    void OnJoinRefused(PlayerIdentity identity)
+    {
+        if (!identity) return;
+        m_DisconnectEmitted.Set(identity.GetId(), true);
+        TakaroLog.Info("join refused (banned): " + identity.GetPlainId());
+    }
+
     void OnPlayerDisconnected(PlayerBase player, PlayerIdentity identity, string uid)
     {
         if (!m_Initialized) return;
