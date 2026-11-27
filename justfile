@@ -73,6 +73,10 @@ build-release-ark-ascended version out-dir='dist' target='windows-26334129':
 build-release-hytale version out-dir='dist' target='server-0.7.7':
     ./games/hytale/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
 
+# Build the DayZ connector release artifacts (server mod zip + sidecar tarball) for one catalog target into <out-dir>
+build-release-dayz version out-dir='dist' target='linux-26220720':
+    ./games/dayz/scripts/build-release.sh {{version}} {{out-dir}} --target {{target}}
+
 # === Terraria Plugin ===
 
 # Prepare TShock reference assemblies

@@ -1,0 +1,6 @@
+# The release Dockerfile COPYs the prebuilt dist/ (there is no TypeScript build in the release
+# image), so unlike the source tree's .dockerignore this one must not exclude it.
+node_modules
+state
+TakaroConfig.txt
+*.log

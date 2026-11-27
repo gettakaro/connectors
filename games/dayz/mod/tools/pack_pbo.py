@@ -9,7 +9,11 @@ This is a minimal uncompressed packer. It's enough for script-only addons
 files you should use Mikero's tools or DayZ Tools' AddonBuilder.
 
 Usage:
-    python3 pack_pbo.py <source_dir> <output.pbo> [--prefix PREFIX]
+    python3 pack_pbo.py <source_dir> <output.pbo> --prefix PREFIX [--timestamp EPOCH]
+
+The output is reproducible: entries are sorted, and every entry carries one timestamp
+(--timestamp, else $SOURCE_DATE_EPOCH, else the current time), so the same source and
+timestamp always pack to the same bytes.
 
 Example:
     python3 pack_pbo.py src/takaro_integration @TakaroIntegration/Addons/TakaroIntegration.pbo \\
@@ -72,7 +76,17 @@ def collect_files(source_dir: Path) -> list[tuple[str, Path]]:
     return out
 
 
-def pack(source_dir: Path, output_path: Path, prefix: str) -> None:
+def entry_timestamp(explicit: int | None = None) -> int:
+    """The one timestamp every entry gets: explicit, else $SOURCE_DATE_EPOCH, else now."""
+    if explicit is not None:
+        return explicit
+    epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
+    if epoch.isdigit():
+        return int(epoch)
+    return int(time.time())
+
+
+def pack(source_dir: Path, output_path: Path, prefix: str, timestamp: int | None = None) -> None:
     if not source_dir.is_dir():
         raise SystemExit(f"Source directory not found: {source_dir}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +112,7 @@ def pack(source_dir: Path, output_path: Path, prefix: str) -> None:
         "PboType": "Arma Addon",
     })
 
-    timestamp = int(time.time())
+    timestamp = entry_timestamp(timestamp)
     file_data: list[bytes] = []
     for pbo_path, disk in files:
         data = disk.read_bytes()
@@ -130,8 +144,10 @@ def main() -> None:
     ap.add_argument("output_pbo", type=Path)
     ap.add_argument("--prefix", required=True,
                     help="Virtual path prefix the PBO is mounted at, e.g. TakaroIntegration")
+    ap.add_argument("--timestamp", type=int, default=None,
+                    help="Entry timestamp (Unix seconds); default $SOURCE_DATE_EPOCH, else now")
     args = ap.parse_args()
-    pack(args.source_dir, args.output_pbo, args.prefix)
+    pack(args.source_dir, args.output_pbo, args.prefix, args.timestamp)
 
 
 if __name__ == "__main__":

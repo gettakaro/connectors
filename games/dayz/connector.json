@@ -1,0 +1,26 @@
+{
+  "name": "DayZ",
+  "tagline": "Server mod plus a small sidecar that connect a DayZ dedicated server to Takaro; players install nothing.",
+  "assetMode": "all",
+  "requirements": [
+    "DayZ server 1.30 (Linux tested)",
+    "Takaro registration token",
+    "Node.js 22 or Docker on the server host"
+  ],
+  "assets": [
+    {
+      "pattern": "takaro-dayz-mod-*.zip",
+      "label": "Server mod",
+      "requires": "DayZ server 1.30",
+      "hint": "Required. Copy @TakaroIntegration into the server folder and add -serverMod=@TakaroIntegration to the server's start line.",
+      "required": true
+    },
+    {
+      "pattern": "takaro-dayz-sidecar-*.tar.gz",
+      "label": "Sidecar",
+      "requires": "Node.js 22 · Docker",
+      "hint": "Required. Run it on the same host as the server with TAKARO_REGISTRATION_TOKEN set; the mod reaches it on 127.0.0.1:8088.",
+      "required": true
+    }
+  ]
+}

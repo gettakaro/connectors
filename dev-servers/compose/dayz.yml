@@ -60,7 +60,7 @@ services:
   # cross-container hop over a bridge network does not work here.
   dayz-takaro:
     build:
-      context: ${DAYZ_BRIDGE_SRC:-../../games/dayz/DayZ-Bridge}
+      context: ${DAYZ_BRIDGE_SRC:-../../games/dayz/sidecar}
       dockerfile: ${DAYZ_BRIDGE_DOCKERFILE:-../../../dev-servers/images/dayz-bridge/Dockerfile}
     image: takaro-dayz-bridge:dev
     container_name: takaro-dev-dayz-bridge
