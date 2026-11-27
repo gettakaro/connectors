@@ -231,6 +231,37 @@ test('v0 connection: plain events and error frames, nothing buffered', async () 
   takaro.wss.close();
 });
 
+test('events sent before identify answers wait for it, then go out in the version Takaro picked', async () => {
+  for (const version of [1, 0]) {
+    // A fake Takaro that answers identify only after a log line was already sent.
+    const wss = new WebSocketServer({ port: 0 });
+    const frames = [];
+    let sock;
+    wss.on('connection', (s) => {
+      sock = s;
+      s.on('message', (raw) => frames.push(JSON.parse(raw.toString())));
+    });
+    const client = new TakaroWsClient(
+      `ws://127.0.0.1:${wss.address().port}`,
+      { identityToken: 'i', registrationToken: 'r', name: 'n' },
+      { offerV1: true, manifest: () => [] },
+    );
+    client.connect();
+    await waitFor(() => frames.some((f) => f.type === 'identify'));
+    client.sendGameEvent('log', { msg: 'early' });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(frames.filter((f) => f.type === 'gameEvent').length, 0, 'nothing sent before identify');
+    sock.send(JSON.stringify({ type: 'identifyResponse', payload: { gameServerId: 'gs-1', protocolVersion: version } }));
+    await waitFor(() => frames.some((f) => f.type === 'gameEvent'));
+    const ev = frames.find((f) => f.type === 'gameEvent');
+    assert.equal(ev.payload.data.msg, 'early');
+    if (version === 1) assert.ok(ev.payload.streamId && ev.payload.seq >= 0, 'v1 events carry their stream and seq');
+    else assert.equal(ev.payload.seq, undefined);
+    client.shutdown();
+    wss.close();
+  }
+});
+
 test('TAKARO_PROTOCOL=0 sends the old identify', async () => {
   const takaro = fakeTakaro(0);
   const client = new TakaroWsClient(takaro.url, { identityToken: 'i', registrationToken: 'r', name: 'n' });

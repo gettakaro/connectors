@@ -151,10 +151,14 @@ export class TakaroWsClient extends EventEmitter {
    * acknowledges it and resent after a reconnect; the oldest is dropped on overflow.
    */
   sendGameEvent(type: GameEventType, data: unknown): void {
-    if (this.protocolVersion !== 1) {
+    // Identified on version 0: sent once, as before.
+    if (this.gameServerId !== null && this.protocolVersion !== 1) {
       this.send({ type: 'gameEvent', payload: { type, data } });
       return;
     }
+    // Version 1, or not identified yet (the socket can be open before identify answers, and the
+    // log tail does not wait): numbered and buffered. Identify sends the buffer in whichever
+    // version Takaro picked; sending it now would go out without a stream and be rejected.
     const event = { seq: this.nextSeq++, type, data };
     this.buffer.push(event);
     if (this.buffer.length > EVENT_BUFFER_LIMIT) {
@@ -162,7 +166,7 @@ export class TakaroWsClient extends EventEmitter {
       this.dropped += 1;
       if (this.dropped === 1 || this.dropped % 100 === 0) logger.warn(`Event buffer full: ${this.dropped} unacknowledged event(s) dropped`);
     }
-    this.sendBuffered(event);
+    if (this.gameServerId !== null) this.sendBuffered(event);
   }
 
   private sendBuffered(event: BufferedEvent): void {
@@ -218,6 +222,8 @@ export class TakaroWsClient extends EventEmitter {
           if (this.protocolVersion === 1) {
             for (const event of this.buffer) this.sendBuffered(event);
           } else {
+            // Version 0 has no acknowledgements: what waited for identify goes out once.
+            for (const event of this.buffer) this.send({ type: 'gameEvent', payload: { type: event.type, data: event.data } });
             this.buffer.length = 0;
           }
           this.emit('identified', p.gameServerId);
