@@ -74,7 +74,7 @@ Checked on DayZ 1.30 (Linux server), 2026-11-27. ✅ works, ⚠️ works with a 
 | Player location | ✅ | |
 | Teleport | ✅ | |
 | Player inventory | ✅ | |
-| Item list | ✅ | Display names; colour and faction variants named apart |
+| Item list | ✅ | Display names, firearms included; colour and faction variants named apart |
 | Entity list | ✅ | Infected and animals |
 | Locations | ✅ | Chernarus towns by default; edit `profiles/TakaroIntegration/locations.json` |
 | World map | ✅ | Drawn from the server's own world |

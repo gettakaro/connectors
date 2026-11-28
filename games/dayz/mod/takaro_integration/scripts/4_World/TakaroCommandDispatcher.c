@@ -1242,6 +1242,32 @@ class TakaroCommandDispatcher
             emitted++;
         }
 
+        // Pass 3: CfgWeapons - every firearm (rifles, pistols, shotguns, launchers) lives in its own
+        // config root; without this pass no gun could be sold or given from Takaro's item list.
+        const string ROOT_W = "CfgWeapons";
+        int countW = GetGame().ConfigGetChildrenCount(ROOT_W);
+        for (int w = 0; w < countW && emitted < MAX_LIST_ITEMS; w++)
+        {
+            string wcls;
+            GetGame().ConfigGetChildName(ROOT_W, w, wcls);
+            if (wcls == "") continue;
+            string baseW = ROOT_W + " " + wcls + " ";
+            if (GetGame().ConfigGetInt(baseW + "scope") != 2) continue;
+            if (!GetGame().IsKindOf(wcls, "Weapon_Base")) continue;
+            string displayW = "";
+            GetGame().ConfigGetText(baseW + "displayName", displayW);
+            if (displayW == "") displayW = wcls;
+            displayW = JsonSafeString(displayW);
+            if (!first) json += ",";
+            first = false;
+            string entryW = "{" + Quote("name") + ":" + Quote(displayW);
+            entryW += "," + Quote("code") + ":" + Quote(wcls);
+            entryW += "," + Quote("amount") + ":1";
+            entryW += "," + Quote("quality") + ":" + Quote("") + "}";
+            json += entryW;
+            emitted++;
+        }
+
         json += "]";
         TakaroLog.Info("listItems: " + emitted.ToString() + " items returned");
         m_ItemsJson = json;
