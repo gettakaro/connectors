@@ -896,13 +896,14 @@ class TakaroCommandDispatcher
         }
         else if (verb == "spawnentity")
         {
-            // M3 test/admin verb: spawnentity <classname> <gameId> [distanceMeters]
+            // M3 test/admin verb: spawnentity <classname> <gameId> [distanceMeters] [frozen] [health01]
             // Spawns a creature (e.g. ZmbM_HermitSkinny_Beige, Animal_GallusGallusDomesticus)
-            // on the surface in front of the player, with AI initialised. Used to
+            // on the surface in front of the player, with AI initialised unless `frozen`
+            // (then it stands still), optionally at a fraction of its health. Used to
             // prove entity-killed / infected player-death without hunting for spawns.
             array<string> sparts = new array<string>;
             SplitTokens(rest, sparts);
-            if (sparts.Count() < 2) { rawResult = "Usage: spawnentity <classname> <gameId> [distance]"; success = false; }
+            if (sparts.Count() < 2) { rawResult = "Usage: spawnentity <classname> <gameId> [distance] [frozen] [health01]"; success = false; }
             else
             {
                 PlayerBase spb = FindPlayerByGameId(sparts[1]);
@@ -917,10 +918,39 @@ class TakaroCommandDispatcher
                     sdir.Normalize();
                     vector spos = spb.GetPosition() + (sdir * sdist);
                     spos[1] = GetGame().SurfaceY(spos[0], spos[2]);
-                    Object sobj = GetGame().CreateObjectEx(sparts[0], spos, ECE_PLACE_ON_SURFACE | ECE_INITAI | ECE_EQUIP_ATTACHMENTS);
+                    bool sfrozen = sparts.Count() >= 4 && sparts[3] == "frozen";
+                    int sflags = ECE_PLACE_ON_SURFACE | ECE_EQUIP_ATTACHMENTS;
+                    if (!sfrozen) sflags = sflags | ECE_INITAI;
+                    Object sobj = GetGame().CreateObjectEx(sparts[0], spos, sflags);
                     if (!sobj) { rawResult = "Spawn failed: " + sparts[0]; success = false; }
-                    else rawResult = "Spawned " + sparts[0] + " at " + spos[0].ToString() + "," + spos[1].ToString() + "," + spos[2].ToString();
+                    else
+                    {
+                        EntityAI seai = EntityAI.Cast(sobj);
+                        if (seai && sparts.Count() >= 5)
+                        {
+                            float shealth = sparts[4].ToFloat();
+                            if (shealth > 0 && shealth <= 1) seai.SetHealth01("", "", shealth);
+                        }
+                        rawResult = "Spawned " + sparts[0] + " at " + spos[0].ToString() + "," + spos[1].ToString() + "," + spos[2].ToString();
+                        if (sfrozen) rawResult += " (frozen: no AI)";
+                        if (seai && sparts.Count() >= 5) rawResult += " health01=" + seai.GetHealth01("", "").ToString();
+                    }
                 }
+            }
+        }
+        else if (verb == "godmode")
+        {
+            // test/admin verb: godmode <gameId> on|off - the player takes no damage while on.
+            array<string> gparts = new array<string>;
+            SplitTokens(rest, gparts);
+            PlayerBase gpb = null;
+            if (gparts.Count() >= 2) gpb = FindPlayerByGameId(gparts[0]);
+            if (gparts.Count() < 2 || (gparts[1] != "on" && gparts[1] != "off")) { rawResult = "Usage: godmode <gameId> on|off"; success = false; }
+            else if (!gpb) { rawResult = "Player not online: " + gparts[0]; success = false; }
+            else
+            {
+                gpb.SetAllowDamage(gparts[1] == "off");
+                rawResult = "godmode " + gparts[1] + " for " + gparts[0];
             }
         }
         else if (verb == "mapsurvey")
@@ -1036,7 +1066,8 @@ class TakaroCommandDispatcher
         h += "  players                             - list online players (name, id, ping, hp, blood, pos, party)" + nl;
         h += "  givehands <gameId> <classname>      - (test/admin) create an item in the player's hands" + nl;
         h += "  hitnearest <gameId> [radius] [ammo] - (test/admin, SYNTHETIC) lethal engine damage to nearest creature, player as source" + nl;
-        h += "  spawnentity <class> <gameId> [dist] - (test/admin) spawn a creature in front of a player" + nl;
+        h += "  spawnentity <class> <gameId> [dist] [frozen] [health01] - (test/admin) spawn a creature in front of a player" + nl;
+        h += "  godmode <gameId> on|off              - (test/admin) the player takes no damage while on" + nl;
         h += "  parties                             - list active Expansion parties and their online members" + nl;
         h += "  party                               - list every online player with their party id (or 'solo')" + nl;
         h += "  announce <message>                  - center-screen banner to all players (Expansion BAGUETTE)" + nl;
