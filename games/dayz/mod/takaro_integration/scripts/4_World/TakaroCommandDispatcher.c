@@ -941,16 +941,16 @@ class TakaroCommandDispatcher
         else if (verb == "godmode")
         {
             // test/admin verb: godmode <gameId> on|off - the player takes no damage while on.
-            array<string> gparts = new array<string>;
-            SplitTokens(rest, gparts);
-            PlayerBase gpb = null;
-            if (gparts.Count() >= 2) gpb = FindPlayerByGameId(gparts[0]);
-            if (gparts.Count() < 2 || (gparts[1] != "on" && gparts[1] != "off")) { rawResult = "Usage: godmode <gameId> on|off"; success = false; }
-            else if (!gpb) { rawResult = "Player not online: " + gparts[0]; success = false; }
+            array<string> gmParts = new array<string>;
+            SplitTokens(rest, gmParts);
+            PlayerBase gmPlayer = null;
+            if (gmParts.Count() >= 2) gmPlayer = FindPlayerByGameId(gmParts[0]);
+            if (gmParts.Count() < 2 || (gmParts[1] != "on" && gmParts[1] != "off")) { rawResult = "Usage: godmode <gameId> on|off"; success = false; }
+            else if (!gmPlayer) { rawResult = "Player not online: " + gmParts[0]; success = false; }
             else
             {
-                gpb.SetAllowDamage(gparts[1] == "off");
-                rawResult = "godmode " + gparts[1] + " for " + gparts[0];
+                gmPlayer.SetAllowDamage(gmParts[1] == "off");
+                rawResult = "godmode " + gmParts[1] + " for " + gmParts[0];
             }
         }
         else if (verb == "mapsurvey")
