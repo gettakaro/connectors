@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1
-# Takaro DayZ sidecar ("DayZ-Bridge"): speaks the @TakaroIntegration mod's local
-# HTTP shape on 127.0.0.1:8088 and the Takaro connector WebSocket upstream.
+# Takaro DayZ sidecar: speaks the @TakaroIntegration mod's local HTTP shape on
+# 127.0.0.1:8088 and the Takaro connector WebSocket upstream.
 #
-# BUILD CONTEXT = the DayZ-Bridge source directory, like the Enshrouded sidecar.
+# BUILD CONTEXT = games/dayz/sidecar (the source tree; this file compiles it).
 # compose/dayz.yml points `context:` there (DAYZ_BRIDGE_SRC) and `dockerfile:` here.
+# The release tarball ships games/dayz/sidecar/Dockerfile instead, which copies a
+# prebuilt dist/.
 FROM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

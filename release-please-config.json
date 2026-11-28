@@ -246,6 +246,12 @@
       "release-type": "simple",
       "component": "hytale",
       "changelog-path": "CHANGELOG.md"
+    },
+    "games/dayz": {
+      "release-type": "simple",
+      "component": "dayz",
+      "changelog-path": "CHANGELOG.md",
+      "release-as": "0.1.0"
     }
   }
 }

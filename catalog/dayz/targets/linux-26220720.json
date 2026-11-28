@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "id": "linux-26220720",
+  "game": "dayz",
+  "platform": "linux",
+  "revision": "26220720",
+  "default": true,
+  "support": {
+    "status": "candidate",
+    "since": "2026-11-27",
+    "evidence": [
+      "games/dayz/sidecar/test/ (contract level, every build: the sidecar's node:test suite over the protocol v1 handshake, the map service and the poll watchdog)",
+      "games/dayz/mod/tools/test_pack_pbo.py (the PBO packer: header layout, prefix, SHA-1 trailer and byte-identical output)"
+    ],
+    "notes": "Exact Steam pin of the public branch head read anonymously with steamcmd app_info_print (buildid 26220720, branch updated 2026-11-03; the server reports itself as DayZ 1.30.164289). The manifest ids and sizes are Steam's own app metadata. The depots themselves are not served to the anonymous login (DayZ server downloads need a Steam account that owns DayZ), so the declared file hashes were recorded from a server installed from this build rather than by takaro-maint steam pin: the three files of the Linux binaries depot 223352 add up to exactly the size Steam publishes for manifest 9061428159600400099. No file counts are recorded because only a logged-in download reports them. No hosted runner can download the server, so verification.required stays contract; runtime proof comes from a real server with a real client."
+  },
+  "inputs": {
+    "server": {
+      "kind": "steam-depots",
+      "source": "steam",
+      "hashOrigin": "self-recorded",
+      "app": 223350,
+      "branch": "public",
+      "buildid": 26220720,
+      "os": "linux",
+      "arch": "64",
+      "depots": {
+        "223351": {
+          "manifest": "5401746265257134544",
+          "size": 5378466692
+        },
+        "223352": {
+          "manifest": "9061428159600400099",
+          "size": 77664880
+        },
+        "223354": {
+          "manifest": "5867941930105127159",
+          "size": 412267798
+        }
+      },
+      "files": {
+        "DayZServer": {
+          "sha256": "04392f9dbff56e25dd9fd3aeb1d300e1293ffe8dbeaef518d5113a9444e2fb88",
+          "size": 32206792
+        },
+        "libsteam_api.so": {
+          "sha256": "f2bdc356e6fdef0cf1bb51e0a71152f26446b7bcb8e2182fcd8c070aa50c3c7a",
+          "size": 391056
+        },
+        "steamclient.so": {
+          "sha256": "d8fbc2925af26522c3316f8bad2ac307b4726391a6174c220ca760fc3a421591",
+          "size": 45067032
+        },
+        "dta/core.pbo": {
+          "sha256": "c4876d29d9c3b76881b4180e93d52d780eed6bfac7f336797b47f735c39b7961",
+          "size": 116768
+        }
+      },
+      "credentials": {"accountEnv": "STEAM_USER"}
+    }
+  },
+  "runtime": {
+    "java": null,
+    "container": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844",
+      "env": {
+        "HOME": "/tmp"
+      }
+    }
+  },
+  "build": {
+    "system": "script",
+    "script": "games/dayz/scripts/build-release.sh",
+    "toolchain": {
+      "kind": "container-image",
+      "image": "node",
+      "tag": "22.23.2-bookworm",
+      "digest": "sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+    },
+    "deps": {
+      "winston": {
+        "coordinate": "npm:winston:3.19.0",
+        "sha256": "4183f422c69153b58b8595d3ec06c523087ca1a978006e1a6db63e199c18748e",
+        "resolvedCoordinate": "https://registry.npmjs.org/winston/-/winston-3.19.0.tgz"
+      },
+      "ws": {
+        "coordinate": "npm:ws:8.20.0",
+        "sha256": "bc7bd97fb06c7ab1c8f9e7150f39d481813f1b81511f33fa93bc9707a4fd3a69",
+        "resolvedCoordinate": "https://registry.npmjs.org/ws/-/ws-8.20.0.tgz"
+      }
+    }
+  },
+  "components": [
+    {
+      "role": "mod",
+      "artifact": "takaro-dayz-mod-linux-26220720-{version}.zip",
+      "installDir": "TakaroDayZMod"
+    },
+    {
+      "role": "sidecar",
+      "artifact": "takaro-dayz-sidecar-linux-26220720-{version}.tar.gz",
+      "installDir": "TakaroDayZSidecar"
+    }
+  ],
+  "verification": {
+    "required": "contract",
+    "separate": [
+      "startup",
+      "connector-load",
+      "identify",
+      "heartbeat",
+      "players",
+      "catalog-items",
+      "catalog-entities",
+      "console",
+      "shutdown"
+    ]
+  },
+  "preserve": [
+    "profiles/",
+    "mpmissions/",
+    "serverDZ.cfg",
+    "ban.txt",
+    "whitelist.txt",
+    "TakaroDayZMod/",
+    "TakaroDayZSidecar/"
+  ],
+  "notes": "One pinned Node image builds the sidecar and runs its tests; the mod has no compiler step (Enforce Script is compiled by the server at load), so its PBO is packed with games/dayz/mod/tools/pack_pbo.py on the build host's Python. The server is not run from this image. The DayZ client is a different Steam app (221100) and is not pinned here. The mod is loaded with -serverMod=, so players install nothing."
+}

@@ -33,6 +33,7 @@ TARGETED_BASELINE = (
     "7d2d",
     "ark-ascended",
     "conan-exiles",
+    "dayz",
     "dragonwilds",
     "dune",
     "empyrion",

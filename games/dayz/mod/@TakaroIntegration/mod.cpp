@@ -1,0 +1,13 @@
+name = "Takaro Integration (Server)";
+picture = "TakaroIntegration\\gui\\icon.paa";
+actionName = "GitHub";
+action = "https://github.com/mad-001/DayZ-Takaro-Integration";
+description = "Server-side bridge that connects a DayZ server to the Takaro game-server-management platform. Loaded with -serverMod=, so clients do not need to download it to join.";
+hideName = 0;
+hidePicture = 0;
+overview = "Server-side Takaro bridge for DayZ. Emits player connect/disconnect, chat, and death events to Takaro, and accepts inbound commands (kick, ban, message, teleport, give item) over Takaro's HTTP API. Compatible with Community Framework, VPPAdminTools, and DayZ Expansion.";
+author = "mad-001";
+authorID = "0";
+tooltipOwned = "Takaro Integration enabled.";
+type = "mod";
+dependencies[] = {"DZ_Data", "DZ_Scripts"};

@@ -1,0 +1,12 @@
+# Required: get a registration token from the Takaro dashboard.
+registrationToken=PASTE_TOKEN_HERE
+
+# Required: human-readable server name. Doubles as the identity token.
+serverName=My DayZ Server
+
+# Optional: override Takaro endpoint (default = production).
+# takaroWsUrl=wss://connect.takaro.io/
+
+# Optional: local HTTP port the bridge listens on for the @TakaroIntegration mod.
+# Match this to TakaroApiUrl in the mod's config.json (e.g. http://localhost:8088).
+# localPort=8088

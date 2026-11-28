@@ -70,6 +70,9 @@ jobs:
       hytale_released: ${{ steps.rp.outputs['games/hytale--release_created'] }}
       hytale_tag: ${{ steps.rp.outputs['games/hytale--tag_name'] }}
       hytale_version: ${{ steps.rp.outputs['games/hytale--version'] }}
+      dayz_released: ${{ steps.rp.outputs['games/dayz--release_created'] }}
+      dayz_tag: ${{ steps.rp.outputs['games/dayz--tag_name'] }}
+      dayz_version: ${{ steps.rp.outputs['games/dayz--version'] }}
     steps:
       # Author Release PRs as takaro-ci-bot[bot] instead of GITHUB_TOKEN. PRs/commits made
       # with GITHUB_TOKEN don't fire downstream events, so the required `conventional-title`
@@ -294,6 +297,18 @@ jobs:
       version: ${{ needs.release-please.outputs.hytale_version }}
       tag: ${{ needs.release-please.outputs.hytale_tag }}
 
+  release-dayz:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.dayz_released == 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/dayz.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.dayz_version }}
+      tag: ${{ needs.release-please.outputs.dayz_tag }}
+
   # takaro.io/connectors serves downloads from a committed snapshot of this repo's
   # releases, so the website only learns about a release when we tell it. This dispatch
   # opens a refresh PR there (gettakaro/static-sites, .github/workflows/connectors-refresh.yml).
@@ -319,6 +334,7 @@ jobs:
       - release-empyrion
       - release-ark-ascended
       - release-hytale
+      - release-dayz
     if: |
       always() && (
         (needs.release-ark.result == 'success' && needs.release-please.outputs.ark_released == 'true') ||
@@ -336,7 +352,8 @@ jobs:
         (needs.release-tf2.result == 'success' && needs.release-please.outputs.tf2_released == 'true') ||
         (needs.release-empyrion.result == 'success' && needs.release-please.outputs.empyrion_released == 'true') ||
         (needs.release-ark-ascended.result == 'success' && needs.release-please.outputs.ark_ascended_released == 'true') ||
-        (needs.release-hytale.result == 'success' && needs.release-please.outputs.hytale_released == 'true')
+        (needs.release-hytale.result == 'success' && needs.release-please.outputs.hytale_released == 'true') ||
+        (needs.release-dayz.result == 'success' && needs.release-please.outputs.dayz_released == 'true')
       )
     runs-on: ubuntu-24.04
     steps:
@@ -370,7 +387,8 @@ jobs:
              || needs.release-please.outputs.tf2_tag
              || needs.release-please.outputs.empyrion_tag
              || needs.release-please.outputs.ark_ascended_tag
-             || needs.release-please.outputs.hytale_tag }}
+             || needs.release-please.outputs.hytale_tag
+             || needs.release-please.outputs.dayz_tag }}
         run: |
           gh api repos/gettakaro/static-sites/dispatches \
             -f event_type=connector-released \

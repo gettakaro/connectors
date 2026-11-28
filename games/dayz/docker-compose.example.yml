@@ -1,0 +1,44 @@
+# Running the Takaro DayZ sidecar next to a DayZ server.
+#
+# The @TakaroIntegration mod calls the sidecar at http://127.0.0.1:8088 (TakaroApiUrl in the
+# server's profiles/TakaroIntegration/config.json), so the sidecar must share the DayZ
+# server's network namespace. Two ways to do that:
+#
+#   A. The DayZ server runs directly on the host: keep `network_mode: host` below.
+#   B. The DayZ server runs in a container of the same compose project: replace
+#      `network_mode: host` with `network_mode: "service:<the DayZ server service>"`.
+#      A separate bridge network does not work: the mod talks to loopback only.
+#
+# Either way the sidecar binds 127.0.0.1 only, so the mod-facing API is never exposed.
+#
+# Usage, from the folder that holds this file and the unpacked release folder renamed to
+# "sidecar" (see sidecar/README.txt):
+#   echo "TAKARO_REGISTRATION_TOKEN=<token from the Takaro dashboard>" > .env
+#   docker compose -f docker-compose.example.yml up -d --build
+services:
+  takaro-dayz:
+    build: ./sidecar
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TAKARO_REGISTRATION_TOKEN: ${TAKARO_REGISTRATION_TOKEN:?set TAKARO_REGISTRATION_TOKEN in .env}
+      TAKARO_SERVER_NAME: ${TAKARO_SERVER_NAME:-My DayZ Server}
+      # Optional. Empty: the server name doubles as the identity token.
+      TAKARO_IDENTITY_TOKEN: ${TAKARO_IDENTITY_TOKEN:-}
+      # The port in the mod's TakaroApiUrl.
+      BRIDGE_LOCAL_PORT: "8088"
+      BRIDGE_BIND_ADDR: 127.0.0.1
+      BRIDGE_CONFIG: /data/TakaroConfig.txt
+      # Optional: restart the sidecar if the mod stops polling for this many seconds, e.g.
+      # after the DayZ container restarted into a new network namespace (variant B).
+      # BRIDGE_POLL_WATCHDOG_SEC: "60"
+      # Optional: forward the server's RPT/ADM logs to Takaro as `log` events.
+      # DAYZ_LOG_DIR: /profiles
+    volumes:
+      # Sidecar state. An optional TakaroConfig.txt here is read too; the environment wins.
+      - takaro-dayz-data:/data
+      # Only with DAYZ_LOG_DIR: the server's profiles directory, read-only.
+      # - /path/to/dayz/profiles:/profiles:ro
+
+volumes:
+  takaro-dayz-data:

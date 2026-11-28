@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "dayz",
+  "name": "DayZ",
+  "connector": "dayz",
+  "platforms": ["linux"],
+  "sources": {
+    "steam": {
+      "provider": "steam",
+      "baseUrl": "https://store.steampowered.com",
+      "watch": {
+        "kind": "game",
+        "component": "dayz",
+        "app": 223350,
+        "os": "linux",
+        "depots": ["223351", "223352", "223354"],
+        "channels": {
+          "public": {"branch": "public"}
+        },
+        "knownBranches": ["experimental_public"]
+      }
+    }
+  },
+  "build": {"system": "script", "projectDir": "games/dayz"},
+  "componentRoles": {
+    "mod": {
+      "description": "The @TakaroIntegration server mod (one TakaroIntegration.pbo of Enforce Script), loaded with -serverMod=; it reports game events and runs Takaro's actions inside the server, and talks to the sidecar over loopback HTTP",
+      "artifactPattern": "takaro-dayz-mod-{target}-{version}.zip"
+    },
+    "sidecar": {
+      "description": "The Node.js sidecar on the same host: it holds the Takaro WebSocket and serves the mod's loopback HTTP API, because Enforce Script has HTTP but no WebSocket client",
+      "artifactPattern": "takaro-dayz-sidecar-{target}-{version}.tar.gz"
+    }
+  },
+  "legacyAssetAliases": {},
+  "devServers": {"composeFile": "dayz.yml"}
+}
