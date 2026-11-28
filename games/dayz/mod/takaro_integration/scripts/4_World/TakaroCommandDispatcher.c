@@ -828,101 +828,6 @@ class TakaroCommandDispatcher
         {
             rawResult = BuildPlayerListing();
         }
-        else if (verb == "givehands")
-        {
-            // M3 test/admin verb: givehands <gameId> <classname>
-            // Creates the item directly in the player's hands (e.g. FirefighterAxe),
-            // so a melee test needs no inventory drag-and-drop.
-            array<string> hparts = new array<string>;
-            SplitTokens(rest, hparts);
-            if (hparts.Count() < 2) { rawResult = "Usage: givehands <gameId> <classname>"; success = false; }
-            else
-            {
-                PlayerBase hpb = FindPlayerByGameId(hparts[0]);
-                if (!hpb) { rawResult = "Player not online: " + hparts[0]; success = false; }
-                else
-                {
-                    EntityAI hent = hpb.GetHumanInventory().CreateInHands(hparts[1]);
-                    if (!hent) { rawResult = "Could not create " + hparts[1] + " in hands (hands full?)"; success = false; }
-                    else rawResult = "In hands: " + hparts[1];
-                }
-            }
-        }
-        else if (verb == "hitnearest")
-        {
-            // M3 test/admin verb: hitnearest <gameId> [radius] [ammo]
-            // SYNTHETIC: applies lethal engine damage (ProcessDirectDamage) to the nearest
-            // infected/animal, with the player's item in hands (or the player) as the
-            // damage SOURCE. EEHitBy/EEKilled and the entity-killed emitter run for real;
-            // the swing itself does not. Exists because injected attack input never
-            // reaches DayZ on the test client. Evidence using it must say "synthetic".
-            array<string> nparts = new array<string>;
-            SplitTokens(rest, nparts);
-            if (nparts.Count() < 1) { rawResult = "Usage: hitnearest <gameId> [radius] [ammo]"; success = false; }
-            else
-            {
-                PlayerBase npb = FindPlayerByGameId(nparts[0]);
-                if (!npb) { rawResult = "Player not online: " + nparts[0]; success = false; }
-                else
-                {
-                    float nrad = 10.0;
-                    if (nparts.Count() >= 2) nrad = nparts[1].ToFloat();
-                    string nammo = "Bullet_762x54";
-                    if (nparts.Count() >= 3) nammo = nparts[2];
-                    array<Object> nobjs = new array<Object>;
-                    GetGame().GetObjectsAtPosition3D(npb.GetPosition(), nrad, nobjs, null);
-                    EntityAI ntarget = null;
-                    float nbest = 999999.0;
-                    for (int ni = 0; ni < nobjs.Count(); ni++)
-                    {
-                        EntityAI ne = EntityAI.Cast(nobjs[ni]);
-                        if (!ne || !ne.IsAlive()) continue;
-                        if (!ne.IsInherited(ZombieBase) && !ne.IsInherited(AnimalBase)) continue;
-                        float nd = vector.Distance(ne.GetPosition(), npb.GetPosition());
-                        if (nd < nbest) { nbest = nd; ntarget = ne; }
-                    }
-                    if (!ntarget) { rawResult = "No living infected/animal within " + nrad.ToString() + " m"; success = false; }
-                    else
-                    {
-                        EntityAI nsource = npb.GetHumanInventory().GetEntityInHands();
-                        if (!nsource) nsource = npb;
-                        // No SetHealth fallback: that kills with killer=null and no EEHitBy, so
-                        // nothing can be attributed. ProcessDirectDamage may apply next frame.
-                        ntarget.ProcessDirectDamage(DamageType.CLOSE_COMBAT, nsource, "Head", nammo, "0 0 0", 100.0);
-                        rawResult = "Hit " + ntarget.GetType() + " at " + nbest.ToString() + " m with source " + nsource.GetType() + " ammo " + nammo;
-                    }
-                }
-            }
-        }
-        else if (verb == "spawnentity")
-        {
-            // M3 test/admin verb: spawnentity <classname> <gameId> [distanceMeters]
-            // Spawns a creature (e.g. ZmbM_HermitSkinny_Beige, Animal_GallusGallusDomesticus)
-            // on the surface in front of the player, with AI initialised. Used to
-            // prove entity-killed / infected player-death without hunting for spawns.
-            array<string> sparts = new array<string>;
-            SplitTokens(rest, sparts);
-            if (sparts.Count() < 2) { rawResult = "Usage: spawnentity <classname> <gameId> [distance]"; success = false; }
-            else
-            {
-                PlayerBase spb = FindPlayerByGameId(sparts[1]);
-                if (!spb) { rawResult = "Player not online: " + sparts[1]; success = false; }
-                else if (!GetGame().ConfigIsExisting("CfgVehicles " + sparts[0])) { rawResult = "Unknown class: " + sparts[0]; success = false; }
-                else
-                {
-                    float sdist = 3.0;
-                    if (sparts.Count() >= 3) { sdist = sparts[2].ToFloat(); if (sdist <= 0) sdist = 3.0; }
-                    vector sdir = spb.GetDirection();
-                    sdir[1] = 0;
-                    sdir.Normalize();
-                    vector spos = spb.GetPosition() + (sdir * sdist);
-                    spos[1] = GetGame().SurfaceY(spos[0], spos[2]);
-                    Object sobj = GetGame().CreateObjectEx(sparts[0], spos, ECE_PLACE_ON_SURFACE | ECE_INITAI | ECE_EQUIP_ATTACHMENTS);
-                    if (!sobj) { rawResult = "Spawn failed: " + sparts[0]; success = false; }
-                    else rawResult = "Spawned " + sparts[0] + " at " + spos[0].ToString() + "," + spos[1].ToString() + "," + spos[2].ToString();
-                }
-            }
-        }
         else if (verb == "mapsurvey")
         {
             // `mapsurvey` shows progress; `mapsurvey start` re-surveys the world for map tiles.
@@ -1034,9 +939,6 @@ class TakaroCommandDispatcher
         h += "  visit <requesterId> <targetId> [--force]  - teleport requester to target (must be partied unless --force)" + nl;
         h += "  give <gameId> <classname> [amount]  - spawn item(s) into the player's inventory" + nl;
         h += "  players                             - list online players (name, id, ping, hp, blood, pos, party)" + nl;
-        h += "  givehands <gameId> <classname>      - (test/admin) create an item in the player's hands" + nl;
-        h += "  hitnearest <gameId> [radius] [ammo] - (test/admin, SYNTHETIC) lethal engine damage to nearest creature, player as source" + nl;
-        h += "  spawnentity <class> <gameId> [dist] - (test/admin) spawn a creature in front of a player" + nl;
         h += "  parties                             - list active Expansion parties and their online members" + nl;
         h += "  party                               - list every online player with their party id (or 'solo')" + nl;
         h += "  announce <message>                  - center-screen banner to all players (Expansion BAGUETTE)" + nl;
